@@ -83,12 +83,19 @@ final class AutomaticPurgeSubscriber
             'publish_post',
             'save_post',
             'edit_post',
+            'before_delete_post',
             'deleted_post',
             'delete_post',
             'trashed_post',
             'untrashed_post',
+            'transition_post_status',
+            'delete_attachment',
             'clean_post_cache',
+            'clean_term_cache',
+            'clean_comment_cache',
+            'clean_user_cache',
             'woocommerce_after_product_object_save',
+            'woocommerce_reduce_order_stock',
             'woocommerce_update_product',
             'woocommerce_delete_product_transients',
             'comment_post',
@@ -105,6 +112,7 @@ final class AutomaticPurgeSubscriber
             'wp_delete_nav_menu',
             'edit_user_profile_update',
             'update_option_permalink_structure',
+            'upgrader_process_complete',
         ];
 
         if (function_exists('apply_filters')) {
@@ -151,16 +159,21 @@ final class AutomaticPurgeSubscriber
     /** @param array<mixed> $arguments */
     private function request(string $hook, array $arguments): PurgeRequest
     {
+        if ($this->isImportRequest()) {
+            return PurgeRequest::full('bulk-import', 'wordpress-hook', false, $this->settings->prewarmEnabled());
+        }
+
         if (!$this->settings->selectivePurgeEnabled() || $this->urls->requiresFullPurge($hook)) {
             return PurgeRequest::full($hook, 'wordpress-hook', false, $this->settings->prewarmEnabled());
         }
 
         $urls = $this->urls->collect($hook, $arguments);
         $tags = $this->urls->collectTags($hook, $arguments);
+        $prewarm = $this->shouldPrewarm($hook, $arguments);
 
         return $urls === []
             ? PurgeRequest::full($hook, 'wordpress-hook', false, $this->settings->prewarmEnabled())
-            : PurgeRequest::urls($urls, $hook, 'wordpress-hook', false, $this->settings->prewarmEnabled(), $tags);
+            : PurgeRequest::urls($urls, $hook, 'wordpress-hook', false, $prewarm, $tags);
     }
 
     /** @param array<mixed> $arguments */
@@ -196,5 +209,35 @@ final class AutomaticPurgeSubscriber
         }
 
         return function_exists('wp_is_post_autosave') && (bool) wp_is_post_autosave($postId);
+    }
+
+    /** @param array<mixed> $arguments */
+    private function shouldPrewarm(string $hook, array $arguments): bool
+    {
+        if (!$this->settings->prewarmEnabled()) {
+            return false;
+        }
+
+        if ($hook !== 'transition_post_status') {
+            return false;
+        }
+
+        $newStatus = is_string($arguments[0] ?? null) ? $arguments[0] : '';
+        $oldStatus = is_string($arguments[1] ?? null) ? $arguments[1] : '';
+
+        return $newStatus === 'publish' && $oldStatus !== 'publish';
+    }
+
+    private function isImportRequest(): bool
+    {
+        if (defined('WP_IMPORTING') && WP_IMPORTING) {
+            return true;
+        }
+
+        if (function_exists('did_action') && did_action('import_start') > 0) {
+            return true;
+        }
+
+        return isset($_GET['import']) && is_string($_GET['import']) && trim((string) $_GET['import']) !== '';
     }
 }

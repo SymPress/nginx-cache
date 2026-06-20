@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Purge;
 
 use SymPress\NginxCache\Security\UrlPolicy;
+use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Surrogate\CacheTagResolver;
 use SymPress\NginxCache\Surrogate\TagIndexRepository;
 
@@ -14,6 +15,7 @@ final readonly class PurgeUrlCollector
         private CacheTagResolver $tags,
         private TagIndexRepository $tagIndex,
         private UrlPolicy $urls,
+        private WordPressCacheSettings $settings,
     ) {
     }
 
@@ -24,9 +26,15 @@ final readonly class PurgeUrlCollector
     public function collect(string $hook, array $arguments): array
     {
         $urls = [];
+        $productIds = $this->productIds($hook, $arguments);
+
+        foreach ($productIds as $productId) {
+            $urls = [...$urls, ...$this->postUrls($productId)];
+        }
+
         $postId = $this->postId($arguments);
 
-        if ($postId !== null) {
+        if ($postId !== null && !in_array($postId, $productIds, true)) {
             $urls = [...$urls, ...$this->postUrls($postId)];
         }
 
@@ -75,9 +83,15 @@ final readonly class PurgeUrlCollector
     public function collectTags(string $hook, array $arguments): array
     {
         $tags = [$hook];
+        $productIds = $this->productIds($hook, $arguments);
+
+        foreach ($productIds as $productId) {
+            $tags = [...$tags, ...$this->tags->postTags($productId)];
+        }
+
         $postId = $this->postId($arguments);
 
-        if ($postId !== null) {
+        if ($postId !== null && !in_array($postId, $productIds, true)) {
             $tags = [...$tags, ...$this->tags->postTags($postId)];
         }
 
@@ -111,6 +125,7 @@ final readonly class PurgeUrlCollector
             'edit_user_profile_update',
             'update_option_permalink_structure',
             'woocommerce_delete_product_transients',
+            'upgrader_process_complete',
         ];
 
         if (function_exists('apply_filters')) {
@@ -131,6 +146,16 @@ final readonly class PurgeUrlCollector
             if (is_object($argument) && property_exists($argument, 'ID') && is_numeric($argument->ID)) {
                 return (int) $argument->ID;
             }
+
+            if (!is_object($argument) || !method_exists($argument, 'get_id')) {
+                continue;
+            }
+
+            $id = $argument->get_id();
+
+            if (is_numeric($id)) {
+                return (int) $id;
+            }
         }
 
         return null;
@@ -146,6 +171,7 @@ final readonly class PurgeUrlCollector
 
             if (is_string($permalink)) {
                 $urls[] = $permalink;
+                $urls = [...$urls, ...$this->ampUrls($permalink)];
             }
         }
 
@@ -159,7 +185,7 @@ final readonly class PurgeUrlCollector
             $archive = get_post_type_archive_link($postType);
 
             if (is_string($archive)) {
-                $urls[] = $archive;
+                $urls = [...$urls, ...$this->archiveUrls($archive)];
             }
 
             if (function_exists('home_url')) {
@@ -167,11 +193,16 @@ final readonly class PurgeUrlCollector
             }
         }
 
+        if ($postType === 'post') {
+            $urls = [...$urls, ...$this->postsPageUrls()];
+            $urls = [...$urls, ...$this->dateArchiveUrls($postId)];
+        }
+
         if (function_exists('get_post') && function_exists('get_author_posts_url')) {
             $post = get_post($postId);
 
             if (is_object($post) && property_exists($post, 'post_author') && is_numeric($post->post_author)) {
-                $urls[] = get_author_posts_url((int) $post->post_author);
+                $urls = [...$urls, ...$this->archiveUrls(get_author_posts_url((int) $post->post_author))];
             }
         }
 
@@ -194,7 +225,7 @@ final readonly class PurgeUrlCollector
                         continue;
                     }
 
-                    $urls[] = $termUrl;
+                    $urls = [...$urls, ...$this->archiveUrls($termUrl)];
                 }
             }
         }
@@ -230,7 +261,7 @@ final readonly class PurgeUrlCollector
         }
 
         $url = get_term_link($termId);
-        $urls = is_string($url) ? [$url] : [];
+        $urls = is_string($url) ? $this->archiveUrls($url) : [];
 
         if (function_exists('get_term_feed_link')) {
             $feed = get_term_feed_link($termId);
@@ -269,6 +300,168 @@ final readonly class PurgeUrlCollector
         }
 
         return (int) $comment->comment_post_ID;
+    }
+
+    /**
+     * @param array<mixed> $arguments
+     * @return list<int>
+     */
+    private function productIds(string $hook, array $arguments): array
+    {
+        if (!str_starts_with($hook, 'woocommerce_')) {
+            return [];
+        }
+
+        $ids = [];
+
+        foreach ($arguments as $argument) {
+            if (is_int($argument) && $argument > 0) {
+                $ids[] = $argument;
+            }
+
+            if (!is_object($argument)) {
+                continue;
+            }
+
+            $ids = [...$ids, ...$this->productIdsFromObject($argument)];
+
+            if (!method_exists($argument, 'get_items')) {
+                continue;
+            }
+
+            foreach ((array) $argument->get_items() as $item) {
+                if (!is_object($item) || !method_exists($item, 'get_product')) {
+                    continue;
+                }
+
+                $product = $item->get_product();
+
+                if (!is_object($product)) {
+                    continue;
+                }
+
+                $ids = [...$ids, ...$this->productIdsFromObject($product)];
+            }
+        }
+
+        return array_values(array_unique(array_filter($ids, static fn (int $id): bool => $id > 0)));
+    }
+
+    /** @return list<int> */
+    private function productIdsFromObject(object $object): array
+    {
+        $ids = [];
+
+        if (method_exists($object, 'get_id')) {
+            $id = $object->get_id();
+
+            if (is_numeric($id)) {
+                $ids[] = (int) $id;
+            }
+        }
+
+        if (method_exists($object, 'get_parent_id')) {
+            $parentId = $object->get_parent_id();
+
+            if (is_numeric($parentId) && (int) $parentId > 0) {
+                $ids[] = (int) $parentId;
+            }
+        }
+
+        return $ids;
+    }
+
+    /** @return list<string> */
+    private function postsPageUrls(): array
+    {
+        if (!function_exists('get_option') || !function_exists('get_permalink')) {
+            return [];
+        }
+
+        $postsPageId = (int) get_option('page_for_posts', 0);
+
+        if ($postsPageId <= 0) {
+            return [];
+        }
+
+        $url = get_permalink($postsPageId);
+
+        return is_string($url) ? $this->archiveUrls($url) : [];
+    }
+
+    /** @return list<string> */
+    private function dateArchiveUrls(int $postId): array
+    {
+        if (!function_exists('get_the_time') || !function_exists('get_year_link')) {
+            return [];
+        }
+
+        $year = (int) get_the_time('Y', $postId);
+        $month = (int) get_the_time('m', $postId);
+        $day = (int) get_the_time('d', $postId);
+        $urls = [];
+
+        if ($year > 0) {
+            $urls = [...$urls, ...$this->archiveUrls(get_year_link($year))];
+        }
+
+        if ($year > 0 && $month > 0 && function_exists('get_month_link')) {
+            $urls = [...$urls, ...$this->archiveUrls(get_month_link($year, $month))];
+        }
+
+        if ($year > 0 && $month > 0 && $day > 0 && function_exists('get_day_link')) {
+            $urls = [...$urls, ...$this->archiveUrls(get_day_link($year, $month, $day))];
+        }
+
+        return $urls;
+    }
+
+    /** @return list<string> */
+    private function archiveUrls(string $url): array
+    {
+        $urls = [$url];
+        $limit = $this->settings->archivePageLimit();
+
+        for ($page = 2; $page <= $limit; ++$page) {
+            $urls[] = sprintf('%s/page/%d/', rtrim($url, '/'), $page);
+        }
+
+        return [...$urls, ...$this->feedUrls($urls)];
+    }
+
+    /**
+     * @param list<string> $urls
+     * @return list<string>
+     */
+    private function feedUrls(array $urls): array
+    {
+        if (!$this->settings->purgeFeedsEnabled()) {
+            return [];
+        }
+
+        $feeds = [];
+
+        foreach ($urls as $url) {
+            foreach ($this->settings->feedVariants() as $variant) {
+                $feeds[] = sprintf('%s/%s', rtrim($url, '/'), $variant);
+
+                if (count($feeds) >= $this->settings->maxFeedUrls()) {
+                    return $feeds;
+                }
+            }
+        }
+
+        return $feeds;
+    }
+
+    /** @return list<string> */
+    private function ampUrls(string $url): array
+    {
+        if (!$this->settings->purgeAmpEnabled()) {
+            return [];
+        }
+
+        return [sprintf('%s/amp/', rtrim($url, '/'))];
     }
 
     private function restBase(string $postType): string
