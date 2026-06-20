@@ -4,12 +4,26 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Purge;
 
+use SymPress\EventDispatcher\Contract\EventDispatcherInterface;
+use SymPress\NginxCache\Event\PurgeCompletedEvent;
+use SymPress\NginxCache\Event\PurgeFailedEvent;
 use SymPress\NginxCache\Value\PurgeResult;
 
 final readonly class PurgeEventEmitter
 {
+    public function __construct(
+        private ?EventDispatcherInterface $events = null,
+    ) {
+    }
+
     public function emit(PurgeResult $result): void
     {
+        $this->events?->dispatch(
+            $result->successful
+                ? new PurgeCompletedEvent($result)
+                : new PurgeFailedEvent($result),
+        );
+
         if (!function_exists('do_action')) {
             return;
         }
