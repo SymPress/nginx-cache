@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Hook;
 
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
+use SymPress\NginxCache\Surrogate\CacheTagHeaderFormatter;
 use SymPress\NginxCache\Surrogate\CacheTagResolver;
 use SymPress\NginxCache\Surrogate\TagIndexRepository;
 
@@ -16,13 +17,17 @@ final class SurrogateTagSubscriber
     public function __construct(
         private readonly WordPressCacheSettings $settings,
         private readonly CacheTagResolver $resolver,
+        private readonly CacheTagHeaderFormatter $headers,
         private readonly TagIndexRepository $index,
     ) {
     }
 
     public function sendHeaders(): void
     {
-        if (!$this->settings->debugHeadersEnabled() || headers_sent()) {
+        if (
+            (!$this->settings->debugHeadersEnabled() && !$this->settings->cloudflareEnabled())
+            || headers_sent()
+        ) {
             return;
         }
 
@@ -32,9 +37,18 @@ final class SurrogateTagSubscriber
             return;
         }
 
-        $headerValue = implode(' ', $tags);
-        header(sprintf('Surrogate-Key: %s', $headerValue), false);
-        header(sprintf('X-SymPress-Cache-Tags: %s', $headerValue), false);
+        $headerValue = $this->headers->value($tags);
+
+        if ($this->settings->debugHeadersEnabled()) {
+            header(sprintf('Surrogate-Key: %s', $headerValue), false);
+            header(sprintf('X-SymPress-Cache-Tags: %s', $headerValue), false);
+        }
+
+        if (!$this->settings->cloudflareEnabled()) {
+            return;
+        }
+
+        header(sprintf('Cache-Tag: %s', $this->headers->cloudflareValue($tags)), false);
     }
 
     public function remember(): void

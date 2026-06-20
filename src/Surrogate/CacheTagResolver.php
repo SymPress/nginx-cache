@@ -34,6 +34,7 @@ final readonly class CacheTagResolver
 
         if (function_exists('is_404') && is_404()) {
             $tags[] = 'not-found';
+            $tags[] = '404';
         }
 
         if (function_exists('is_singular') && is_singular() && function_exists('get_queried_object_id')) {
@@ -57,6 +58,15 @@ final readonly class CacheTagResolver
             }
         }
 
+        if (function_exists('is_date') && is_date()) {
+            $tags[] = 'date';
+            $tags[] = 'archive';
+        }
+
+        if (function_exists('is_paged') && is_paged()) {
+            $tags[] = 'paged';
+        }
+
         if (function_exists('is_author') && is_author() && function_exists('get_queried_object_id')) {
             $authorId = (int) get_queried_object_id();
 
@@ -76,6 +86,8 @@ final readonly class CacheTagResolver
             }
         }
 
+        $tags = [...$tags, ...$this->mainQueryTags()];
+
         if (function_exists('apply_filters')) {
             $tags = (array) apply_filters('sympress_nginx_cache_current_tags', $tags);
         }
@@ -86,16 +98,23 @@ final readonly class CacheTagResolver
     /** @return list<string> */
     public function postTags(int $postId): array
     {
-        $tags = [$this->siteTag(), sprintf('post:%d', $postId), 'posts'];
+        $tags = [
+            $this->siteTag(),
+            sprintf('post:%d', $postId),
+            sprintf('rest:post:%d', $postId),
+            'posts',
+        ];
         $post = function_exists('get_post') ? get_post($postId) : null;
 
         if (is_object($post)) {
             if (property_exists($post, 'post_type') && is_string($post->post_type) && $post->post_type !== '') {
                 $tags[] = sprintf('post_type:%s', $post->post_type);
+                $tags[] = sprintf('rest:%s:collection', $post->post_type);
             }
 
             if (property_exists($post, 'post_author') && is_numeric($post->post_author)) {
                 $tags[] = sprintf('author:%d', (int) $post->post_author);
+                $tags[] = sprintf('rest:user:%d', (int) $post->post_author);
             }
         }
 
@@ -137,12 +156,18 @@ final readonly class CacheTagResolver
     public function termTags(int $termId, ?object $term = null): array
     {
         $term ??= function_exists('get_term') ? get_term($termId) : null;
-        $tags = [$this->siteTag(), sprintf('term:%d', $termId), 'archive'];
+        $tags = [
+            $this->siteTag(),
+            sprintf('term:%d', $termId),
+            sprintf('rest:term:%d', $termId),
+            'archive',
+        ];
 
         if (is_object($term)) {
             if (property_exists($term, 'taxonomy') && is_string($term->taxonomy) && $term->taxonomy !== '') {
                 $tags[] = sprintf('term:%s:%d', $term->taxonomy, $termId);
                 $tags[] = sprintf('taxonomy:%s', $term->taxonomy);
+                $tags[] = sprintf('rest:%s:collection', $term->taxonomy);
             }
 
             if (property_exists($term, 'slug') && is_string($term->slug) && $term->slug !== '') {
@@ -152,6 +177,36 @@ final readonly class CacheTagResolver
 
         if (function_exists('apply_filters')) {
             $tags = (array) apply_filters('sympress_nginx_cache_term_tags', $tags, $termId, $term);
+        }
+
+        return $this->normalize($tags);
+    }
+
+    /** @return list<string> */
+    public function commentTags(int $commentId, ?object $comment = null): array
+    {
+        $comment ??= function_exists('get_comment') ? get_comment($commentId) : null;
+        $tags = [$this->siteTag(), sprintf('comment:%d', $commentId), sprintf('rest:comment:%d', $commentId), 'comments'];
+
+        if (is_object($comment) && property_exists($comment, 'comment_post_ID') && is_numeric($comment->comment_post_ID)) {
+            $tags[] = sprintf('comment_post:%d', (int) $comment->comment_post_ID);
+            $tags = [...$tags, ...$this->postTags((int) $comment->comment_post_ID)];
+        }
+
+        if (function_exists('apply_filters')) {
+            $tags = (array) apply_filters('sympress_nginx_cache_comment_tags', $tags, $commentId, $comment);
+        }
+
+        return $this->normalize($tags);
+    }
+
+    /** @return list<string> */
+    public function userTags(int $userId): array
+    {
+        $tags = [$this->siteTag(), sprintf('author:%d', $userId), sprintf('user:%d', $userId), sprintf('rest:user:%d', $userId)];
+
+        if (function_exists('apply_filters')) {
+            $tags = (array) apply_filters('sympress_nginx_cache_user_tags', $tags, $userId);
         }
 
         return $this->normalize($tags);
@@ -197,5 +252,27 @@ final readonly class CacheTagResolver
         }
 
         return defined('REST_REQUEST') && REST_REQUEST;
+    }
+
+    /** @return list<string> */
+    private function mainQueryTags(): array
+    {
+        $query = $GLOBALS['wp_query'] ?? null;
+
+        if (!is_object($query) || !property_exists($query, 'posts') || !is_array($query->posts)) {
+            return [];
+        }
+
+        $tags = [];
+
+        foreach ($query->posts as $post) {
+            if (!is_object($post) || !property_exists($post, 'ID') || !is_numeric($post->ID)) {
+                continue;
+            }
+
+            $tags = [...$tags, ...$this->postTags((int) $post->ID)];
+        }
+
+        return $tags;
     }
 }
