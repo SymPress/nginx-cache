@@ -4,71 +4,43 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Support;
 
+use Symfony\Component\Lock\Exception\LockConflictedException;
+use Symfony\Component\Lock\LockFactory;
+
 final readonly class OptionMutex
 {
-    private const string PREFIX = 'sympress_nginx_cache_lock_';
     private const int TTL_SECONDS = 30;
-    private const int ATTEMPTS = 50;
-    private const int WAIT_MICROSECONDS = 50000;
+
+    public function __construct(
+        private LockFactory $locks,
+    ) {
+    }
 
     public function synchronized(string $name, callable $callback): mixed
     {
-        if (!function_exists('add_option') || !function_exists('delete_option') || !function_exists('get_option')) {
-            return $callback();
+        $lock = $this->locks->createLock($this->normalizeName($name), self::TTL_SECONDS);
+
+        try {
+            $acquired = $lock->acquire(true);
+        } catch (LockConflictedException) {
+            $acquired = false;
         }
 
-        $option = self::PREFIX . $this->normalizeName($name);
-        $token = $this->acquire($option);
-
-        if ($token === null) {
+        if (!$acquired) {
             return $callback();
         }
 
         try {
             return $callback();
         } finally {
-            $this->release($option, $token);
+            $lock->release();
         }
-    }
-
-    private function acquire(string $option): ?string
-    {
-        $token = bin2hex(random_bytes(16));
-
-        for ($attempt = 0; $attempt < self::ATTEMPTS; ++$attempt) {
-            if (add_option($option, ['token' => $token, 'expires' => time() + self::TTL_SECONDS], '', false)) {
-                return $token;
-            }
-
-            $lock = get_option($option);
-
-            if (is_array($lock) && (int) ($lock['expires'] ?? 0) < time()) {
-                delete_option($option);
-
-                continue;
-            }
-
-            usleep(self::WAIT_MICROSECONDS);
-        }
-
-        return null;
-    }
-
-    private function release(string $option, string $token): void
-    {
-        $lock = get_option($option);
-
-        if (!is_array($lock) || !(($lock['token'] ?? null) === $token)) {
-            return;
-        }
-
-        delete_option($option);
     }
 
     private function normalizeName(string $name): string
     {
         $name = strtolower((string) preg_replace('/[^a-zA-Z0-9_:-]+/', '_', $name));
 
-        return trim($name, '_') ?: 'default';
+        return 'sympress_nginx_cache.' . (trim($name, '_') ?: 'default');
     }
 }
