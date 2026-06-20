@@ -1,0 +1,71 @@
+parameters:
+    sympress_nginx_cache.default_path: '/var/cache/nginx/wordpress'
+    sympress_nginx_cache.status_scan_limit: 5000
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        public: false
+
+    Symfony\Component\Filesystem\Filesystem: ~
+
+    Symfony\Contracts\HttpClient\HttpClientInterface:
+        factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
+
+    SymPress\NginxCache\:
+        resource: '../../src/'
+        exclude:
+            - '../../src/NginxCacheBundle.php'
+            - '../../src/Exception/'
+            - '../../src/Value/'
+
+    SymPress\NginxCache\Settings\WordPressCacheSettings:
+        arguments:
+            $defaultPath: '%sympress_nginx_cache.default_path%'
+
+    SymPress\NginxCache\Inspection\CacheStatusInspector:
+        arguments:
+            $scanLimit: '%sympress_nginx_cache.status_scan_limit%'
+
+    SymPress\NginxCache\Admin\SettingsPage:
+        tags:
+            - { name: kernel.hook, hook: 'admin_init', method: registerSettings }
+            - { name: kernel.hook, hook: 'admin_menu', method: registerMenu }
+            - { name: kernel.hook, hook: 'admin_notices', method: renderAdminNotice }
+            - { name: kernel.hook, hook: 'admin_post_sympress_nginx_cache_purge', method: handlePurgeAction }
+            - { name: kernel.hook, hook: 'admin_post_sympress_nginx_cache_flush_queue', method: handleQueueAction }
+            - { name: kernel.hook, hook: 'admin_bar_menu', method: addAdminBarNode, accepted_args: 1, priority: 100 }
+            - { name: kernel.hook, hook: 'plugin_action_links_nginx-cache/nginx-cache.php', method: addPluginActionLinks, type: filter, accepted_args: 1 }
+
+    SymPress\NginxCache\Hook\AutomaticPurgeSubscriber:
+        tags:
+            - { name: kernel.hook, hook: 'init', method: register, priority: 20 }
+            - { name: kernel.hook, hook: 'shutdown', method: flushPending, priority: 899000 }
+
+    SymPress\NginxCache\Hook\SurrogateTagSubscriber:
+        tags:
+            - { name: kernel.hook, hook: 'send_headers', method: sendHeaders }
+            - { name: kernel.hook, hook: 'shutdown', method: remember, priority: 900000 }
+
+    SymPress\NginxCache\Hook\HeartbeatControlSubscriber:
+        tags:
+            - { name: kernel.hook, hook: 'heartbeat_settings', method: configure, type: filter, accepted_args: 1 }
+            - { name: kernel.hook, hook: 'wp_enqueue_scripts', method: maybeDisable, priority: 100 }
+            - { name: kernel.hook, hook: 'admin_enqueue_scripts', method: maybeDisable, priority: 100 }
+
+    SymPress\NginxCache\Purge\PurgeQueueProcessor:
+        tags:
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_process_queue', method: process }
+
+    SymPress\NginxCache\Purge\PurgeSideEffectProcessor:
+        tags:
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_process_side_effects', method: process }
+
+    SymPress\NginxCache\Rest\CacheRestController:
+        tags:
+            - { name: kernel.hook, hook: 'rest_api_init', method: register }
+
+    SymPress\NginxCache\Cli\CacheCommand:
+        tags:
+            - { name: kernel.hook, hook: 'cli_init', method: register }

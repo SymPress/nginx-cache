@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<ruleset name="SymPress Nginx Cache Plugin">
+    <description>
+        SymPress coding standard audit for the nginx cache plugin.
+    </description>
+
+    <arg name="colors" />
+    <arg value="sp" />
+    <arg name="basepath" value="." />
+
+    <config name="testVersion" value="8.5-" />
+    <config name="text_domain" value="nginx-cache" />
+
+    <file>nginx-cache.php</file>
+    <file>src</file>
+
+    <exclude-pattern>vendor/*</exclude-pattern>
+    <exclude-pattern>.phpunit.cache/*</exclude-pattern>
+
+    <rule ref="SymPress-WordPress">
+        <exclude name="PSR12.Files.FileHeader.IncorrectOrder" />
+        <exclude name="SlevomatCodingStandard.Classes.ForbiddenPublicProperty.ForbiddenPublicProperty" />
+        <exclude name="SlevomatCodingStandard.Functions.UnusedParameter.UnusedParameter" />
+        <exclude name="SlevomatCodingStandard.Operators.RequireOnlyStandaloneIncrementAndDecrementOperators.PreIncrementOperatorNotUsedStandalone" />
+        <exclude name="SlevomatCodingStandard.Variables.DisallowSuperGlobalVariable.DisallowedSuperGlobalVariable" />
+        <exclude name="SymPress.Complexity.NestingLevel.High" />
+        <exclude name="SymPress.ControlStructures.DisallowElse.ElseFound" />
+        <exclude name="SymPress.Files.LineLength.TooLong" />
+        <exclude name="SymPress.Functions.FunctionLength.TooLong" />
+        <exclude name="SymPress.NamingConventions.ElementNameMinimalLength.TooShort" />
+        <exclude name="SymPress.Variables.RedundantAssignment.Found" />
+        <exclude name="WordPress.PHP.NoSilencedErrors.Discouraged" />
+        <exclude name="WordPress.Security.EscapeOutput.OutputNotEscaped" />
+        <exclude name="WordPress.Security.NonceVerification.Recommended" />
+        <exclude name="WordPress.Security.ValidatedSanitizedInput.InputNotSanitized" />
+        <exclude name="WordPress.Security.ValidatedSanitizedInput.MissingUnslash" />
+        <exclude name="WordPress.WP.AlternativeFunctions.file_system_operations_fclose" />
+        <exclude name="WordPress.WP.AlternativeFunctions.file_system_operations_fopen" />
+        <exclude name="WordPress.WP.AlternativeFunctions.file_system_operations_is_writable" />
+        <exclude name="WordPress.WP.AlternativeFunctions.strip_tags_strip_tags" />
+        <exclude name="WordPress.WP.I18n.MissingTranslatorsComment" />
+        <exclude name="WordPress.WP.I18n.NonSingularStringLiteralDomain" />
+        <exclude name="WordPressVIPMinimum.Functions.StripTags.StripTagsOneParameter" />
+    </rule>
+
+    <rule ref="SymPress.Namespaces.Psr4">
+        <properties>
+            <property name="psr4" type="array">
+                <element key="SymPress\NginxCache" value="src" />
+            </property>
+        </properties>
+    </rule>
+</ruleset>

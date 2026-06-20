@@ -1,0 +1,88 @@
+{
+    "name": "sympress/nginx-cache",
+    "description": "Kernel-integrated Nginx edge cache purge package for WordPress.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "authors": [
+        {
+            "name": "Brian Schäffner",
+            "email": "brian.schaeffner@sympress.de",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.5",
+        "symfony/filesystem": "^8.0",
+        "symfony/finder": "^8.0",
+        "symfony/http-client": "^8.0",
+        "symfony/options-resolver": "^8.0",
+        "sympress/kernel": "dev-main"
+    },
+    "require-dev": {
+        "symfony/var-dumper": "^8.1",
+        "sympress/qa": "dev-main"
+    },
+    "autoload": {
+        "psr-4": {
+            "SymPress\\NginxCache\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SymPress\\NginxCache\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "cs": [
+            "Composer\\Config::disableProcessTimeout",
+            "qa cs"
+        ],
+        "cs:fix": [
+            "Composer\\Config::disableProcessTimeout",
+            "qa cs:fix"
+        ],
+        "static-analysis": [
+            "Composer\\Config::disableProcessTimeout",
+            "qa static-analysis"
+        ],
+        "tests": [
+            "Composer\\Config::disableProcessTimeout",
+            "qa tests"
+        ],
+        "test": [
+            "@tests"
+        ],
+        "qa": [
+            "@cs",
+            "@static-analysis",
+            "@tests"
+        ]
+    },
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true,
+            "phpstan/extension-installer": true
+        }
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "./../*",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "extra": {
+        "wordpress-install-dir": "vendor/wordpress/wordpress",
+        "kernel": {
+            "bundle": "SymPress\\NginxCache\\NginxCacheBundle",
+            "entry": "nginx-cache/nginx-cache.php"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
