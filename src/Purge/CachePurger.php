@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Purge;
 
 use SymPress\NginxCache\Filesystem\CachePathValidator;
+use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeMode;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
@@ -19,6 +20,8 @@ final readonly class CachePurger
         private Filesystem $filesystem,
         private CachePathValidator $validator,
         private CacheFileResolver $files,
+        private FullPurgeEndpointDispatcher $fullPurgeEndpoint,
+        private CacheClock $clock,
     ) {
     }
 
@@ -29,18 +32,25 @@ final readonly class CachePurger
 
     public function purgeRequest(string $path, PurgeRequest $request): PurgeResult
     {
-        $startedAt = microtime(true);
+        $startedAt = $this->clock->highResolutionTimestamp();
+        $createdAt = $this->clock->timestamp();
+
+        if ($request->requiresFullPurge() && $this->fullPurgeEndpoint->enabled()) {
+            return $this->fullPurgeEndpoint->purge($request, $startedAt, $createdAt);
+        }
+
         $validation = $this->validator->validate($path, true, true);
 
         if (!$validation->isValid()) {
             return PurgeResult::failure(
                 $validation->path,
                 $validation->firstError() ?? 'Cache path is not valid.',
-                microtime(true) - $startedAt,
+                $this->clock->elapsedSince($startedAt),
                 $request->mode,
                 $request->reason,
                 $request->source,
                 $request->dryRun,
+                createdAt: $createdAt,
             );
         }
 
@@ -50,11 +60,12 @@ final readonly class CachePurger
             return PurgeResult::failure(
                 $validation->path,
                 'Could not open cache purge lock file.',
-                microtime(true) - $startedAt,
+                $this->clock->elapsedSince($startedAt),
                 $request->mode,
                 $request->reason,
                 $request->source,
                 $request->dryRun,
+                createdAt: $createdAt,
             );
         }
 
@@ -63,16 +74,17 @@ final readonly class CachePurger
                 return PurgeResult::failure(
                     $validation->path,
                     'Could not acquire cache purge lock.',
-                    microtime(true) - $startedAt,
+                    $this->clock->elapsedSince($startedAt),
                     $request->mode,
                     $request->reason,
                     $request->source,
                     $request->dryRun,
+                    createdAt: $createdAt,
                 );
             }
 
             if (!$request->requiresFullPurge()) {
-                return $this->purgeUrls($validation->path, $request, $startedAt);
+                return $this->purgeUrls($validation->path, $request, $startedAt, $createdAt);
             }
 
             $entries = $this->purgeableEntries($validation->path);
@@ -87,22 +99,24 @@ final readonly class CachePurger
                 return PurgeResult::failure(
                     $validation->path,
                     sprintf('Cache entries could not be removed: %s', $exception->getMessage()),
-                    microtime(true) - $startedAt,
+                    $this->clock->elapsedSince($startedAt),
                     $request->mode,
                     $request->reason,
                     $request->source,
                     $request->dryRun,
+                    createdAt: $createdAt,
                 );
             }
 
             return PurgeResult::success(
                 $validation->path,
                 $removed,
-                microtime(true) - $startedAt,
+                $this->clock->elapsedSince($startedAt),
                 PurgeMode::Full,
                 $request->reason,
                 $request->source,
                 $request->dryRun,
+                createdAt: $createdAt,
             );
         } finally {
             flock($lock, LOCK_UN);
@@ -110,7 +124,7 @@ final readonly class CachePurger
         }
     }
 
-    private function purgeUrls(string $path, PurgeRequest $request, float $startedAt): PurgeResult
+    private function purgeUrls(string $path, PurgeRequest $request, float $startedAt, int $createdAt): PurgeResult
     {
         $entries = [];
         $purgedUrls = [];
@@ -147,18 +161,19 @@ final readonly class CachePurger
             return PurgeResult::failure(
                 $path,
                 sprintf('Cache URL entries could not be removed: %s', $exception->getMessage()),
-                microtime(true) - $startedAt,
+                $this->clock->elapsedSince($startedAt),
                 $request->mode,
                 $request->reason,
                 $request->source,
                 $request->dryRun,
+                createdAt: $createdAt,
             );
         }
 
         return PurgeResult::success(
             $path,
             count($entries),
-            microtime(true) - $startedAt,
+            $this->clock->elapsedSince($startedAt),
             PurgeMode::Urls,
             $request->reason,
             $request->source,
@@ -166,6 +181,7 @@ final readonly class CachePurger
             $request->urls,
             $purgedUrls,
             $missedUrls,
+            $createdAt,
         );
     }
 

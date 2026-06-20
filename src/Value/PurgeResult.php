@@ -29,6 +29,7 @@ final readonly class PurgeResult
         public ?PrewarmResult $prewarm = null,
         public array $errors = [],
         public array $sideEffects = [],
+        public int $createdAt = 0,
     ) {
     }
 
@@ -48,6 +49,7 @@ final readonly class PurgeResult
         array $requestedUrls = [],
         array $purgedUrls = [],
         array $missedUrls = [],
+        int $createdAt = 0,
     ): self {
 
         $prefix = $dryRun ? 'Dry run: ' : '';
@@ -70,6 +72,10 @@ final readonly class PurgeResult
             $requestedUrls,
             $purgedUrls,
             $missedUrls,
+            null,
+            [],
+            [],
+            $createdAt,
         );
     }
 
@@ -83,6 +89,7 @@ final readonly class PurgeResult
         string $source = 'runtime',
         bool $dryRun = false,
         array $errors = [],
+        int $createdAt = 0,
     ): self {
 
         return new self(
@@ -100,6 +107,8 @@ final readonly class PurgeResult
             [],
             null,
             $errors !== [] ? $errors : [$message],
+            [],
+            $createdAt,
         );
     }
 
@@ -121,6 +130,7 @@ final readonly class PurgeResult
             $prewarm,
             $this->errors,
             $this->sideEffects,
+            $this->createdAt,
         );
     }
 
@@ -143,6 +153,7 @@ final readonly class PurgeResult
             $this->prewarm,
             $this->errors,
             $sideEffects,
+            $this->createdAt,
         );
     }
 
@@ -176,6 +187,7 @@ final readonly class PurgeResult
             $prewarm,
             self::stringList($data['errors'] ?? []),
             is_array($data['side_effects'] ?? null) ? $data['side_effects'] : [],
+            (int) ($data['created_at'] ?? 0),
         );
     }
 
@@ -205,7 +217,7 @@ final readonly class PurgeResult
             ] : null,
             'errors'           => $this->errors,
             'side_effects'     => $this->sideEffects,
-            'created_at'       => time(),
+            'created_at'       => $this->createdAt,
         ];
     }
 
