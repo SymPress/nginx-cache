@@ -241,6 +241,8 @@ final readonly class SettingsPage
         $queueCount = $this->queue->count();
         $tagStats = is_array($diagnostics['tag_index'] ?? null) ? $diagnostics['tag_index'] : [];
         $remote = is_array($diagnostics['remote'] ?? null) ? $diagnostics['remote'] : [];
+        $cloudflare = is_array($remote['cloudflare'] ?? null) ? $remote['cloudflare'] : [];
+        $fullPurge = is_array($remote['full_purge'] ?? null) ? $remote['full_purge'] : [];
         $layers = is_array($diagnostics['layers'] ?? null) ? $diagnostics['layers'] : [];
         $showOnboarding = !$this->settings->onboardingCompleted() && !$this->settings->hasCustomizedOptions();
         $healthOk = $validation->isValid() && $status->available();
@@ -589,9 +591,24 @@ final readonly class SettingsPage
                                 </div>
 
                                 <div class="sympress-toggle-stack">
+                                    <?php $this->renderSwitch(WordPressCacheSettings::OPTION_PURGE_FEEDS, $this->settings->purgeFeedsEnabled(), __('Feed purge variants', WordPressCacheSettings::TEXT_DOMAIN), __('Purge feed URLs for affected archives and listing pages.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
+                                    <?php $this->renderSwitch(WordPressCacheSettings::OPTION_PURGE_AMP, $this->settings->purgeAmpEnabled(), __('AMP companions', WordPressCacheSettings::TEXT_DOMAIN), __('Purge AMP companion URLs for changed singular content.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
                                     <?php $this->renderSwitch(WordPressCacheSettings::OPTION_TAG_INDEX_ENABLED, $this->settings->tagIndexEnabled(), __('Surrogate tag index', WordPressCacheSettings::TEXT_DOMAIN), __('Maintain a URL index for tags such as post, term, author, post type and site.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
                                     <?php $this->renderSwitch(WordPressCacheSettings::OPTION_DEBUG_HEADERS_ENABLED, $this->settings->debugHeadersEnabled(), __('Debug headers', WordPressCacheSettings::TEXT_DOMAIN), __('Emit Surrogate-Key and X-SymPress-Cache-Tags headers for debugging or external purge workers.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
                                     <?php $this->renderSwitch(WordPressCacheSettings::OPTION_REST_ENABLED, $this->settings->restEnabled(), __('REST API', WordPressCacheSettings::TEXT_DOMAIN), __('Enable secured purge, status, config, probe and queue endpoints for administrators.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
+                                </div>
+
+                                <div class="sympress-rule-grid">
+                                    <label class="sympress-field">
+                                        <span class="sympress-field__label"><?php echo esc_html__('Archive page limit', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                                        <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_ARCHIVE_PAGE_LIMIT); ?>" type="number" min="1" max="50" class="small-text sympress-number" value="<?php echo esc_attr((string) $this->settings->archivePageLimit()); ?>" />
+                                        <span class="sympress-field__description"><?php echo esc_html__('Paginated archive pages included per affected archive.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                                    </label>
+                                    <label class="sympress-field">
+                                        <span class="sympress-field__label"><?php echo esc_html__('Feed variants', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FEED_VARIANTS); ?>" rows="5" class="large-text code sympress-textarea" placeholder="feed/"><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_FEED_VARIANTS, "feed/\nfeed/atom/\nfeed/rdf/")); ?></textarea>
+                                        <span class="sympress-field__description"><?php echo esc_html__('One relative feed path per line.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                                    </label>
                                 </div>
                             </div>
                         </section>
@@ -605,6 +622,53 @@ final readonly class SettingsPage
                             </div>
 
                             <div class="sympress-card sympress-form-card">
+                                <div class="sympress-toggle-stack">
+                                    <?php $this->renderSwitch(WordPressCacheSettings::OPTION_CLOUDFLARE_ENABLED, $this->settings->cloudflareEnabled(), __('Cloudflare cache tags', WordPressCacheSettings::TEXT_DOMAIN), __('Emit Cache-Tag headers and enqueue Cloudflare tag purges after successful local purges.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
+                                </div>
+
+                                <div class="sympress-rule-grid">
+                                    <label class="sympress-field">
+                                        <span class="sympress-field__label"><?php echo esc_html__('Cloudflare zone ID', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                                        <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_CLOUDFLARE_ZONE_ID); ?>" type="text" class="regular-text code sympress-input" value="<?php echo esc_attr($option(WordPressCacheSettings::OPTION_CLOUDFLARE_ZONE_ID)); ?>" autocomplete="off" />
+                                    </label>
+                                    <label class="sympress-field">
+                                        <span class="sympress-field__label"><?php echo esc_html__('Cloudflare API token', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                                        <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_CLOUDFLARE_API_TOKEN); ?>" type="password" class="regular-text code sympress-input" value="<?php echo esc_attr($option(WordPressCacheSettings::OPTION_CLOUDFLARE_API_TOKEN)); ?>" autocomplete="new-password" />
+                                    </label>
+                                </div>
+
+                                <div class="sympress-radio-stack" role="radiogroup" aria-label="<?php echo esc_attr__('Full purge mode', WordPressCacheSettings::TEXT_DOMAIN); ?>">
+                                    <label class="sympress-radio-row">
+                                        <input type="radio" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FULL_PURGE_MODE); ?>" value="local_files" <?php checked($this->settings->fullPurgeMode(), 'local_files'); ?> />
+                                        <span>
+                                            <strong><?php echo esc_html__('Local files', WordPressCacheSettings::TEXT_DOMAIN); ?></strong>
+                                            <small><?php echo esc_html__('Remove cache files from the configured cache path.', WordPressCacheSettings::TEXT_DOMAIN); ?></small>
+                                        </span>
+                                    </label>
+                                    <label class="sympress-radio-row">
+                                        <input type="radio" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FULL_PURGE_MODE); ?>" value="endpoint" <?php checked($this->settings->fullPurgeMode(), 'endpoint'); ?> />
+                                        <span>
+                                            <strong><?php echo esc_html__('Secured endpoint', WordPressCacheSettings::TEXT_DOMAIN); ?></strong>
+                                            <small><?php echo esc_html__('Call a protected Nginx purge endpoint for whole-zone purges.', WordPressCacheSettings::TEXT_DOMAIN); ?></small>
+                                        </span>
+                                    </label>
+                                </div>
+
+                                <div class="sympress-rule-grid">
+                                    <label class="sympress-field">
+                                        <span class="sympress-field__label"><?php echo esc_html__('Full purge endpoint', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                                        <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FULL_PURGE_ENDPOINT); ?>" type="url" class="regular-text code sympress-input" value="<?php echo esc_attr($option(WordPressCacheSettings::OPTION_FULL_PURGE_ENDPOINT)); ?>" placeholder="<?php echo esc_attr(home_url('/__sympress-nginx-cache-purge-all')); ?>" />
+                                    </label>
+                                    <label class="sympress-field">
+                                        <span class="sympress-field__label"><?php echo esc_html__('Full purge method', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                                        <select name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FULL_PURGE_HTTP_METHOD); ?>" class="sympress-input">
+                                            <?php foreach (['PURGE', 'POST', 'DELETE'] as $method) : ?>
+                                                <option value="<?php echo esc_attr($method); ?>" <?php selected($this->settings->fullPurgeHttpMethod(), $method); ?>><?php echo esc_html($method); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </label>
+                                </div>
+
                                 <label class="sympress-field">
                                     <span class="sympress-field__label"><?php echo esc_html__('Remote purge endpoints', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                     <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_REMOTE_ENDPOINTS); ?>" rows="7" class="large-text code sympress-textarea" placeholder="https://cache-agent.internal/purge"><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_REMOTE_ENDPOINTS)); ?></textarea>
@@ -618,6 +682,8 @@ final readonly class SettingsPage
                                 <div class="sympress-inline-state">
                                     <span><?php echo esc_html__('Configured endpoints', WordPressCacheSettings::TEXT_DOMAIN); ?> <strong><?php echo esc_html((string) ($remote['endpoints'] ?? 0)); ?></strong></span>
                                     <span><?php echo esc_html__('Signed payloads', WordPressCacheSettings::TEXT_DOMAIN); ?> <strong><?php echo esc_html($this->yesNo((bool) ($remote['signed'] ?? false))); ?></strong></span>
+                                    <span><?php echo esc_html__('Cloudflare configured', WordPressCacheSettings::TEXT_DOMAIN); ?> <strong><?php echo esc_html($this->yesNo((bool) ($cloudflare['configured'] ?? false))); ?></strong></span>
+                                    <span><?php echo esc_html__('Full purge mode', WordPressCacheSettings::TEXT_DOMAIN); ?> <strong><?php echo esc_html((string) ($fullPurge['mode'] ?? 'local_files')); ?></strong></span>
                                 </div>
                             </div>
                         </section>
@@ -720,6 +786,7 @@ final readonly class SettingsPage
                                             <?php $this->renderStatusRow(__('REST API', WordPressCacheSettings::TEXT_DOMAIN), $this->yesNo($this->settings->restEnabled())); ?>
                                             <?php $this->renderStatusRow(__('Selective purge', WordPressCacheSettings::TEXT_DOMAIN), $this->yesNo((bool) ($diagnostics['settings']['selective_purge'] ?? false))); ?>
                                             <?php $this->renderStatusRow(__('Remote endpoints', WordPressCacheSettings::TEXT_DOMAIN), (string) ($remote['endpoints'] ?? 0)); ?>
+                                            <?php $this->renderStatusRow(__('Cloudflare', WordPressCacheSettings::TEXT_DOMAIN), $this->yesNo((bool) ($cloudflare['configured'] ?? false))); ?>
                                         </tbody>
                                     </table>
                                 </div>
@@ -1501,14 +1568,16 @@ final readonly class SettingsPage
     private function renderScripts(): void
     {
         $recommended = [
-            WordPressCacheSettings::OPTION_AUTO_PURGE        => true,
-            WordPressCacheSettings::OPTION_SELECTIVE_PURGE   => true,
-            WordPressCacheSettings::OPTION_QUEUE_ENABLED     => true,
-            WordPressCacheSettings::OPTION_PREWARM_ENABLED   => true,
-            WordPressCacheSettings::OPTION_REST_ENABLED      => true,
-            WordPressCacheSettings::OPTION_TAG_INDEX_ENABLED => true,
-            WordPressCacheSettings::OPTION_DEBOUNCE_SECONDS  => '10',
-            WordPressCacheSettings::OPTION_HEARTBEAT_MODE    => 'reduce',
+            WordPressCacheSettings::OPTION_AUTO_PURGE         => true,
+            WordPressCacheSettings::OPTION_SELECTIVE_PURGE    => true,
+            WordPressCacheSettings::OPTION_QUEUE_ENABLED      => true,
+            WordPressCacheSettings::OPTION_PREWARM_ENABLED    => true,
+            WordPressCacheSettings::OPTION_REST_ENABLED       => true,
+            WordPressCacheSettings::OPTION_TAG_INDEX_ENABLED  => true,
+            WordPressCacheSettings::OPTION_PURGE_FEEDS        => true,
+            WordPressCacheSettings::OPTION_DEBOUNCE_SECONDS   => '10',
+            WordPressCacheSettings::OPTION_ARCHIVE_PAGE_LIMIT => '2',
+            WordPressCacheSettings::OPTION_HEARTBEAT_MODE     => 'reduce',
         ];
         $recommendedJson = function_exists('wp_json_encode')
             ? wp_json_encode($recommended)

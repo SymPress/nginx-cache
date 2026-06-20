@@ -24,10 +24,20 @@ final readonly class WordPressCacheSettings
     public const string OPTION_LAYER_SYNC_ENABLED = 'sympress_nginx_cache_layer_sync_enabled';
     public const string OPTION_REMOTE_ENDPOINTS = 'sympress_nginx_cache_remote_endpoints';
     public const string OPTION_REMOTE_SECRET = 'sympress_nginx_cache_remote_secret';
+    public const string OPTION_CLOUDFLARE_ENABLED = 'sympress_nginx_cache_cloudflare_enabled';
+    public const string OPTION_CLOUDFLARE_ZONE_ID = 'sympress_nginx_cache_cloudflare_zone_id';
+    public const string OPTION_CLOUDFLARE_API_TOKEN = 'sympress_nginx_cache_cloudflare_api_token';
+    public const string OPTION_FULL_PURGE_MODE = 'sympress_nginx_cache_full_purge_mode';
+    public const string OPTION_FULL_PURGE_ENDPOINT = 'sympress_nginx_cache_full_purge_endpoint';
+    public const string OPTION_FULL_PURGE_HTTP_METHOD = 'sympress_nginx_cache_full_purge_http_method';
     public const string OPTION_BYPASS_URIS = 'sympress_nginx_cache_bypass_uris';
     public const string OPTION_BYPASS_COOKIES = 'sympress_nginx_cache_bypass_cookies';
     public const string OPTION_BYPASS_USER_AGENTS = 'sympress_nginx_cache_bypass_user_agents';
     public const string OPTION_QUERY_ALLOWLIST = 'sympress_nginx_cache_query_allowlist';
+    public const string OPTION_PURGE_FEEDS = 'sympress_nginx_cache_purge_feeds';
+    public const string OPTION_FEED_VARIANTS = 'sympress_nginx_cache_feed_variants';
+    public const string OPTION_ARCHIVE_PAGE_LIMIT = 'sympress_nginx_cache_archive_page_limit';
+    public const string OPTION_PURGE_AMP = 'sympress_nginx_cache_purge_amp';
     public const string OPTION_HEARTBEAT_MODE = 'sympress_nginx_cache_heartbeat_mode';
     public const string OPTION_HEARTBEAT_INTERVAL = 'sympress_nginx_cache_heartbeat_interval';
     public const string OPTION_ONBOARDING_COMPLETED = 'sympress_nginx_cache_onboarding_completed';
@@ -45,110 +55,48 @@ final readonly class WordPressCacheSettings
             return;
         }
 
-        register_setting('sympress_nginx_cache', self::OPTION_PATH, [
-            'type'              => 'string',
-            'sanitize_callback' => $this->sanitizePath(...),
-            'default'           => '',
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_AUTO_PURGE, [
-            'type'              => 'boolean',
-            'sanitize_callback' => static fn (mixed $value): int => $value ? 1 : 0,
-            'default'           => 0,
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_PROFILE, [
-            'type'              => 'string',
-            'sanitize_callback' => $this->sanitizeProfile(...),
-            'default'           => CacheProfile::Safe->value,
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_SELECTIVE_PURGE, [
-            'type'              => 'boolean',
-            'sanitize_callback' => static fn (mixed $value): int => $value ? 1 : 0,
-            'default'           => 1,
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_QUEUE_ENABLED, [
-            'type'              => 'boolean',
-            'sanitize_callback' => static fn (mixed $value): int => $value ? 1 : 0,
-            'default'           => 1,
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_DEBOUNCE_SECONDS, [
-            'type'              => 'integer',
-            'sanitize_callback' => $this->sanitizeInteger(...),
-            'default'           => 10,
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_PREWARM_ENABLED, [
-            'type'              => 'boolean',
-            'sanitize_callback' => static fn (mixed $value): int => $value ? 1 : 0,
-            'default'           => 0,
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_PREWARM_URLS, [
-            'type'              => 'string',
-            'sanitize_callback' => $this->sanitizeTextarea(...),
-            'default'           => '',
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_REST_ENABLED, [
-            'type'              => 'boolean',
-            'sanitize_callback' => static fn (mixed $value): int => $value ? 1 : 0,
-            'default'           => 1,
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_TAG_INDEX_ENABLED, [
-            'type'              => 'boolean',
-            'sanitize_callback' => static fn (mixed $value): int => $value ? 1 : 0,
-            'default'           => 1,
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_DEBUG_HEADERS_ENABLED, [
-            'type'              => 'boolean',
-            'sanitize_callback' => static fn (mixed $value): int => $value ? 1 : 0,
-            'default'           => 0,
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_LAYER_SYNC_ENABLED, [
-            'type'              => 'boolean',
-            'sanitize_callback' => static fn (mixed $value): int => $value ? 1 : 0,
-            'default'           => 0,
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_REMOTE_ENDPOINTS, [
-            'type'              => 'string',
-            'sanitize_callback' => $this->sanitizeTextarea(...),
-            'default'           => '',
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_REMOTE_SECRET, [
-            'type'              => 'string',
-            'sanitize_callback' => $this->sanitizeSecret(...),
-            'default'           => '',
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_BYPASS_URIS, [
-            'type'              => 'string',
-            'sanitize_callback' => $this->sanitizeTextarea(...),
-            'default'           => '',
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_BYPASS_COOKIES, [
-            'type'              => 'string',
-            'sanitize_callback' => $this->sanitizeTextarea(...),
-            'default'           => '',
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_BYPASS_USER_AGENTS, [
-            'type'              => 'string',
-            'sanitize_callback' => $this->sanitizeTextarea(...),
-            'default'           => '',
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_QUERY_ALLOWLIST, [
-            'type'              => 'string',
-            'sanitize_callback' => $this->sanitizeTextarea(...),
-            'default'           => '',
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_HEARTBEAT_MODE, [
-            'type'              => 'string',
-            'sanitize_callback' => $this->sanitizeHeartbeatMode(...),
-            'default'           => 'default',
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_HEARTBEAT_INTERVAL, [
-            'type'              => 'integer',
-            'sanitize_callback' => $this->sanitizeHeartbeatInterval(...),
-            'default'           => 120,
-        ]);
-        register_setting('sympress_nginx_cache', self::OPTION_ONBOARDING_COMPLETED, [
-            'type'              => 'boolean',
-            'sanitize_callback' => static fn (mixed $value): int => $value ? 1 : 0,
-            'default'           => 0,
+        $boolean = static fn (mixed $value): int => $value ? 1 : 0;
+
+        $this->registerSetting(self::OPTION_PATH, 'string', $this->sanitizePath(...), '');
+        $this->registerSetting(self::OPTION_AUTO_PURGE, 'boolean', $boolean, 0);
+        $this->registerSetting(self::OPTION_PROFILE, 'string', $this->sanitizeProfile(...), CacheProfile::Safe->value);
+        $this->registerSetting(self::OPTION_SELECTIVE_PURGE, 'boolean', $boolean, 1);
+        $this->registerSetting(self::OPTION_QUEUE_ENABLED, 'boolean', $boolean, 1);
+        $this->registerSetting(self::OPTION_DEBOUNCE_SECONDS, 'integer', $this->sanitizeInteger(...), 10);
+        $this->registerSetting(self::OPTION_PREWARM_ENABLED, 'boolean', $boolean, 0);
+        $this->registerSetting(self::OPTION_PREWARM_URLS, 'string', $this->sanitizeTextarea(...), '');
+        $this->registerSetting(self::OPTION_REST_ENABLED, 'boolean', $boolean, 1);
+        $this->registerSetting(self::OPTION_TAG_INDEX_ENABLED, 'boolean', $boolean, 1);
+        $this->registerSetting(self::OPTION_DEBUG_HEADERS_ENABLED, 'boolean', $boolean, 0);
+        $this->registerSetting(self::OPTION_LAYER_SYNC_ENABLED, 'boolean', $boolean, 0);
+        $this->registerSetting(self::OPTION_REMOTE_ENDPOINTS, 'string', $this->sanitizeTextarea(...), '');
+        $this->registerSetting(self::OPTION_REMOTE_SECRET, 'string', $this->sanitizeSecret(...), '');
+        $this->registerSetting(self::OPTION_CLOUDFLARE_ENABLED, 'boolean', $boolean, 0);
+        $this->registerSetting(self::OPTION_CLOUDFLARE_ZONE_ID, 'string', $this->sanitizeSecret(...), '');
+        $this->registerSetting(self::OPTION_CLOUDFLARE_API_TOKEN, 'string', $this->sanitizeSecret(...), '');
+        $this->registerSetting(self::OPTION_FULL_PURGE_MODE, 'string', $this->sanitizeFullPurgeMode(...), 'local_files');
+        $this->registerSetting(self::OPTION_FULL_PURGE_ENDPOINT, 'string', $this->sanitizeSecret(...), '');
+        $this->registerSetting(self::OPTION_FULL_PURGE_HTTP_METHOD, 'string', $this->sanitizeFullPurgeHttpMethod(...), 'PURGE');
+        $this->registerSetting(self::OPTION_BYPASS_URIS, 'string', $this->sanitizeTextarea(...), '');
+        $this->registerSetting(self::OPTION_BYPASS_COOKIES, 'string', $this->sanitizeTextarea(...), '');
+        $this->registerSetting(self::OPTION_BYPASS_USER_AGENTS, 'string', $this->sanitizeTextarea(...), '');
+        $this->registerSetting(self::OPTION_QUERY_ALLOWLIST, 'string', $this->sanitizeTextarea(...), '');
+        $this->registerSetting(self::OPTION_PURGE_FEEDS, 'boolean', $boolean, 1);
+        $this->registerSetting(self::OPTION_FEED_VARIANTS, 'string', $this->sanitizeTextarea(...), "feed/\nfeed/atom/\nfeed/rdf/");
+        $this->registerSetting(self::OPTION_ARCHIVE_PAGE_LIMIT, 'integer', $this->sanitizeInteger(...), 1);
+        $this->registerSetting(self::OPTION_PURGE_AMP, 'boolean', $boolean, 0);
+        $this->registerSetting(self::OPTION_HEARTBEAT_MODE, 'string', $this->sanitizeHeartbeatMode(...), 'default');
+        $this->registerSetting(self::OPTION_HEARTBEAT_INTERVAL, 'integer', $this->sanitizeHeartbeatInterval(...), 120);
+        $this->registerSetting(self::OPTION_ONBOARDING_COMPLETED, 'boolean', $boolean, 0);
+    }
+
+    /** @param callable(mixed): mixed $sanitize */
+    private function registerSetting(string $option, string $type, callable $sanitize, mixed $default): void
+    {
+        register_setting('sympress_nginx_cache', $option, [
+            'type'              => $type,
+            'sanitize_callback' => $sanitize,
+            'default'           => $default,
         ]);
     }
 
@@ -326,6 +274,106 @@ final readonly class WordPressCacheSettings
         return $secret !== '' ? $secret : null;
     }
 
+    public function cloudflareEnabled(): bool
+    {
+        $enabled = $this->booleanOption(
+            self::OPTION_CLOUDFLARE_ENABLED,
+            $this->constantBool('SYMPRESS_NGINX_CACHE_CLOUDFLARE', false),
+        );
+
+        if (function_exists('apply_filters')) {
+            $enabled = (bool) apply_filters('sympress_nginx_cache_cloudflare_enabled', $enabled);
+        }
+
+        return $enabled;
+    }
+
+    public function cloudflareConfigured(): bool
+    {
+        return $this->cloudflareEnabled()
+            && $this->cloudflareZoneId() !== null
+            && $this->cloudflareApiToken() !== null;
+    }
+
+    public function cloudflareZoneId(): ?string
+    {
+        $zoneId = $this->constantValue('SYMPRESS_NGINX_CACHE_CLOUDFLARE_ZONE_ID')
+            ?? $this->rawOptionString(self::OPTION_CLOUDFLARE_ZONE_ID);
+
+        if (!is_string($zoneId)) {
+            return null;
+        }
+
+        $zoneId = (string) preg_replace('/[^A-Za-z0-9_-]+/', '', trim($zoneId));
+
+        if (function_exists('apply_filters')) {
+            $zoneId = (string) apply_filters('sympress_nginx_cache_cloudflare_zone_id', $zoneId);
+            $zoneId = (string) preg_replace('/[^A-Za-z0-9_-]+/', '', trim($zoneId));
+        }
+
+        return $zoneId !== '' ? $zoneId : null;
+    }
+
+    public function cloudflareApiToken(): ?string
+    {
+        $token = $this->constantValue('SYMPRESS_NGINX_CACHE_CLOUDFLARE_API_TOKEN')
+            ?? $this->rawOptionString(self::OPTION_CLOUDFLARE_API_TOKEN);
+
+        if (!is_string($token)) {
+            return null;
+        }
+
+        $token = trim($token);
+
+        if (function_exists('apply_filters')) {
+            $token = trim((string) apply_filters('sympress_nginx_cache_cloudflare_api_token', $token));
+        }
+
+        return $token !== '' ? $token : null;
+    }
+
+    public function fullPurgeMode(): string
+    {
+        $mode = $this->constantValue('SYMPRESS_NGINX_CACHE_FULL_PURGE_MODE')
+            ?? $this->rawOptionString(self::OPTION_FULL_PURGE_MODE)
+            ?? 'local_files';
+
+        if (function_exists('apply_filters')) {
+            $mode = (string) apply_filters('sympress_nginx_cache_full_purge_mode', $mode);
+        }
+
+        return in_array($mode, ['local_files', 'endpoint'], true) ? $mode : 'local_files';
+    }
+
+    public function fullPurgeEndpoint(): ?string
+    {
+        $endpoint = $this->constantValue('SYMPRESS_NGINX_CACHE_FULL_PURGE_ENDPOINT')
+            ?? $this->rawOptionString(self::OPTION_FULL_PURGE_ENDPOINT);
+
+        if (!is_string($endpoint) || trim($endpoint) === '') {
+            return null;
+        }
+
+        $endpoint = trim($endpoint);
+
+        if (function_exists('apply_filters')) {
+            $endpoint = (string) apply_filters('sympress_nginx_cache_full_purge_endpoint', $endpoint);
+        }
+
+        return $endpoint !== '' ? $endpoint : null;
+    }
+
+    public function fullPurgeHttpMethod(): string
+    {
+        $method = $this->constantValue('SYMPRESS_NGINX_CACHE_FULL_PURGE_HTTP_METHOD')
+            ?? $this->rawOptionString(self::OPTION_FULL_PURGE_HTTP_METHOD)
+            ?? 'PURGE';
+
+        $method = strtoupper(trim($method));
+
+        return in_array($method, ['DELETE', 'POST', 'PURGE'], true) ? $method : 'PURGE';
+    }
+
     /** @return list<string> */
     public function customBypassUris(): array
     {
@@ -348,6 +396,92 @@ final readonly class WordPressCacheSettings
     public function customQueryAllowlist(): array
     {
         return $this->stringsFromText($this->rawOptionString(self::OPTION_QUERY_ALLOWLIST) ?? '');
+    }
+
+    public function purgeFeedsEnabled(): bool
+    {
+        return $this->booleanOption(
+            self::OPTION_PURGE_FEEDS,
+            $this->constantBool('SYMPRESS_NGINX_CACHE_PURGE_FEEDS', true),
+        );
+    }
+
+    /** @return list<string> */
+    public function feedVariants(): array
+    {
+        $variants = $this->stringsFromText(
+            $this->constantValue('SYMPRESS_NGINX_CACHE_FEED_VARIANTS')
+            ?? $this->rawOptionString(self::OPTION_FEED_VARIANTS)
+            ?? "feed/\nfeed/atom/\nfeed/rdf/",
+        );
+
+        if (function_exists('apply_filters')) {
+            $variants = (array) apply_filters('sympress_nginx_cache_feed_variants', $variants);
+        }
+
+        return array_values(
+            array_unique(
+                array_filter(
+                    array_map($this->normalizeFeedVariant(...), $variants),
+                    static fn (string $variant): bool => $variant !== '',
+                ),
+            ),
+        );
+    }
+
+    public function maxFeedUrls(): int
+    {
+        $value = $this->constantInt('SYMPRESS_NGINX_CACHE_FEED_URL_LIMIT', 60);
+
+        if (function_exists('apply_filters')) {
+            $value = (int) apply_filters('sympress_nginx_cache_feed_url_limit', $value);
+        }
+
+        return max(0, min(500, $value));
+    }
+
+    public function archivePageLimit(): int
+    {
+        $value = $this->integerOption(
+            self::OPTION_ARCHIVE_PAGE_LIMIT,
+            $this->constantInt('SYMPRESS_NGINX_CACHE_ARCHIVE_PAGE_LIMIT', 1),
+        );
+
+        if (function_exists('apply_filters')) {
+            $value = (int) apply_filters('sympress_nginx_cache_archive_page_limit', $value);
+        }
+
+        return max(1, min(50, $value));
+    }
+
+    public function purgeAmpEnabled(): bool
+    {
+        return $this->booleanOption(
+            self::OPTION_PURGE_AMP,
+            $this->constantBool('SYMPRESS_NGINX_CACHE_PURGE_AMP', false),
+        );
+    }
+
+    public function maxSurrogateHeaderLength(): int
+    {
+        $value = $this->constantInt('SYMPRESS_NGINX_CACHE_SURROGATE_HEADER_LIMIT', 32512);
+
+        if (function_exists('apply_filters')) {
+            $value = (int) apply_filters('sympress_nginx_cache_surrogate_header_limit', $value);
+        }
+
+        return max(512, min(65536, $value));
+    }
+
+    public function maxCloudflareHeaderLength(): int
+    {
+        $value = $this->constantInt('SYMPRESS_NGINX_CACHE_CLOUDFLARE_HEADER_LIMIT', 16000);
+
+        if (function_exists('apply_filters')) {
+            $value = (int) apply_filters('sympress_nginx_cache_cloudflare_header_limit', $value);
+        }
+
+        return max(512, min(16000, $value));
     }
 
     public function heartbeatMode(): string
@@ -381,26 +515,36 @@ final readonly class WordPressCacheSettings
         }
 
         $defaults = [
-            self::OPTION_PATH                  => '',
-            self::OPTION_AUTO_PURGE            => 0,
-            self::OPTION_PROFILE               => CacheProfile::Safe->value,
-            self::OPTION_SELECTIVE_PURGE       => 1,
-            self::OPTION_QUEUE_ENABLED         => 1,
-            self::OPTION_DEBOUNCE_SECONDS      => 10,
-            self::OPTION_PREWARM_ENABLED       => 0,
-            self::OPTION_PREWARM_URLS          => '',
-            self::OPTION_REST_ENABLED          => 1,
-            self::OPTION_TAG_INDEX_ENABLED     => 1,
-            self::OPTION_DEBUG_HEADERS_ENABLED => 0,
-            self::OPTION_LAYER_SYNC_ENABLED    => 0,
-            self::OPTION_REMOTE_ENDPOINTS      => '',
-            self::OPTION_REMOTE_SECRET         => '',
-            self::OPTION_BYPASS_URIS           => '',
-            self::OPTION_BYPASS_COOKIES        => '',
-            self::OPTION_BYPASS_USER_AGENTS    => '',
-            self::OPTION_QUERY_ALLOWLIST       => '',
-            self::OPTION_HEARTBEAT_MODE        => 'default',
-            self::OPTION_HEARTBEAT_INTERVAL    => 120,
+            self::OPTION_PATH                   => '',
+            self::OPTION_AUTO_PURGE             => 0,
+            self::OPTION_PROFILE                => CacheProfile::Safe->value,
+            self::OPTION_SELECTIVE_PURGE        => 1,
+            self::OPTION_QUEUE_ENABLED          => 1,
+            self::OPTION_DEBOUNCE_SECONDS       => 10,
+            self::OPTION_PREWARM_ENABLED        => 0,
+            self::OPTION_PREWARM_URLS           => '',
+            self::OPTION_REST_ENABLED           => 1,
+            self::OPTION_TAG_INDEX_ENABLED      => 1,
+            self::OPTION_DEBUG_HEADERS_ENABLED  => 0,
+            self::OPTION_LAYER_SYNC_ENABLED     => 0,
+            self::OPTION_REMOTE_ENDPOINTS       => '',
+            self::OPTION_REMOTE_SECRET          => '',
+            self::OPTION_CLOUDFLARE_ENABLED     => 0,
+            self::OPTION_CLOUDFLARE_ZONE_ID     => '',
+            self::OPTION_CLOUDFLARE_API_TOKEN   => '',
+            self::OPTION_FULL_PURGE_MODE        => 'local_files',
+            self::OPTION_FULL_PURGE_ENDPOINT    => '',
+            self::OPTION_FULL_PURGE_HTTP_METHOD => 'PURGE',
+            self::OPTION_BYPASS_URIS            => '',
+            self::OPTION_BYPASS_COOKIES         => '',
+            self::OPTION_BYPASS_USER_AGENTS     => '',
+            self::OPTION_QUERY_ALLOWLIST        => '',
+            self::OPTION_PURGE_FEEDS            => 1,
+            self::OPTION_FEED_VARIANTS          => "feed/\nfeed/atom/\nfeed/rdf/",
+            self::OPTION_ARCHIVE_PAGE_LIMIT     => 1,
+            self::OPTION_PURGE_AMP              => 0,
+            self::OPTION_HEARTBEAT_MODE         => 'default',
+            self::OPTION_HEARTBEAT_INTERVAL     => 120,
         ];
 
         foreach ($defaults as $option => $default) {
@@ -502,11 +646,27 @@ final readonly class WordPressCacheSettings
             'debug_headers'    => $this->debugHeadersEnabled(),
             'layer_sync'       => $this->layerSyncEnabled(),
             'remote_endpoints' => count($this->remoteEndpoints()),
+            'cloudflare'       => [
+                'enabled'    => $this->cloudflareEnabled(),
+                'configured' => $this->cloudflareConfigured(),
+                'zone_id'    => $this->cloudflareZoneId() !== null,
+                'api_token'  => $this->cloudflareApiToken() !== null,
+                'header_max' => $this->maxCloudflareHeaderLength(),
+            ],
+            'full_purge'       => [
+                'mode'        => $this->fullPurgeMode(),
+                'endpoint'    => $this->fullPurgeEndpoint() !== null,
+                'http_method' => $this->fullPurgeHttpMethod(),
+            ],
             'advanced_rules'   => [
                 'bypass_uris'        => count($this->customBypassUris()),
                 'bypass_cookies'     => count($this->customBypassCookies()),
                 'bypass_user_agents' => count($this->customBypassUserAgents()),
                 'query_allowlist'    => count($this->customQueryAllowlist()),
+                'purge_feeds'        => $this->purgeFeedsEnabled(),
+                'feed_variants'      => count($this->feedVariants()),
+                'archive_page_limit' => $this->archivePageLimit(),
+                'purge_amp'          => $this->purgeAmpEnabled(),
             ],
             'heartbeat'        => [
                 'mode'     => $this->heartbeatMode(),
@@ -528,6 +688,8 @@ final readonly class WordPressCacheSettings
         $resolver->setAllowedTypes('debug_headers', 'bool');
         $resolver->setAllowedTypes('layer_sync', 'bool');
         $resolver->setAllowedTypes('remote_endpoints', 'int');
+        $resolver->setAllowedTypes('cloudflare', 'array');
+        $resolver->setAllowedTypes('full_purge', 'array');
         $resolver->setAllowedTypes('advanced_rules', 'array');
         $resolver->setAllowedTypes('heartbeat', 'array');
 
@@ -537,7 +699,7 @@ final readonly class WordPressCacheSettings
     /** @return list<string> */
     public function excludedPostTypes(): array
     {
-        $postTypes = [];
+        $postTypes = ['nav_menu_item', 'revision', 'customize_changeset', 'oembed_cache'];
 
         if (function_exists('apply_filters')) {
             $postTypes = (array) apply_filters('nginx_cache_excluded_post_types', $postTypes);
@@ -623,6 +785,24 @@ final readonly class WordPressCacheSettings
         }
 
         return in_array($mode, ['default', 'reduce', 'disable'], true) ? $mode : 'default';
+    }
+
+    public function sanitizeFullPurgeMode(mixed $value): string
+    {
+        $mode = is_string($value) ? $value : 'local_files';
+
+        if (function_exists('sanitize_key')) {
+            $mode = sanitize_key($mode);
+        }
+
+        return in_array($mode, ['local_files', 'endpoint'], true) ? $mode : 'local_files';
+    }
+
+    public function sanitizeFullPurgeHttpMethod(mixed $value): string
+    {
+        $method = is_string($value) ? strtoupper(trim($value)) : 'PURGE';
+
+        return in_array($method, ['DELETE', 'POST', 'PURGE'], true) ? $method : 'PURGE';
     }
 
     public function sanitizeHeartbeatInterval(mixed $value): int
@@ -735,6 +915,18 @@ final readonly class WordPressCacheSettings
                 ),
             ),
         );
+    }
+
+    private function normalizeFeedVariant(string $variant): string
+    {
+        $variant = trim(str_replace('\\', '/', $variant));
+        $variant = trim($variant, '/');
+
+        if ($variant === '' || preg_match('/[^A-Za-z0-9._-]/', $variant) === 1) {
+            return '';
+        }
+
+        return $variant . '/';
     }
 
     private function urlPolicy(): UrlPolicy

@@ -54,8 +54,19 @@ final readonly class Diagnostics
                 'available'    => $this->layers->available(),
             ],
             'remote'       => [
-                'endpoints' => count($this->settings->remoteEndpoints()),
-                'signed'    => $this->settings->remoteSecret() !== null,
+                'endpoints'  => count($this->settings->remoteEndpoints()),
+                'signed'     => $this->settings->remoteSecret() !== null,
+                'cloudflare' => [
+                    'enabled'    => $this->settings->cloudflareEnabled(),
+                    'configured' => $this->settings->cloudflareConfigured(),
+                    'zone_id'    => $this->settings->cloudflareZoneId() !== null,
+                    'api_token'  => $this->settings->cloudflareApiToken() !== null,
+                ],
+                'full_purge' => [
+                    'mode'        => $this->settings->fullPurgeMode(),
+                    'endpoint'    => $this->settings->fullPurgeEndpoint() !== null,
+                    'http_method' => $this->settings->fullPurgeHttpMethod(),
+                ],
             ],
             'nginx_config' => [
                 'profile'            => $this->settings->profile()->value,
