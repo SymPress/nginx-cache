@@ -8,16 +8,31 @@ services:
         autoconfigure: true
         public: false
 
+    _instanceof:
+        SymPress\NginxCache\Cli\Command\WpCliCommand:
+            tags:
+                - { name: sympress_nginx_cache.wp_cli_command }
+                - { name: console.command }
+
     Symfony\Component\Filesystem\Filesystem: ~
+
+    Symfony\Component\Clock\ClockInterface:
+        factory: ['Symfony\Component\Clock\Clock', 'get']
 
     Symfony\Contracts\HttpClient\HttpClientInterface:
         factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
+
+    Symfony\Component\Lock\PersistingStoreInterface:
+        alias: SymPress\NginxCache\Support\WordPressOptionLockStore
+
+    Symfony\Component\Lock\LockFactory: ~
 
     SymPress\NginxCache\:
         resource: '../../src/'
         exclude:
             - '../../src/NginxCacheBundle.php'
             - '../../src/Exception/'
+            - '../../src/Event/'
             - '../../src/Value/'
 
     SymPress\NginxCache\Settings\WordPressCacheSettings:
@@ -48,6 +63,14 @@ services:
             - { name: kernel.hook, hook: 'send_headers', method: sendHeaders }
             - { name: kernel.hook, hook: 'shutdown', method: remember, priority: 900000 }
 
+    SymPress\NginxCache\Hook\RestGraphQlCacheTagSubscriber:
+        tags:
+            - { name: kernel.hook, hook: 'rest_api_init', method: registerRestFilters }
+            - { name: kernel.hook, hook: 'rest_pre_dispatch', method: resetRestTags, type: filter, accepted_args: 3 }
+            - { name: kernel.hook, hook: 'rest_post_dispatch', method: addRestHeaders, type: filter, accepted_args: 3 }
+            - { name: kernel.hook, hook: 'graphql_dataloader_get_model', method: collectGraphQlModel, type: filter, accepted_args: 1 }
+            - { name: kernel.hook, hook: 'graphql_response_headers_to_send', method: addGraphQlHeaders, type: filter, accepted_args: 1 }
+
     SymPress\NginxCache\Hook\HeartbeatControlSubscriber:
         tags:
             - { name: kernel.hook, hook: 'heartbeat_settings', method: configure, type: filter, accepted_args: 1 }
@@ -67,5 +90,7 @@ services:
             - { name: kernel.hook, hook: 'rest_api_init', method: register }
 
     SymPress\NginxCache\Cli\CacheCommand:
+        arguments:
+            $commands: !tagged_iterator sympress_nginx_cache.wp_cli_command
         tags:
             - { name: kernel.hook, hook: 'cli_init', method: register }
