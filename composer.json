@@ -12,11 +12,16 @@
     ],
     "require": {
         "php": "^8.5",
+        "symfony/clock": "^8.0",
+        "symfony/console": "^8.0",
         "symfony/filesystem": "^8.0",
         "symfony/finder": "^8.0",
         "symfony/http-client": "^8.0",
+        "symfony/lock": "^8.0",
         "symfony/options-resolver": "^8.0",
-        "sympress/kernel": "dev-main"
+        "sympress/event-dispatcher": "dev-main",
+        "sympress/kernel": "dev-main",
+        "sympress/wp-cli-console": "dev-main"
     },
     "require-dev": {
         "symfony/var-dumper": "^8.1",
