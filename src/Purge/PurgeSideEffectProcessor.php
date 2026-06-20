@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Purge;
 
 use SymPress\NginxCache\Layer\CacheLayerCoordinator;
+use SymPress\NginxCache\Remote\CloudflarePurgeDispatcher;
 use SymPress\NginxCache\Remote\RemotePurgeDispatcher;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
+use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
 
@@ -20,6 +22,8 @@ final readonly class PurgeSideEffectProcessor
         private Prewarmer $prewarmer,
         private CacheLayerCoordinator $layers,
         private RemotePurgeDispatcher $remote,
+        private CloudflarePurgeDispatcher $cloudflare,
+        private CacheClock $clock,
     ) {
     }
 
@@ -66,6 +70,12 @@ final readonly class PurgeSideEffectProcessor
                 $sideEffects['remote'] = $remote;
             }
 
+            $cloudflare = $this->cloudflare->dispatch($result, $request);
+
+            if ($cloudflare !== []) {
+                $sideEffects['cloudflare'] = $cloudflare;
+            }
+
             if (!function_exists('do_action')) {
                 continue;
             }
@@ -84,7 +94,7 @@ final readonly class PurgeSideEffectProcessor
             return;
         }
 
-        wp_schedule_single_event(time() + 1, self::HOOK);
+        wp_schedule_single_event($this->clock->timestamp() + 1, self::HOOK);
     }
 
     public function count(): int
@@ -111,6 +121,10 @@ final readonly class PurgeSideEffectProcessor
 
         if ($this->settings->remoteEndpoints() !== []) {
             $tasks[] = 'remote';
+        }
+
+        if ($this->cloudflare->enabled()) {
+            $tasks[] = 'cloudflare';
         }
 
         return $tasks;
