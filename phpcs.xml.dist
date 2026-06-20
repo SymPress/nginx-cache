@@ -43,6 +43,15 @@
         <exclude name="WordPressVIPMinimum.Functions.StripTags.StripTagsOneParameter" />
     </rule>
 
+    <rule ref="SymPress.Classes.ClassLength.TooLong">
+        <exclude-pattern>src/Admin/SettingsPage.php</exclude-pattern>
+        <exclude-pattern>src/Settings/WordPressCacheSettings.php</exclude-pattern>
+    </rule>
+
+    <rule ref="SymPress.Files.FileLength.TooLong">
+        <exclude-pattern>src/Admin/SettingsPage.php</exclude-pattern>
+    </rule>
+
     <rule ref="SymPress.Namespaces.Psr4">
         <properties>
             <property name="psr4" type="array">

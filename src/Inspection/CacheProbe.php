@@ -165,7 +165,7 @@ final readonly class CacheProbe
     private function bypassReasons(string $url, string $cookieHeader): array
     {
         $reasons = [];
-        $parts = parse_url($url);
+        $parts = $this->parseUrl($url);
         $path = is_array($parts) && is_string($parts['path'] ?? null) ? $parts['path'] : '/';
         $query = is_array($parts) && is_string($parts['query'] ?? null) ? $parts['query'] : '';
         $rules = $this->rules->rules($this->settings->profile());
@@ -195,5 +195,16 @@ final readonly class CacheProbe
         }
 
         return false;
+    }
+
+    /** @return array<string, mixed>|false */
+    private function parseUrl(string $url): array|false
+    {
+        if (function_exists('wp_parse_url')) {
+            return wp_parse_url($url);
+        }
+
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Fallback when WordPress is not loaded.
+        return parse_url($url);
     }
 }

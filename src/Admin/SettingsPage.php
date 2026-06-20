@@ -1510,7 +1510,10 @@ final readonly class SettingsPage
             WordPressCacheSettings::OPTION_DEBOUNCE_SECONDS  => '10',
             WordPressCacheSettings::OPTION_HEARTBEAT_MODE    => 'reduce',
         ];
-        $recommendedJson = function_exists('wp_json_encode') ? wp_json_encode($recommended) : json_encode($recommended);
+        $recommendedJson = function_exists('wp_json_encode')
+            ? wp_json_encode($recommended)
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Fallback when WordPress is not loaded.
+            : json_encode($recommended);
 
         ?>
         <script>
@@ -2028,7 +2031,7 @@ final readonly class SettingsPage
 
         $date = function_exists('wp_date')
             ? wp_date('Y-m-d H:i:s', $timestamp)
-            : date('Y-m-d H:i:s', $timestamp);
+            : gmdate('Y-m-d H:i:s', $timestamp);
 
         return is_string($date) ? $date : '';
     }

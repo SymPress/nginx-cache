@@ -22,7 +22,7 @@ final readonly class CacheKeyStrategy
     /** @return list<array{scheme: string, forwarded_protocol: string, method: string, host: string, uri: string, key: string}> */
     public function candidates(string $url): array
     {
-        $parts = function_exists('wp_parse_url') ? wp_parse_url($url) : parse_url($url);
+        $parts = $this->parseUrl($url);
 
         if (!is_array($parts)) {
             return [];
@@ -193,5 +193,16 @@ final readonly class CacheKeyStrategy
         $query = is_string($parts['query'] ?? null) && $parts['query'] !== '' ? '?' . $parts['query'] : '';
 
         return $path . $query;
+    }
+
+    /** @return array<string, mixed>|false */
+    private function parseUrl(string $url): array|false
+    {
+        if (function_exists('wp_parse_url')) {
+            return wp_parse_url($url);
+        }
+
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Fallback when WordPress is not loaded.
+        return parse_url($url);
     }
 }

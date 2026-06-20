@@ -74,7 +74,7 @@ final readonly class UrlPolicy
 
     public function hasUnsafeNetworkTarget(string $url): bool
     {
-        $parts = parse_url($url);
+        $parts = $this->parseUrl($url);
         $host = is_array($parts) && is_string($parts['host'] ?? null) ? strtolower($parts['host']) : '';
 
         if ($host === '') {
@@ -124,7 +124,7 @@ final readonly class UrlPolicy
             return '';
         }
 
-        $parts = parse_url($url);
+        $parts = $this->parseUrl($url);
 
         if (!is_array($parts)) {
             return '';
@@ -226,7 +226,7 @@ final readonly class UrlPolicy
     /** @return array{scheme: string, host: string, port: int}|null */
     private function originParts(string $url): ?array
     {
-        $parts = parse_url($url);
+        $parts = $this->parseUrl($url);
 
         if (!is_array($parts)) {
             return null;
@@ -361,8 +361,19 @@ final readonly class UrlPolicy
 
     private function hostFromUrl(string $url): string
     {
-        $parts = parse_url($url);
+        $parts = $this->parseUrl($url);
 
         return is_array($parts) && is_string($parts['host'] ?? null) ? strtolower($parts['host']) : '';
+    }
+
+    /** @return array<string, mixed>|false */
+    private function parseUrl(string $url): array|false
+    {
+        if (function_exists('wp_parse_url')) {
+            return wp_parse_url($url);
+        }
+
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Fallback when WordPress is not loaded.
+        return parse_url($url);
     }
 }

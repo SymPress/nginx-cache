@@ -52,6 +52,7 @@ final readonly class RemotePurgeDispatcher
         $payload = $this->payload($result, $request);
 
         try {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Fallback-safe payload encoding for remote purge APIs.
             $body = (string) json_encode($payload, JSON_THROW_ON_ERROR);
         } catch (\JsonException $exception) {
             return array_map(
@@ -157,8 +158,19 @@ final readonly class RemotePurgeDispatcher
 
     private function host(string $endpoint): string
     {
-        $parts = parse_url($endpoint);
+        $parts = $this->parseUrl($endpoint);
 
         return is_array($parts) && is_string($parts['host'] ?? null) ? strtolower($parts['host']) : '';
+    }
+
+    /** @return array<string, mixed>|false */
+    private function parseUrl(string $url): array|false
+    {
+        if (function_exists('wp_parse_url')) {
+            return wp_parse_url($url);
+        }
+
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Fallback when WordPress is not loaded.
+        return parse_url($url);
     }
 }
