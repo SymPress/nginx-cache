@@ -6,6 +6,7 @@ namespace SymPress\NginxCache\Remote;
 
 use SymPress\NginxCache\Security\UrlPolicy;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
+use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -16,6 +17,7 @@ final readonly class RemotePurgeDispatcher
         private HttpClientInterface $http,
         private WordPressCacheSettings $settings,
         private UrlPolicy $urls,
+        private CacheClock $clock,
     ) {
     }
 
@@ -91,7 +93,7 @@ final readonly class RemotePurgeDispatcher
             ],
             'request'    => $request->toArray(),
             'result'     => $result->toArray(),
-            'created_at' => time(),
+            'created_at' => $this->clock->timestamp(),
         ];
 
         if (function_exists('apply_filters')) {
@@ -104,7 +106,7 @@ final readonly class RemotePurgeDispatcher
     /** @return array{endpoint: string, status: int|null, successful: bool, error: string|null} */
     private function dispatchEndpoint(string $endpoint, string $body): array
     {
-        $timestamp = (string) time();
+        $timestamp = (string) $this->clock->timestamp();
         $headers = [
             'Content-Type'         => 'application/json',
             'User-Agent'           => 'SymPress Nginx Cache Remote Purge',

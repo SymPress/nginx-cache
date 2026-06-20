@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Purge;
 
 use SymPress\NginxCache\Support\OptionMutex;
+use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
 
@@ -15,6 +16,7 @@ final readonly class PurgeSideEffectQueueRepository
 
     public function __construct(
         private OptionMutex $mutex,
+        private CacheClock $clock,
     ) {
     }
 
@@ -31,7 +33,7 @@ final readonly class PurgeSideEffectQueueRepository
                 ...$this->all(), [
                     'result'    => $result->toArray(),
                     'request'   => $request->toArray(),
-                    'queued_at' => time(),
+                    'queued_at' => $this->clock->timestamp(),
                 ],
                 ];
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Surrogate;
 
 use SymPress\NginxCache\Security\UrlPolicy;
+use SymPress\NginxCache\Time\CacheClock;
 
 final readonly class TagIndexRepository
 {
@@ -16,6 +17,7 @@ final readonly class TagIndexRepository
     public function __construct(
         private CacheTagResolver $tags,
         private UrlPolicy $urls,
+        private CacheClock $clock,
     ) {
     }
 
@@ -30,7 +32,7 @@ final readonly class TagIndexRepository
 
         $index = $this->index();
         $normalizedTags = $this->tags->normalize($tags);
-        $timestamp = time();
+        $timestamp = $this->clock->timestamp();
 
         foreach ($index as $tag => $urls) {
             unset($index[$tag][$url[0]]);

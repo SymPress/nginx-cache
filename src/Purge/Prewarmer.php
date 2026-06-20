@@ -6,6 +6,7 @@ namespace SymPress\NginxCache\Purge;
 
 use SymPress\NginxCache\Security\UrlPolicy;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
+use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PrewarmResult;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -15,6 +16,7 @@ final readonly class Prewarmer
         private HttpClientInterface $http,
         private WordPressCacheSettings $settings,
         private UrlPolicy $urls,
+        private CacheClock $clock,
     ) {
     }
 
@@ -57,7 +59,7 @@ final readonly class Prewarmer
                 continue;
             }
 
-            usleep($delay * 1000);
+            $this->clock->sleepMicroseconds($delay * 1000);
         }
 
         return new PrewarmResult($urls, $responses, $errors);

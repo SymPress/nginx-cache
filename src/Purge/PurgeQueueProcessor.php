@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Purge;
 
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
+use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
 
 final readonly class PurgeQueueProcessor
@@ -15,6 +16,7 @@ final readonly class PurgeQueueProcessor
         private WordPressCacheSettings $settings,
         private PurgeQueueRepository $queue,
         private CacheManager $cache,
+        private CacheClock $clock,
     ) {
     }
 
@@ -41,7 +43,7 @@ final readonly class PurgeQueueProcessor
             return;
         }
 
-        wp_schedule_single_event(time() + $this->settings->debounceSeconds(), self::HOOK);
+        wp_schedule_single_event($this->clock->timestamp() + $this->settings->debounceSeconds(), self::HOOK);
     }
 
     public function count(): int

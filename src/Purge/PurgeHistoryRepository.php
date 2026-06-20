@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Purge;
 
+use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeResult;
 
 final readonly class PurgeHistoryRepository
@@ -11,6 +12,11 @@ final readonly class PurgeHistoryRepository
     private const string OPTION_LAST = 'sympress_nginx_cache_last_purge';
     private const string OPTION_HISTORY = 'sympress_nginx_cache_purge_history';
     private const int MAX_HISTORY = 20;
+
+    public function __construct(
+        private CacheClock $clock,
+    ) {
+    }
 
     public function record(PurgeResult $result): void
     {
@@ -20,8 +26,9 @@ final readonly class PurgeHistoryRepository
 
         $record = [
             ...$result->toArray(),
-            'actor'     => $this->actor(),
-            'client_ip' => $this->clientIp(),
+            'created_at' => $result->createdAt > 0 ? $result->createdAt : $this->clock->timestamp(),
+            'actor'      => $this->actor(),
+            'client_ip'  => $this->clientIp(),
         ];
         update_option(self::OPTION_LAST, $record, false);
 

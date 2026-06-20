@@ -9,6 +9,7 @@ use SymPress\NginxCache\Key\CacheKeyStrategy;
 use SymPress\NginxCache\Purge\CacheFileResolver;
 use SymPress\NginxCache\Security\UrlPolicy;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
+use SymPress\NginxCache\Time\CacheClock;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 final readonly class CacheProbe
@@ -21,20 +22,21 @@ final readonly class CacheProbe
         private UrlPolicy $urls,
         private CacheKeyStrategy $keys,
         private ResponseCacheability $cacheability,
+        private CacheClock $clock,
     ) {
     }
 
     /** @return array<string, mixed> */
     public function probe(string $url, string $cookieHeader = ''): array
     {
-        $startedAt = microtime(true);
+        $startedAt = $this->clock->highResolutionTimestamp();
         $url = $this->urls->normalizeSameOriginHttpUrl($url);
 
         if ($url === '') {
             return [
                 'url'                  => '',
                 'status'               => null,
-                'duration_ms'          => (int) round((microtime(true) - $startedAt) * 1000),
+                'duration_ms'          => $this->durationMilliseconds($startedAt),
                 'profile'              => $this->settings->profile()->value,
                 'cache_key_template'   => $this->keys->template(),
                 'cache'                => [
@@ -85,7 +87,7 @@ final readonly class CacheProbe
         return [
             'url'                  => $url,
             'status'               => $status,
-            'duration_ms'          => (int) round((microtime(true) - $startedAt) * 1000),
+            'duration_ms'          => $this->durationMilliseconds($startedAt),
             'profile'              => $this->settings->profile()->value,
             'cache_key_template'   => $this->keys->template(),
             'cache'                => [
@@ -104,6 +106,11 @@ final readonly class CacheProbe
             'cache_key_candidates' => $this->fileCandidates($url),
             'error'                => $error,
         ];
+    }
+
+    private function durationMilliseconds(float $startedAt): int
+    {
+        return (int) round($this->clock->elapsedSince($startedAt) * 1000);
     }
 
     /** @param array<string, list<string>> $headers */
