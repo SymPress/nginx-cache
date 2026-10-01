@@ -20,13 +20,13 @@
         "symfony/http-client": "^8.0",
         "symfony/lock": "^8.0",
         "symfony/options-resolver": "^8.0",
-        "sympress/event-dispatcher": "dev-main",
-        "sympress/kernel": "dev-main",
-        "sympress/wp-cli-console": "dev-main"
+        "sympress/event-dispatcher": "^1.0.2",
+        "sympress/kernel": "^1.1.1",
+        "sympress/wp-cli-console": "^1.0.2"
     },
     "require-dev": {
         "symfony/var-dumper": "^8.1",
-        "sympress/qa": "dev-main",
+        "sympress/qa": "^0.1.2",
         "wp-cli/wp-cli-bundle": "^2.12.0"
     },
     "autoload": {
@@ -78,15 +78,6 @@
             "phpstan/extension-installer": true
         }
     },
-    "repositories": [
-        {
-            "type": "path",
-            "url": "./../*",
-            "options": {
-                "symlink": true
-            }
-        }
-    ],
     "extra": {
         "wordpress-install-dir": "vendor/wordpress/wordpress",
         "kernel": {
@@ -94,6 +85,6 @@
             "entry": "nginx-cache/nginx-cache.php"
         }
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true
 }
