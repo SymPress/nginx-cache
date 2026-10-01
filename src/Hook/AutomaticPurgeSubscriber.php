@@ -32,12 +32,6 @@ final class AutomaticPurgeSubscriber
         }
 
         foreach ($this->purgeActions() as $action) {
-            if (did_action($action) > 0) {
-                $this->purgeOnce($action);
-
-                continue;
-            }
-
             add_action(
                 $action,
                 function (mixed ...$arguments) use ($action): void {
@@ -51,11 +45,14 @@ final class AutomaticPurgeSubscriber
 
     public function purgeOnce(string $hook = 'unknown', mixed ...$arguments): void
     {
-        if ($this->flushed || !$this->shouldPurge($arguments)) {
+        if ($this->flushed || !$this->shouldPurge($hook, $arguments)) {
             return;
         }
 
         $request = $this->request($hook, $arguments);
+        if ($request === null) {
+            return;
+        }
         $merged = $this->merger->merge(array_values(array_filter([$this->pending, $request])));
         $this->pending = $merged[0] ?? null;
     }
@@ -69,7 +66,14 @@ final class AutomaticPurgeSubscriber
         if ($this->settings->queueEnabled()) {
             $this->queue->enqueue($this->pending);
         } else {
-            $this->cache->purgeConfiguredPath($this->pending);
+            try {
+                $result = $this->cache->purgeConfiguredPath($this->pending);
+                if (!$result->successful) {
+                    $this->queue->enqueue($this->pending);
+                }
+            } catch (\Throwable) {
+                $this->queue->enqueue($this->pending);
+            }
         }
 
         $this->flushed = true;
@@ -111,6 +115,8 @@ final class AutomaticPurgeSubscriber
             'wp_create_nav_menu',
             'wp_delete_nav_menu',
             'edit_user_profile_update',
+            'profile_update',
+            'deleted_user',
             'update_option_permalink_structure',
             'upgrader_process_complete',
         ];
@@ -134,13 +140,14 @@ final class AutomaticPurgeSubscriber
     }
 
     /** @param array<mixed> $arguments */
-    private function shouldPurge(array $arguments): bool
+    private function shouldPurge(string $hook, array $arguments): bool
     {
-        if ($this->isAutosaveOrRevision($arguments[0] ?? null)) {
+        if (!$this->urls->publicMutation($hook, $arguments) || $this->isAutosaveOrRevision($this->urls->postId($hook, $arguments))) {
             return false;
         }
 
-        $postType = $this->postTypeFromArguments($arguments);
+        $id = $this->urls->postId($hook, $arguments);
+        $postType = $id !== null && function_exists('get_post_type') ? get_post_type($id) : null;
 
         if ($postType !== null && in_array($postType, $this->settings->excludedPostTypes(), true)) {
             return false;
@@ -157,13 +164,9 @@ final class AutomaticPurgeSubscriber
     }
 
     /** @param array<mixed> $arguments */
-    private function request(string $hook, array $arguments): PurgeRequest
+    private function request(string $hook, array $arguments): ?PurgeRequest
     {
-        if ($this->isImportRequest()) {
-            return PurgeRequest::full('bulk-import', 'wordpress-hook', false, $this->settings->prewarmEnabled());
-        }
-
-        if (!$this->settings->selectivePurgeEnabled() || $this->urls->requiresFullPurge($hook)) {
+        if ($this->urls->requiresFullPurge($hook)) {
             return PurgeRequest::full($hook, 'wordpress-hook', false, $this->settings->prewarmEnabled());
         }
 
@@ -171,31 +174,13 @@ final class AutomaticPurgeSubscriber
         $tags = $this->urls->collectTags($hook, $arguments);
         $prewarm = $this->shouldPrewarm($hook, $arguments);
 
-        return $urls === []
-            ? PurgeRequest::full($hook, 'wordpress-hook', false, $this->settings->prewarmEnabled())
-            : PurgeRequest::urls($urls, $hook, 'wordpress-hook', false, $prewarm, $tags);
-    }
-
-    /** @param array<mixed> $arguments */
-    private function postTypeFromArguments(array $arguments): ?string
-    {
-        foreach ($arguments as $argument) {
-            if (is_object($argument) && property_exists($argument, 'post_type') && is_string($argument->post_type)) {
-                return $argument->post_type;
-            }
-
-            if (!is_int($argument) || !function_exists('get_post_type')) {
-                continue;
-            }
-
-            $postType = get_post_type($argument);
-
-            if (is_string($postType) && $postType !== '') {
-                return $postType;
-            }
+        if ($urls === []) {
+            return null;
         }
-
-        return null;
+        if ($this->isImportRequest() || !$this->settings->selectivePurgeEnabled()) {
+            return PurgeRequest::full($hook, 'wordpress-hook', false, $this->settings->prewarmEnabled());
+        }
+        return PurgeRequest::urls($urls, $hook, 'wordpress-hook', false, $prewarm, $tags);
     }
 
     private function isAutosaveOrRevision(mixed $postId): bool
@@ -234,10 +219,6 @@ final class AutomaticPurgeSubscriber
             return true;
         }
 
-        if (function_exists('did_action') && did_action('import_start') > 0) {
-            return true;
-        }
-
-        return isset($_GET['import']) && is_string($_GET['import']) && trim((string) $_GET['import']) !== '';
+        return function_exists('did_action') && did_action('import_start') > 0;
     }
 }

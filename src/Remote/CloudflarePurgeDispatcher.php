@@ -71,13 +71,14 @@ final readonly class CloudflarePurgeDispatcher
                 'max_redirects' => 0,
             ]);
             $status = $response->getStatusCode();
-        } catch (\Throwable $exception) {
+            $accepted = $status >= 200 && $status < 300 && ($response->toArray(false)['success'] ?? false) === true;
+        } catch (\Throwable) {
             return [
                 [
                     'endpoint'   => $endpoint,
                     'status'     => null,
                     'successful' => false,
-                    'error'      => $exception->getMessage(),
+                    'error'      => 'Provider request failed.',
                 ],
             ];
         }
@@ -86,7 +87,7 @@ final readonly class CloudflarePurgeDispatcher
             [
                 'endpoint'   => $endpoint,
                 'status'     => $status,
-                'successful' => $status >= 200 && $status < 300,
+                'successful' => $accepted,
                 'error'      => null,
             ],
         ];

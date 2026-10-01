@@ -30,4 +30,15 @@ final class WordPressOptionLockStoreTest extends TestCase
 
         $second->release();
     }
+    public function testExpiredOwnerCannotExtendItsLease(): void
+    {
+        $clock = new MockClock('2026-10-01');
+        $store = new WordPressOptionLockStore(new CacheClock($clock));
+        $key = new \Symfony\Component\Lock\Key('expired-owner');
+        $store->save($key);
+        $clock->sleep(31);
+        $this->expectException(\Symfony\Component\Lock\Exception\LockConflictedException::class);
+        $store->putOffExpiration($key, 60);
+    }
+
 }

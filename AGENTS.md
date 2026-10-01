@@ -26,7 +26,7 @@ remote endpoint unless that side effect is explicitly in scope.
 - Keep filesystem deletion behind `CachePurger` and its exclusive lock.
 - Dry runs must not delete, mutate the tag index, queue side effects, or call HTTP.
 - Queue merging must never drop URLs silently; overflow becomes a full purge.
-- Remote purge requests are signed when a secret is configured and remain
+- Remote purge requests require a signing secret and remain
   timeout-bounded and redirect-free.
 - Admin/REST destructive routes require capability and nonce checks where applicable.
 

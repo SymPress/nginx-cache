@@ -18,6 +18,24 @@ final readonly class OptionMutex
 
     public function synchronized(string $name, callable $callback): mixed
     {
+        // Database advisory locks have owner-aware release and no stale option/delete race.
+        $database = $GLOBALS['wpdb'] ?? null;
+
+        if ($database instanceof \wpdb) {
+            $scope = $database->get_var('SELECT DATABASE()') . ':' . $database->prefix . ':' . $name;
+            $key = 'sympress-cache:' . substr(hash('sha256', $scope), 0, 40);
+
+            if ((string) $database->get_var($database->prepare('SELECT GET_LOCK(%s, 10)', $key)) !== '1') {
+                throw new \RuntimeException('Unable to acquire the cache mutation lock.');
+            }
+
+            try {
+                return $callback();
+            } finally {
+                $database->get_var($database->prepare('SELECT RELEASE_LOCK(%s)', $key));
+            }
+        }
+
         $lock = $this->locks->createLock($this->normalizeName($name), self::TTL_SECONDS);
 
         try {
@@ -27,7 +45,7 @@ final readonly class OptionMutex
         }
 
         if (!$acquired) {
-            return $callback();
+            throw new \RuntimeException('Unable to acquire the cache mutation lock.');
         }
 
         try {

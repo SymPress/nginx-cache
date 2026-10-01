@@ -127,10 +127,7 @@ final class SurrogateTagSubscriber
             return (string) home_url($uri);
         }
 
-        $scheme = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https://' : 'http://';
-        $host = is_string($_SERVER['HTTP_HOST'] ?? null) ? $_SERVER['HTTP_HOST'] : '';
-
-        return $host !== '' ? $scheme . $host . $uri : '';
+        return '';
     }
 
     private function requestHasAuthorization(): bool

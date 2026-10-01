@@ -31,10 +31,10 @@ final readonly class FullPurgeEndpointDispatcher
     {
         $endpoint = $this->endpoint();
 
-        if ($endpoint === null) {
+        if ($endpoint === null || $this->settings->remoteSecret() === null) {
             return PurgeResult::failure(
                 'endpoint',
-                'Full purge endpoint mode is enabled, but no valid endpoint is configured.',
+                'Full purge endpoint mode is enabled, but a valid endpoint and signing secret are required.',
                 $this->clock->elapsedSince($startedAt),
                 PurgeMode::Full,
                 $request->reason,
@@ -66,9 +66,7 @@ final readonly class FullPurgeEndpointDispatcher
             ];
             $secret = $this->settings->remoteSecret();
 
-            if ($secret !== null) {
-                $headers['X-SymPress-Signature'] = 'sha256=' . hash_hmac('sha256', $timestamp . '.full-purge', $secret);
-            }
+            $headers['X-SymPress-Signature'] = 'sha256=' . hash_hmac('sha256', $timestamp . '.full-purge', $secret);
 
             $response = $this->http->request($this->settings->fullPurgeHttpMethod(), $endpoint, [
                 'headers'       => $headers,
@@ -76,10 +74,10 @@ final readonly class FullPurgeEndpointDispatcher
                 'timeout'       => 15,
             ]);
             $statusCode = $response->getStatusCode();
-        } catch (\Throwable $exception) {
+        } catch (\Throwable) {
             return PurgeResult::failure(
                 $endpoint,
-                sprintf('Full purge endpoint request failed: %s', $exception->getMessage()),
+                sprintf('Full purge endpoint request failed: %s', 'Provider request failed.'),
                 $this->clock->elapsedSince($startedAt),
                 PurgeMode::Full,
                 $request->reason,
@@ -118,7 +116,7 @@ final readonly class FullPurgeEndpointDispatcher
     {
         $endpoint = $this->settings->fullPurgeEndpoint();
 
-        if ($endpoint === null) {
+        if ($endpoint === null || $this->settings->remoteSecret() === null) {
             return null;
         }
 

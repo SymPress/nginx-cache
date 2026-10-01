@@ -15,3 +15,7 @@ foreach ($autoloaders as $autoloader) {
     require_once $autoloader;
     break;
 }
+
+if (!defined('SYMPRESS_NGINX_CACHE_ENCRYPTION_KEY')) {
+    define('SYMPRESS_NGINX_CACHE_ENCRYPTION_KEY', 'unit-fixture-key-with-at-least-32-bytes');
+}

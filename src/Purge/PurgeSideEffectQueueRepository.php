@@ -37,7 +37,9 @@ final readonly class PurgeSideEffectQueueRepository
                 ],
                 ];
 
-                update_option(self::OPTION_QUEUE, array_slice($tasks, -self::MAX_TASKS), false);
+                if (count($tasks) > self::MAX_TASKS || !$this->persist($tasks)) {
+                    throw new \RuntimeException('Side-effect queue is full or cannot be saved; pending tasks were retained.');
+                }
             },
         );
     }
@@ -49,6 +51,10 @@ final readonly class PurgeSideEffectQueueRepository
             return [];
         }
 
+        if (function_exists('wp_cache_delete')) {
+            wp_cache_delete(self::OPTION_QUEUE, 'options');
+            wp_cache_delete('notoptions', 'options');
+        }
         $queue = get_option(self::OPTION_QUEUE, []);
 
         if (!is_array($queue)) {
@@ -78,6 +84,37 @@ final readonly class PurgeSideEffectQueueRepository
                 return $queue;
             },
         );
+    }
+
+    /** @param callable(array{result: array<string, mixed>, request: array<string, mixed>, queued_at: int}): bool $execute */
+    public function process(callable $execute): bool
+    {
+        return $this->mutex->synchronized(self::OPTION_QUEUE . '.process', function () use ($execute): bool {
+            foreach ($this->all() as $task) {
+                if (!$execute($task)) {
+                    return false;
+                }
+                $this->mutex->synchronized(self::OPTION_QUEUE, function () use ($task): void {
+                    $pending = $this->all();
+                    foreach ($pending as $index => $current) {
+                        if ($current === $task) {
+                            unset($pending[$index]);
+                            if (!$this->persist(array_values($pending))) {
+                                throw new \RuntimeException('Unable to acknowledge side effects.');
+                            }
+                            break;
+                        }
+                    }
+                });
+            }
+            return $this->count() === 0;
+        });
+    }
+
+    /** @param list<array{result: array<string, mixed>, request: array<string, mixed>, queued_at: int}> $tasks */
+    private function persist(array $tasks): bool
+    {
+        return function_exists('update_option') && (update_option(self::OPTION_QUEUE, $tasks, false) || get_option(self::OPTION_QUEUE) === $tasks);
     }
 
     public function count(): int

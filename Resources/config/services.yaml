@@ -53,6 +53,10 @@ services:
             - { name: kernel.hook, hook: 'admin_bar_menu', method: addAdminBarNode, accepted_args: 1, priority: 100 }
             - { name: kernel.hook, hook: 'plugin_action_links_nginx-cache/nginx-cache.php', method: addPluginActionLinks, type: filter, accepted_args: 1 }
 
+    SymPress\NginxCache\Surrogate\TagIndexRepository:
+        tags:
+            - { name: kernel.hook, hook: 'init', method: install, priority: 5 }
+
     SymPress\NginxCache\Hook\AutomaticPurgeSubscriber:
         tags:
             - { name: kernel.hook, hook: 'init', method: register, priority: 20 }

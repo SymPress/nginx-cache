@@ -20,3 +20,44 @@ jobs:
       php_version: '8.5'
     secrets:
       COMPOSER_AUTH_JSON: ${{ secrets.COMPOSER_AUTH_JSON }}
+
+  wordpress-integration:
+    name: WordPress MariaDB integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: 'yes'
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mariadb-admin ping --host=127.0.0.1"
+          --health-interval=5s --health-timeout=3s --health-retries=20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          extensions: mysqli, pdo_mysql, sodium
+          tools: composer:v2
+          coverage: none
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --no-scripts
+      - name: Prepare pinned WordPress core
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location https://wordpress.org/wordpress-7.1.2.tar.gz --output "$RUNNER_TEMP/wordpress.tar.gz"
+          echo "c0c666689d66b870d8825500bb8e402ed04de52602c61a6f516c6236b8c9ac67  $RUNNER_TEMP/wordpress.tar.gz" | sha256sum --check
+          mkdir "$RUNNER_TEMP/nginx-wordpress"
+          tar -xzf "$RUNNER_TEMP/wordpress.tar.gz" --directory "$RUNNER_TEMP/nginx-wordpress" --strip-components=1
+      - name: Run real WordPress and concurrent database regressions
+        env:
+          NGINX_TEST_DB_NAME: sympress_review_nginx_ci
+          NGINX_TEST_DB_HOST: 127.0.0.1:3306
+          NGINX_TEST_WORDPRESS_DIR: ${{ runner.temp }}/nginx-wordpress
+        run: php tests/Integration/run.php

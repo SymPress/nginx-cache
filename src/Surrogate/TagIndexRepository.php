@@ -5,53 +5,110 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Surrogate;
 
 use SymPress\NginxCache\Security\UrlPolicy;
+use SymPress\NginxCache\Support\OptionMutex;
 use SymPress\NginxCache\Time\CacheClock;
 
 final readonly class TagIndexRepository
 {
-    private const string OPTION_INDEX = 'sympress_nginx_cache_tag_index';
-    private const string CACHE_GROUP = 'sympress_nginx_cache';
+    public const string OPTION_VERSION = 'sympress_nginx_cache_tag_index_version';
+    public const string LEGACY_OPTION = 'sympress_nginx_cache_tag_index';
+    public const string TABLE_SUFFIX = 'sympress_cache_tags';
     private const int MAX_TAGS = 1000;
     private const int MAX_URLS_PER_TAG = 50;
+    private const int MAX_REQUEST_TAGS = 64;
 
     public function __construct(
         private CacheTagResolver $tags,
         private UrlPolicy $urls,
         private CacheClock $clock,
+        private OptionMutex $mutex,
     ) {
+    }
+
+    public function install(): void
+    {
+        if (get_option(self::OPTION_VERSION) === '1') {
+            return;
+        }
+
+        $this->mutex->synchronized(self::LEGACY_OPTION, function (): void {
+            $db = $this->database();
+            wp_cache_delete(self::OPTION_VERSION, 'options');
+            wp_cache_delete('notoptions', 'options');
+            if (get_option(self::OPTION_VERSION) === '1') {
+                return;
+            }
+            $this->query($db->prepare(
+                'CREATE TABLE IF NOT EXISTS %i (tag varchar(80) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, url_hash char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL, url text NOT NULL, touched bigint unsigned NOT NULL, PRIMARY KEY (tag,url_hash), KEY url_hash (url_hash), KEY touched (touched)) ENGINE=InnoDB',
+                $this->table(),
+            ));
+            // One-time migration is bounded by the old index's documented limits.
+            $legacy = get_option(self::LEGACY_OPTION, []);
+            if (is_array($legacy)) {
+                foreach (array_slice($legacy, 0, self::MAX_TAGS, true) as $tag => $urls) {
+                    if (!is_string($tag) || !is_array($urls)) {
+                        continue;
+                    }
+                    $normalized = $this->tags->normalize([$tag]);
+                    if ($normalized === []) {
+                        continue;
+                    }
+                    foreach (array_slice($urls, 0, self::MAX_URLS_PER_TAG, true) as $url => $timestamp) {
+                        $url = $this->urls->normalizeSameOriginHttpUrl($url);
+                        if ($url === '') {
+                            continue;
+                        }
+
+                        $this->insert($normalized[0], $url, is_numeric($timestamp) ? (int) $timestamp : $this->clock->timestamp());
+                    }
+                }
+            }
+            if (!update_option(self::OPTION_VERSION, '1', false) && get_option(self::OPTION_VERSION) !== '1') {
+                throw new \RuntimeException('Unable to record the tag index schema.');
+            }
+            delete_option(self::LEGACY_OPTION);
+            wp_cache_delete(self::LEGACY_OPTION, 'sympress_nginx_cache');
+        });
     }
 
     /** @param list<string> $tags */
     public function remember(string $url, array $tags): void
     {
-        $url = $this->normalizeUrl($url);
-
-        if ($url === [] || !function_exists('update_option')) {
+        $url = $this->urls->normalizeSameOriginHttpUrl($url);
+        if ($url === '') {
             return;
         }
-
-        $index = $this->index();
-        $normalizedTags = $this->tags->normalize($tags);
-        $timestamp = $this->clock->timestamp();
-
-        foreach ($index as $tag => $urls) {
-            unset($index[$tag][$url[0]]);
-
-            if ($index[$tag] !== []) {
-                continue;
+        $tags = array_slice($this->tags->normalize($tags), 0, self::MAX_REQUEST_TAGS);
+        sort($tags);
+        // Reads are cheap and idempotent: an unchanged anonymous request issues no writes.
+        if ($this->tagsForUrl($url) === $tags) {
+            return;
+        }
+        $this->mutex->synchronized(self::LEGACY_OPTION, function () use ($url, $tags): void {
+            if ($this->tagsForUrl($url) === $tags) {
+                return;
             }
-
-            unset($index[$tag]);
-        }
-
-        foreach ($normalizedTags as $tag) {
-            $index[$tag] ??= [];
-            $index[$tag][$url[0]] = $timestamp;
-            arsort($index[$tag]);
-            $index[$tag] = array_slice($index[$tag], 0, self::MAX_URLS_PER_TAG, true);
-        }
-
-        $this->persist($this->prune($index));
+            $db = $this->database();
+            $this->query('START TRANSACTION');
+            try {
+                $this->query($db->prepare('DELETE FROM %i WHERE url_hash = %s', $this->table(), hash('sha256', $url)));
+                foreach ($tags as $tag) {
+                    $this->insert($tag, $url, $this->clock->timestamp());
+                    $excess = $db->get_col($db->prepare('SELECT url_hash FROM %i WHERE tag = %s ORDER BY touched DESC, url_hash DESC LIMIT 50,64', $this->table(), $tag));
+                    foreach ($excess as $hash) {
+                        $this->query($db->prepare('DELETE FROM %i WHERE tag = %s AND url_hash = %s', $this->table(), $tag, $hash));
+                    }
+                }
+                $excessTags = $db->get_col($db->prepare('SELECT tag FROM %i GROUP BY tag ORDER BY MAX(touched) DESC, tag DESC LIMIT 1000,64', $this->table()));
+                foreach ($excessTags as $tag) {
+                    $this->query($db->prepare('DELETE FROM %i WHERE tag = %s', $this->table(), $tag));
+                }
+                $this->query('COMMIT');
+            } catch (\Throwable $error) {
+                $db->query('ROLLBACK');
+                throw $error;
+            }
+        });
     }
 
     /**
@@ -60,176 +117,103 @@ final readonly class TagIndexRepository
      */
     public function urlsForTags(array $tags): array
     {
-        $urls = [];
-        $index = $this->index();
-
-        foreach ($this->tags->normalize($tags) as $tag) {
-            if (!isset($index[$tag])) {
-                continue;
-            }
-
-            $urls = [...$urls, ...array_keys($index[$tag])];
+        if (!$this->available()) {
+            return [];
         }
+        $urls = [];
+        $db = $this->database();
+        foreach (array_slice($this->tags->normalize($tags), 0, self::MAX_REQUEST_TAGS) as $tag) {
+            foreach ($db->get_col($db->prepare('SELECT url FROM %i WHERE tag = %s LIMIT 50', $this->table(), $tag)) as $url) {
+                $normalized = $this->urls->normalizeSameOriginHttpUrl($url);
+                if ($normalized === '') {
+                    continue;
+                }
 
+                $urls[] = $normalized;
+            }
+        }
         return array_values(array_unique($urls));
     }
 
     /** @param list<string> $urls */
     public function forgetUrls(array $urls): void
     {
-        $normalizedUrls = [];
-
-        foreach ($urls as $url) {
-            $normalizedUrls = [...$normalizedUrls, ...$this->normalizeUrl($url)];
-        }
-
-        if ($normalizedUrls === [] || !function_exists('update_option')) {
+        if (!$this->available()) {
             return;
         }
+        $this->mutex->synchronized(self::LEGACY_OPTION, function () use ($urls): void {
+            $db = $this->database();
+            foreach ($urls as $url) {
+                $url = $this->urls->normalizeSameOriginHttpUrl($url);
+                if ($url === '') {
+                    continue;
+                }
 
-        $index = $this->index();
-
-        foreach ($index as $tag => $tagUrls) {
-            foreach ($normalizedUrls as $url) {
-                unset($tagUrls[$url]);
+                $this->query($db->prepare('DELETE FROM %i WHERE url_hash = %s', $this->table(), hash('sha256', $url)));
             }
-
-            if ($tagUrls === []) {
-                unset($index[$tag]);
-            } else {
-                $index[$tag] = $tagUrls;
-            }
-        }
-
-        $this->persist($index);
+        });
     }
 
     public function clear(): void
     {
-        if (function_exists('delete_option')) {
-            delete_option(self::OPTION_INDEX);
-        }
-
-        if (!function_exists('wp_cache_delete')) {
+        if (!$this->available()) {
             return;
         }
-
-        wp_cache_delete(self::OPTION_INDEX, self::CACHE_GROUP);
+        $this->mutex->synchronized(self::LEGACY_OPTION, fn () => $this->query($this->database()->prepare('DELETE FROM %i', $this->table())));
     }
 
     /** @return array{tags: int, urls: int} */
     public function stats(): array
     {
-        $index = $this->index();
-        $urls = [];
-
-        foreach ($index as $tagUrls) {
-            $urls = [...$urls, ...array_keys($tagUrls)];
+        if (!$this->available()) {
+            return ['tags' => 0, 'urls' => 0];
         }
-
-        return [
-            'tags' => count($index),
-            'urls' => count(array_unique($urls)),
-        ];
-    }
-
-    /** @return array<string, array<string, int>> */
-    private function index(): array
-    {
-        if (function_exists('wp_cache_get')) {
-            $cached = wp_cache_get(self::OPTION_INDEX, self::CACHE_GROUP);
-
-            if (is_array($cached)) {
-                return $this->normalizeIndex($cached);
-            }
-        }
-
-        if (!function_exists('get_option')) {
-            return [];
-        }
-
-        $index = get_option(self::OPTION_INDEX, []);
-        $index = is_array($index) ? $this->normalizeIndex($index) : [];
-
-        if (function_exists('wp_cache_set')) {
-            wp_cache_set(self::OPTION_INDEX, $index, self::CACHE_GROUP);
-        }
-
-        return $index;
-    }
-
-    /** @param array<string, array<string, int>> $index */
-    private function persist(array $index): void
-    {
-        if ($index === []) {
-            $this->clear();
-
-            return;
-        }
-
-        update_option(self::OPTION_INDEX, $index, false);
-
-        if (!function_exists('wp_cache_set')) {
-            return;
-        }
-
-        wp_cache_set(self::OPTION_INDEX, $index, self::CACHE_GROUP);
-    }
-
-    /**
-     * @param array<string, array<string, int>> $index
-     * @return array<string, array<string, int>>
-     */
-    private function prune(array $index): array
-    {
-        if (count($index) <= self::MAX_TAGS) {
-            return $index;
-        }
-
-        uasort(
-            $index,
-            static fn (array $left, array $right): int => max($right ?: [0]) <=> max($left ?: [0]),
-        );
-
-        return array_slice($index, 0, self::MAX_TAGS, true);
-    }
-
-    /**
-     * @param array<mixed> $index
-     * @return array<string, array<string, int>>
-     */
-    private function normalizeIndex(array $index): array
-    {
-        $normalized = [];
-
-        foreach ($index as $tag => $urls) {
-            if (!is_string($tag) || !is_array($urls)) {
-                continue;
-            }
-
-            foreach ($urls as $url => $timestamp) {
-                if (!is_string($url) || !is_numeric($timestamp)) {
-                    continue;
-                }
-
-                $normalized[$tag][$url] = (int) $timestamp;
-            }
-        }
-
-        return $normalized;
+        $db = $this->database();
+        $row = $db->get_row($db->prepare('SELECT COUNT(DISTINCT tag) AS tags, COUNT(DISTINCT url_hash) AS urls FROM %i', $this->table()), ARRAY_A);
+        return ['tags' => (int) ($row['tags'] ?? 0), 'urls' => (int) ($row['urls'] ?? 0)];
     }
 
     /** @return list<string> */
-    private function normalizeUrl(string $url): array
+    private function tagsForUrl(string $url): array
     {
-        $url = trim($url);
+        $db = $this->database();
+        $tags = $db->get_col($db->prepare('SELECT tag FROM %i WHERE url_hash = %s ORDER BY tag', $this->table(), hash('sha256', $url)));
+        return array_values(array_map('strval', $tags));
+    }
 
-        if ($url === '') {
-            return [];
+    private function insert(string $tag, string $url, int $timestamp): void
+    {
+        $this->query($this->database()->prepare('INSERT IGNORE INTO %i (tag,url_hash,url,touched) VALUES (%s,%s,%s,%d)', $this->table(), $tag, hash('sha256', $url), $url, $timestamp));
+    }
+
+    private function available(): bool
+    {
+        return ($GLOBALS['wpdb'] ?? null) instanceof \wpdb && get_option(self::OPTION_VERSION) === '1';
+    }
+
+    private function database(): \wpdb
+    {
+        $db = $GLOBALS['wpdb'] ?? null;
+        if (!$db instanceof \wpdb) {
+            throw new \RuntimeException('The tag index requires the WordPress database.');
         }
+        return $db;
+    }
 
-        $url = $this->urls->normalizeSameOriginHttpUrl($url);
+    private function table(): string
+    {
+        return $this->database()->prefix . self::TABLE_SUFFIX;
+    }
 
-        return $url !== '' ? [$url] : [];
+    private function query(?string $query): int
+    {
+        if ($query === null) {
+            throw new \RuntimeException('Tag index query preparation failed.');
+        }
+        $result = $this->database()->query($query);
+        if ($result === false) {
+            throw new \RuntimeException('Tag index database operation failed.');
+        }
+        return (int) $result;
     }
 }
