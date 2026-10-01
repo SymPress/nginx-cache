@@ -12,6 +12,7 @@
     <config name="text_domain" value="nginx-cache" />
 
     <file>nginx-cache.php</file>
+    <file>uninstall.php</file>
     <file>src</file>
 
     <exclude-pattern>vendor/*</exclude-pattern>

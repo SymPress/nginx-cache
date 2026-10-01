@@ -51,6 +51,9 @@ final class WordPressOptionLockStore implements BlockingStoreInterface
         $expires = $this->expiresAt($ttl);
 
         if (!$this->wordpressOptionsAvailable()) {
+            if ($this->expired($this->memory[$option] ?? null) || ($this->memory[$option]['token'] ?? null) !== $token) {
+                throw new LockConflictedException();
+            }
             $this->memory[$option] = ['token' => $token, 'expires' => $expires];
             $key->reduceLifetime($ttl);
 
@@ -59,11 +62,13 @@ final class WordPressOptionLockStore implements BlockingStoreInterface
 
         $lock = $this->lock($option);
 
-        if (($lock['token'] ?? null) !== $token) {
+        if ($this->expired($lock) || ($lock['token'] ?? null) !== $token) {
             throw new LockConflictedException();
         }
 
-        update_option($option, ['token' => $token, 'expires' => $expires], false);
+        if (!$this->compareAndSwap($option, $lock, ['token' => $token, 'expires' => $expires])) {
+            throw new LockConflictedException();
+        }
         $key->reduceLifetime($ttl);
     }
 
@@ -85,7 +90,7 @@ final class WordPressOptionLockStore implements BlockingStoreInterface
         $lock = $this->lock($option);
 
         if (($lock['token'] ?? null) === $token) {
-            delete_option($option);
+            $this->compareAndSwap($option, $lock, null);
         }
 
         $key->removeState(self::class);
@@ -111,7 +116,7 @@ final class WordPressOptionLockStore implements BlockingStoreInterface
         $lock = $this->lock($option);
 
         if ($this->expired($lock)) {
-            delete_option($option);
+            $this->compareAndSwap($option, $lock, null);
 
             return false;
         }
@@ -148,7 +153,7 @@ final class WordPressOptionLockStore implements BlockingStoreInterface
         }
 
         if ($this->expired($lock)) {
-            delete_option($option);
+            $this->compareAndSwap($option, $lock, null);
 
             if ($this->addOption($option, $value)) {
                 return;
@@ -164,15 +169,57 @@ final class WordPressOptionLockStore implements BlockingStoreInterface
      */
     private function addOption(string $option, array $value): bool
     {
-        return add_option($option, $value, '', false);
+        $database = $this->database();
+        $query = $database->prepare('INSERT IGNORE INTO %i (option_name, option_value, autoload) VALUES (%s, %s, %s)', $database->options, $option, maybe_serialize($value), 'off');
+        if ($query === null) {
+            throw new \RuntimeException('Lock query preparation failed.');
+        }
+        $affected = $database->query($query);
+        if ($affected === false) {
+            throw new \RuntimeException('Lock insertion failed.');
+        }
+        wp_cache_delete($option, 'options');
+        wp_cache_delete('notoptions', 'options');
+        return $affected === 1;
     }
 
     /** @return array{token?: string, expires?: int}|null */
     private function lock(string $option): ?array
     {
-        $lock = get_option($option);
+        $database = $this->database();
+        $stored = $database->get_var($database->prepare('SELECT option_value FROM %i WHERE option_name = %s', $database->options, $option));
+        $lock = is_string($stored) ? maybe_unserialize($stored) : null;
 
         return is_array($lock) ? $lock : null;
+    }
+
+    /**
+     * @param array{token?: string, expires?: int}|null $previous
+     * @param array{token: string, expires: int}|null $next
+     */
+    private function compareAndSwap(string $option, ?array $previous, ?array $next): bool
+    {
+        $database = $this->database();
+        $old = maybe_serialize($previous);
+        $query = $next === null
+            ? $database->prepare('DELETE FROM %i WHERE option_name = %s AND BINARY option_value = %s', $database->options, $option, $old)
+            : $database->prepare('UPDATE %i SET option_value = %s WHERE option_name = %s AND BINARY option_value = %s', $database->options, maybe_serialize($next), $option, $old);
+        if ($query === null) {
+            throw new \RuntimeException('Lock query preparation failed.');
+        }
+        $affected = $database->query($query);
+        wp_cache_delete($option, 'options');
+        wp_cache_delete('notoptions', 'options');
+        return $affected === 1 || ($affected === 0 && $previous === $next);
+    }
+
+    private function database(): \wpdb
+    {
+        $database = $GLOBALS['wpdb'] ?? null;
+        if (!$database instanceof \wpdb) {
+            throw new \RuntimeException('WordPress locks require a database connection.');
+        }
+        return $database;
     }
 
     /** @param array{token?: string, expires?: int}|null $lock */

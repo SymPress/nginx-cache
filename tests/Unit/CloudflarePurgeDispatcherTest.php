@@ -30,7 +30,7 @@ namespace SymPress\NginxCache\Tests\Unit {
             $GLOBALS['sympress_nginx_cache_test_options'] = [
                 WordPressCacheSettings::OPTION_CLOUDFLARE_ENABLED => 1,
                 WordPressCacheSettings::OPTION_CLOUDFLARE_ZONE_ID => 'zone-123',
-                WordPressCacheSettings::OPTION_CLOUDFLARE_API_TOKEN => 'token-abc',
+                WordPressCacheSettings::OPTION_CLOUDFLARE_API_TOKEN => (new \SymPress\NginxCache\Security\SecretCipher())->encrypt('token-abc', WordPressCacheSettings::OPTION_CLOUDFLARE_API_TOKEN),
             ];
         }
 

@@ -201,9 +201,9 @@ namespace SymPress\NginxCache\Tests\Unit {
                 WordPressCacheSettings::OPTION_PURGE_FEEDS => 1,
             ];
             $GLOBALS['sympress_nginx_cache_test_posts'] = [
-                9 => (object) ['ID' => 9, 'post_type' => 'page', 'post_author' => 1],
-                42 => (object) ['ID' => 42, 'post_type' => 'post', 'post_author' => 5],
-                100 => (object) ['ID' => 100, 'post_type' => 'product', 'post_author' => 8],
+                9 => (object) ['ID' => 9, 'post_type' => 'page', 'post_author' => 1, 'post_status' => 'publish'],
+                42 => (object) ['ID' => 42, 'post_type' => 'post', 'post_author' => 5, 'post_status' => 'publish'],
+                100 => (object) ['ID' => 100, 'post_type' => 'product', 'post_author' => 8, 'post_status' => 'publish'],
             ];
             $GLOBALS['sympress_nginx_cache_test_permalinks'] = [
                 9 => 'https://example.test/blog/',
@@ -217,7 +217,7 @@ namespace SymPress\NginxCache\Tests\Unit {
             $urls = $this->collector()->collect('transition_post_status', [
                 'publish',
                 'draft',
-                (object) ['ID' => 42, 'post_type' => 'post', 'post_author' => 5],
+                (object) ['ID' => 42, 'post_type' => 'post', 'post_author' => 5, 'post_status' => 'publish'],
             ]);
 
             self::assertContains('https://example.test/hello-world/', $urls);
@@ -272,7 +272,7 @@ namespace SymPress\NginxCache\Tests\Unit {
 
             return new PurgeUrlCollector(
                 $resolver,
-                new TagIndexRepository($resolver, $urlPolicy, new CacheClock(new MockClock('2026-06-20 12:00:00'))),
+                new TagIndexRepository($resolver, $urlPolicy, new CacheClock(new MockClock('2026-06-20 12:00:00')), new \SymPress\NginxCache\Support\OptionMutex(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore()))),
                 $urlPolicy,
                 new WordPressCacheSettings('/tmp/cache', $urlPolicy),
             );

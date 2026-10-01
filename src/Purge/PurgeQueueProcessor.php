@@ -28,9 +28,21 @@ final readonly class PurgeQueueProcessor
 
     public function process(): void
     {
-        foreach ($this->queue->drain() as $request) {
-            $this->cache->purgeConfiguredPath($request);
+        try {
+            $successful = $this->queue->process(
+                fn (PurgeRequest $request): bool => $this->cache->purgeConfiguredPath($request)->successful,
+            );
+        } catch (\Throwable) {
+            $successful = false;
         }
+
+        if ($successful) {
+            return;
+        }
+
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- credential-free retry signal.
+        error_log('SymPress cache purge failed; pending requests are retained for retry.');
+        $this->schedule();
     }
 
     public function schedule(): void

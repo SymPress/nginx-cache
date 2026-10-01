@@ -44,44 +44,65 @@ final readonly class PurgeSideEffectProcessor
 
     public function process(): void
     {
-        foreach ($this->queue->drain() as $task) {
-            $result = PurgeResult::fromArray($task['result']);
-            $request = PurgeRequest::fromArray($task['request']);
-            $sideEffects = [];
+        try {
+            $this->queue->process(function (array $task): bool {
+                $result = PurgeResult::fromArray($task['result']);
+                $request = PurgeRequest::fromArray($task['request']);
+                $sideEffects = [];
 
-            if ($this->shouldPrewarm($result, $request)) {
-                $prewarm = $this->prewarmer->prewarm($result->requestedUrls !== [] ? $result->requestedUrls : []);
-                $sideEffects['prewarm'] = [
+                if ($this->shouldPrewarm($result, $request)) {
+                    $prewarm = $this->prewarmer->prewarm($result->requestedUrls !== [] ? $result->requestedUrls : []);
+                    $sideEffects['prewarm'] = [
                     'attempted'  => $prewarm->attempted(),
                     'successful' => $prewarm->successful(),
                     'failed'     => $prewarm->failed(),
-                ];
-            }
+                    ];
+                }
 
-            $layers = $this->layers->sync($result);
+                $layers = $this->layers->sync($result);
 
-            if ($layers !== []) {
-                $sideEffects['layers'] = $layers;
-            }
+                if ($layers !== []) {
+                    $sideEffects['layers'] = $layers;
+                }
 
-            $remote = $this->remote->dispatch($result, $request);
+                $remote = $this->remote->dispatch($result, $request);
 
-            if ($remote !== []) {
-                $sideEffects['remote'] = $remote;
-            }
+                if ($remote !== []) {
+                    $sideEffects['remote'] = $remote;
+                }
 
-            $cloudflare = $this->cloudflare->dispatch($result, $request);
+                $cloudflare = $this->cloudflare->dispatch($result, $request);
 
-            if ($cloudflare !== []) {
-                $sideEffects['cloudflare'] = $cloudflare;
-            }
+                if ($cloudflare !== []) {
+                    $sideEffects['cloudflare'] = $cloudflare;
+                }
 
-            if (!function_exists('do_action')) {
-                continue;
-            }
-
-            do_action('sympress_nginx_cache_side_effects_processed', $result, $request, $sideEffects);
+                if (function_exists('do_action')) {
+                    do_action('sympress_nginx_cache_side_effects_processed', $result, $request, $sideEffects);
+                }
+                if (($sideEffects['prewarm']['failed'] ?? 0) > 0) {
+                    return false;
+                }
+                foreach (['layers', 'remote', 'cloudflare'] as $type) {
+                    foreach ($sideEffects[$type] ?? [] as $response) {
+                        if (
+                            (isset($response['successful']) && !$response['successful'])
+                            || (isset($response['flushed']) && !$response['flushed'])
+                        ) {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            });
+        } catch (\Throwable) {
+            // Leave the stored task for retry, without logging provider credentials.
         }
+        if ($this->queue->count() <= 0) {
+            return;
+        }
+
+        $this->schedule();
     }
 
     public function schedule(): void
@@ -123,7 +144,7 @@ final readonly class PurgeSideEffectProcessor
             $tasks[] = 'remote';
         }
 
-        if ($this->cloudflare->enabled()) {
+        if ($this->settings->cloudflareEnabled()) {
             $tasks[] = 'cloudflare';
         }
 

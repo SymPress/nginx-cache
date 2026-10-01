@@ -24,6 +24,7 @@ final readonly class BypassRuleProvider
             'wordpress_sec_',
             'wp-postpass_',
             'preview_',
+            'sympress_consent',
         ];
         $uris = [
             '^/wp-admin/',

@@ -26,28 +26,34 @@ final readonly class PurgeUrlCollector
     public function collect(string $hook, array $arguments): array
     {
         $urls = [];
-        $productIds = $this->productIds($hook, $arguments);
+        $productIds = $this->publicProductIds($hook, $arguments);
 
         foreach ($productIds as $productId) {
             $urls = [...$urls, ...$this->postUrls($productId)];
         }
 
-        $postId = $this->postId($arguments);
+        $postId = $this->postId($hook, $arguments);
 
         if ($postId !== null && !in_array($postId, $productIds, true)) {
             $urls = [...$urls, ...$this->postUrls($postId)];
         }
 
-        $termId = $this->termId($hook, $arguments);
-
-        if ($termId !== null) {
+        foreach ($this->termIds($hook, $arguments) as $termId) {
             $urls = [...$urls, ...$this->termUrls($termId)];
         }
 
-        $commentPostId = $this->commentPostId($hook, $arguments);
-
-        if ($commentPostId !== null) {
+        foreach ($this->commentPostIds($hook, $arguments) as $commentPostId) {
             $urls = [...$urls, ...$this->postUrls($commentPostId)];
+        }
+
+        $userId = $this->userId($hook, $arguments);
+        if ($userId !== null) {
+            if (function_exists('get_author_posts_url')) {
+                $urls = [...$urls, ...$this->archiveUrls(get_author_posts_url($userId))];
+            }
+            if (function_exists('rest_url')) {
+                $urls[] = rest_url('wp/v2/users/' . $userId);
+            }
         }
 
         $tags = $this->collectTags($hook, $arguments);
@@ -83,35 +89,38 @@ final readonly class PurgeUrlCollector
     public function collectTags(string $hook, array $arguments): array
     {
         $tags = [$hook];
-        $productIds = $this->productIds($hook, $arguments);
+        $productIds = $this->publicProductIds($hook, $arguments);
 
         foreach ($productIds as $productId) {
-            $tags = [...$tags, ...$this->tags->postTags($productId)];
+            $tags = [...$tags, ...['post:' . $productId, 'rest:post:' . $productId]];
         }
 
-        $postId = $this->postId($arguments);
+        $postId = $this->postId($hook, $arguments);
 
         if ($postId !== null && !in_array($postId, $productIds, true)) {
-            $tags = [...$tags, ...$this->tags->postTags($postId)];
+            $tags = [...$tags, ...['post:' . $postId, 'rest:post:' . $postId]];
         }
 
-        $termId = $this->termId($hook, $arguments);
-
-        if ($termId !== null) {
+        foreach ($this->termIds($hook, $arguments) as $termId) {
             $tags = [...$tags, ...$this->tags->termTags($termId)];
         }
 
-        $commentPostId = $this->commentPostId($hook, $arguments);
-
-        if ($commentPostId !== null) {
-            $tags = [...$tags, ...$this->tags->postTags($commentPostId)];
+        foreach ($this->commentPostIds($hook, $arguments) as $commentPostId) {
+            $tags = [...$tags, ...['post:' . $commentPostId, 'rest:post:' . $commentPostId]];
         }
 
         if (function_exists('apply_filters')) {
             $tags = (array) apply_filters('sympress_nginx_cache_purge_tags', $tags, $hook, $arguments);
         }
 
-        return $this->tags->normalize($tags);
+        $userId = $this->userId($hook, $arguments);
+        if ($userId !== null) {
+            $tags = [...$tags, ...$this->tags->userTags($userId)];
+        }
+        // Site/collection tags appear on unrelated pages and must never widen a targeted purge.
+        return array_values(array_filter($this->tags->normalize($tags), static fn (string $tag): bool => !str_starts_with($tag, 'site:')
+            && !str_starts_with($tag, 'post_type:') && !str_starts_with($tag, 'taxonomy:')
+            && !str_ends_with($tag, ':collection') && !in_array($tag, ['posts', 'archive', 'comments'], true)));
     }
 
     public function requiresFullPurge(string $hook): bool
@@ -122,9 +131,7 @@ final readonly class PurgeUrlCollector
             'wp_update_nav_menu',
             'wp_create_nav_menu',
             'wp_delete_nav_menu',
-            'edit_user_profile_update',
             'update_option_permalink_structure',
-            'woocommerce_delete_product_transients',
             'upgrader_process_complete',
         ];
 
@@ -136,29 +143,70 @@ final readonly class PurgeUrlCollector
     }
 
     /** @param array<mixed> $arguments */
-    private function postId(array $arguments): ?int
+    public function postId(string $hook, array $arguments): ?int
     {
-        foreach ($arguments as $argument) {
-            if (is_int($argument) && function_exists('get_post') && get_post($argument) !== null) {
-                return $argument;
-            }
-
-            if (is_object($argument) && property_exists($argument, 'ID') && is_numeric($argument->ID)) {
-                return (int) $argument->ID;
-            }
-
-            if (!is_object($argument) || !method_exists($argument, 'get_id')) {
-                continue;
-            }
-
-            $id = $argument->get_id();
-
-            if (is_numeric($id)) {
-                return (int) $id;
-            }
+        $postHooks = [
+        'publish_post', 'save_post', 'edit_post', 'before_delete_post', 'deleted_post',
+            'delete_post', 'trashed_post', 'untrashed_post', 'transition_post_status', 'delete_attachment', 'clean_post_cache',
+        ];
+        if (!in_array($hook, $postHooks, true)) {
+            return null;
         }
+        $value = $hook === 'transition_post_status' ? ($arguments[2] ?? null) : ($arguments[0] ?? null);
+        if (is_object($value) && isset($value->ID) && is_numeric($value->ID)) {
+            return (int) $value->ID;
+        }
+        return is_numeric($value) && (int) $value > 0 ? (int) $value : null;
+    }
 
-        return null;
+    /** @param array<mixed> $arguments */
+    public function publicMutation(string $hook, array $arguments): bool
+    {
+        $id = $this->postId($hook, $arguments);
+        if ($id === null) {
+            $comments = $this->commentPostIds($hook, $arguments);
+            if ($comments !== []) {
+                foreach ($comments as $commentPostId) {
+                    $post = function_exists('get_post') ? get_post($commentPostId) : null;
+                    if (is_object($post) && $post->post_status === 'publish') {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            $products = $this->productIds($hook, $arguments);
+            if ($products === []) {
+                return true;
+            }
+            foreach ($products as $productId) {
+                $product = function_exists('get_post') ? get_post($productId) : null;
+                if (is_object($product) && $product->post_status === 'publish') {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if ($hook === 'transition_post_status') {
+            return ($arguments[0] ?? null) === 'publish' || ($arguments[1] ?? null) === 'publish';
+        }
+        $post = $arguments[1] ?? null;
+        if (!is_object($post) || !isset($post->post_status)) {
+            $post = function_exists('get_post') ? get_post($id) : null;
+        }
+        if (is_object($post) && isset($post->post_status)) {
+            return $post->post_status === 'publish' || ($hook === 'trashed_post' && ($arguments[1] ?? null) === 'publish');
+        }
+        return false;
+    }
+
+    /** @param array<mixed> $arguments */
+    private function userId(string $hook, array $arguments): ?int
+    {
+        if (!in_array($hook, ['clean_user_cache', 'edit_user_profile_update', 'profile_update', 'deleted_user'], true)) {
+            return null;
+        }
+        $id = $arguments[0] ?? null;
+        return is_numeric($id) && (int) $id > 0 ? (int) $id : null;
     }
 
     /** @return list<string> */
@@ -179,6 +227,7 @@ final readonly class PurgeUrlCollector
 
         if (function_exists('rest_url')) {
             $urls[] = rest_url(sprintf('wp/v2/%s/%d', is_string($postType) ? $this->restBase($postType) : 'posts', $postId));
+            $urls[] = rest_url('wp/v2/' . (is_string($postType) ? $this->restBase($postType) : 'posts'));
         }
 
         if (is_string($postType) && function_exists('get_post_type_archive_link')) {
@@ -241,16 +290,16 @@ final readonly class PurgeUrlCollector
         return $urls;
     }
 
-    /** @param array<mixed> $arguments */
-    private function termId(string $hook, array $arguments): ?int
+    /**
+     * @param array<mixed> $arguments
+     * @return list<int>
+     */
+    private function termIds(string $hook, array $arguments): array
     {
-        if (!in_array($hook, ['created_term', 'edited_term', 'delete_term'], true)) {
-            return null;
+        if (!in_array($hook, ['created_term', 'edited_term', 'delete_term', 'clean_term_cache'], true)) {
+            return [];
         }
-
-        $termId = $arguments[0] ?? null;
-
-        return is_numeric($termId) ? (int) $termId : null;
+        return array_values(array_filter(array_map('intval', (array) ($arguments[0] ?? [])), static fn (int $id): bool => $id > 0));
     }
 
     /** @return list<string> */
@@ -280,26 +329,40 @@ final readonly class PurgeUrlCollector
         return $urls;
     }
 
-    /** @param array<mixed> $arguments */
-    private function commentPostId(string $hook, array $arguments): ?int
+    /**
+     * @param array<mixed> $arguments
+     * @return list<int>
+     */
+    private function commentPostIds(string $hook, array $arguments): array
     {
-        if (!in_array($hook, ['comment_post', 'edit_comment', 'delete_comment', 'wp_set_comment_status'], true)) {
-            return null;
+        if (!in_array($hook, ['comment_post', 'edit_comment', 'delete_comment', 'wp_set_comment_status', 'clean_comment_cache'], true)) {
+            return [];
         }
+        $ids = [];
+        foreach ((array) ($arguments[0] ?? []) as $commentId) {
+            $comment = function_exists('get_comment') ? get_comment((int) $commentId) : null;
+            if (!is_object($comment)) {
+                $comment = $arguments[1] ?? null;
+            }
+            if (!is_object($comment) || !isset($comment->comment_post_ID)) {
+                continue;
+            }
 
-        $commentId = $arguments[0] ?? null;
-
-        if (!is_numeric($commentId) || !function_exists('get_comment')) {
-            return null;
+            $ids[] = (int) $comment->comment_post_ID;
         }
+        return array_values(array_unique($ids));
+    }
 
-        $comment = get_comment((int) $commentId);
-
-        if (!is_object($comment) || !property_exists($comment, 'comment_post_ID')) {
-            return null;
-        }
-
-        return (int) $comment->comment_post_ID;
+    /**
+     * @param array<mixed> $arguments
+     * @return list<int>
+     */
+    private function publicProductIds(string $hook, array $arguments): array
+    {
+        return array_values(array_filter($this->productIds($hook, $arguments), static function (int $id): bool {
+            $post = function_exists('get_post') ? get_post($id) : null;
+            return is_object($post) && $post->post_status === 'publish';
+        }));
     }
 
     /**
@@ -308,14 +371,17 @@ final readonly class PurgeUrlCollector
      */
     private function productIds(string $hook, array $arguments): array
     {
-        if (!str_starts_with($hook, 'woocommerce_')) {
+        if (!in_array($hook, ['woocommerce_after_product_object_save', 'woocommerce_reduce_order_stock', 'woocommerce_update_product', 'woocommerce_delete_product_transients'], true)) {
             return [];
         }
 
         $ids = [];
 
         foreach ($arguments as $argument) {
-            if (is_int($argument) && $argument > 0) {
+            if ($hook === 'woocommerce_reduce_order_stock' && is_numeric($argument) && function_exists('wc_get_order')) {
+                $argument = wc_get_order((int) $argument);
+            }
+            if ($hook !== 'woocommerce_reduce_order_stock' && is_int($argument) && $argument > 0) {
                 $ids[] = $argument;
             }
 
@@ -323,7 +389,9 @@ final readonly class PurgeUrlCollector
                 continue;
             }
 
-            $ids = [...$ids, ...$this->productIdsFromObject($argument)];
+            if ($hook !== 'woocommerce_reduce_order_stock') {
+                $ids = [...$ids, ...$this->productIdsFromObject($argument)];
+            }
 
             if (!method_exists($argument, 'get_items')) {
                 continue;

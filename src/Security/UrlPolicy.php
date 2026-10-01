@@ -187,11 +187,6 @@ final readonly class UrlPolicy
             $urls[] = (string) site_url('/');
         }
 
-        if (is_string($_SERVER['HTTP_HOST'] ?? null) && $_SERVER['HTTP_HOST'] !== '') {
-            $scheme = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http';
-            $urls[] = sprintf('%s://%s/', $scheme, (string) $_SERVER['HTTP_HOST']);
-        }
-
         if (function_exists('apply_filters')) {
             $extraHosts = (array) apply_filters('sympress_nginx_cache_allowed_url_hosts', $extraHosts);
         }

@@ -77,7 +77,7 @@ final class CacheManagerTest extends TestCase
             ),
             new PurgeHistoryRepository($clock),
             new PurgeEventEmitter(),
-            new TagIndexRepository($tags, $urls, $clock),
+            new TagIndexRepository($tags, $urls, $clock, new OptionMutex(new LockFactory(new WordPressOptionLockStore($clock)))),
             $sideEffects,
         );
 

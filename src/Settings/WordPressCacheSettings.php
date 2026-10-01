@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Settings;
 
+use SymPress\NginxCache\Security\SecretCipher;
 use SymPress\NginxCache\Security\UrlPolicy;
 use SymPress\NginxCache\Value\CacheProfile;
 use Symfony\Component\OptionsResolver\OptionsResolver;
@@ -41,11 +42,13 @@ final readonly class WordPressCacheSettings
     public const string OPTION_HEARTBEAT_MODE = 'sympress_nginx_cache_heartbeat_mode';
     public const string OPTION_HEARTBEAT_INTERVAL = 'sympress_nginx_cache_heartbeat_interval';
     public const string OPTION_ONBOARDING_COMPLETED = 'sympress_nginx_cache_onboarding_completed';
+    public const string OPTION_DELETE_ON_UNINSTALL = 'sympress_nginx_cache_delete_on_uninstall';
     public const string TEXT_DOMAIN = 'sympress-nginx-cache';
 
     public function __construct(
         private string $defaultPath,
         private ?UrlPolicy $urlPolicy = null,
+        private SecretCipher $secrets = new SecretCipher(),
     ) {
     }
 
@@ -70,10 +73,11 @@ final readonly class WordPressCacheSettings
         $this->registerSetting(self::OPTION_DEBUG_HEADERS_ENABLED, 'boolean', $boolean, 0);
         $this->registerSetting(self::OPTION_LAYER_SYNC_ENABLED, 'boolean', $boolean, 0);
         $this->registerSetting(self::OPTION_REMOTE_ENDPOINTS, 'string', $this->sanitizeTextarea(...), '');
-        $this->registerSetting(self::OPTION_REMOTE_SECRET, 'string', $this->sanitizeSecret(...), '');
+        $this->registerSetting(self::OPTION_REMOTE_SECRET, 'string', fn (mixed $value): string => $this->sanitizeStoredSecret($value, self::OPTION_REMOTE_SECRET), '');
         $this->registerSetting(self::OPTION_CLOUDFLARE_ENABLED, 'boolean', $boolean, 0);
         $this->registerSetting(self::OPTION_CLOUDFLARE_ZONE_ID, 'string', $this->sanitizeSecret(...), '');
-        $this->registerSetting(self::OPTION_CLOUDFLARE_API_TOKEN, 'string', $this->sanitizeSecret(...), '');
+        $this->registerSetting(self::OPTION_CLOUDFLARE_API_TOKEN, 'string', fn (mixed $value): string => $this->sanitizeStoredSecret($value, self::OPTION_CLOUDFLARE_API_TOKEN), '');
+        $this->registerSetting(self::OPTION_DELETE_ON_UNINSTALL, 'boolean', $boolean, 0);
         $this->registerSetting(self::OPTION_FULL_PURGE_MODE, 'string', $this->sanitizeFullPurgeMode(...), 'local_files');
         $this->registerSetting(self::OPTION_FULL_PURGE_ENDPOINT, 'string', $this->sanitizeSecret(...), '');
         $this->registerSetting(self::OPTION_FULL_PURGE_HTTP_METHOD, 'string', $this->sanitizeFullPurgeHttpMethod(...), 'PURGE');
@@ -88,6 +92,7 @@ final readonly class WordPressCacheSettings
         $this->registerSetting(self::OPTION_HEARTBEAT_MODE, 'string', $this->sanitizeHeartbeatMode(...), 'default');
         $this->registerSetting(self::OPTION_HEARTBEAT_INTERVAL, 'integer', $this->sanitizeHeartbeatInterval(...), 120);
         $this->registerSetting(self::OPTION_ONBOARDING_COMPLETED, 'boolean', $boolean, 0);
+        $this->migrateLegacySecrets();
     }
 
     /** @param callable(mixed): mixed $sanitize */
@@ -260,10 +265,57 @@ final readonly class WordPressCacheSettings
         );
     }
 
+    public function migrateLegacySecrets(): void
+    {
+        foreach ([self::OPTION_REMOTE_SECRET, self::OPTION_CLOUDFLARE_API_TOKEN] as $option) {
+            $stored = $this->rawOptionString($option);
+            if ($stored === null || $stored === '' || str_starts_with($stored, SecretCipher::PREFIX)) {
+                continue;
+            }
+            try {
+                $encrypted = $this->secrets->encrypt($stored, $option);
+                update_option($option, $encrypted, false);
+            } catch (\RuntimeException) {
+                // Preserve recoverable legacy data, but getters refuse plaintext.
+            }
+        }
+    }
+
+    public function sanitizeStoredSecret(mixed $value, string $option): string
+    {
+        $previous = $this->rawOptionString($option) ?? '';
+        // WordPress options.php verifies capability and nonce before sanitizing.
+        if (
+            isset($_POST[$option . '_clear'], $_POST['_wpnonce'])
+            && $_POST[$option . '_clear'] === '1'
+            && is_string($_POST['_wpnonce'])
+            && function_exists('current_user_can') && current_user_can('manage_options')
+            && wp_verify_nonce(wp_unslash($_POST['_wpnonce']), 'sympress_nginx_cache-options')
+        ) {
+            return '';
+        }
+        $value = is_string($value) ? trim($value) : '';
+        if ($value === '') {
+            return $previous;
+        }
+        // add_option sanitizes twice: authenticated ciphertext is already sanitized.
+        if (str_starts_with($value, SecretCipher::PREFIX)) {
+            return $this->secrets->decrypt($value, $option) !== null ? $value : $previous;
+        }
+        try {
+            return $this->secrets->encrypt($value, $option);
+        } catch (\RuntimeException) {
+            if (function_exists('add_settings_error')) {
+                add_settings_error($option, 'encryption-unavailable', 'Secret was not saved: encryption is unavailable.');
+            }
+            return $previous;
+        }
+    }
+
     public function remoteSecret(): ?string
     {
         $secret = $this->constantValue('SYMPRESS_NGINX_CACHE_REMOTE_SECRET')
-            ?? $this->rawOptionString(self::OPTION_REMOTE_SECRET);
+            ?? $this->secrets->decrypt($this->rawOptionString(self::OPTION_REMOTE_SECRET), self::OPTION_REMOTE_SECRET);
 
         if (!is_string($secret)) {
             return null;
@@ -317,7 +369,7 @@ final readonly class WordPressCacheSettings
     public function cloudflareApiToken(): ?string
     {
         $token = $this->constantValue('SYMPRESS_NGINX_CACHE_CLOUDFLARE_API_TOKEN')
-            ?? $this->rawOptionString(self::OPTION_CLOUDFLARE_API_TOKEN);
+            ?? $this->secrets->decrypt($this->rawOptionString(self::OPTION_CLOUDFLARE_API_TOKEN), self::OPTION_CLOUDFLARE_API_TOKEN);
 
         if (!is_string($token)) {
             return null;

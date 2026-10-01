@@ -56,13 +56,13 @@ final readonly class RemotePurgeDispatcher
         try {
             // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Fallback-safe payload encoding for remote purge APIs.
             $body = (string) json_encode($payload, JSON_THROW_ON_ERROR);
-        } catch (\JsonException $exception) {
+        } catch (\JsonException) {
             return array_map(
                 static fn (string $endpoint): array => [
                     'endpoint'   => $endpoint,
                     'status'     => null,
                     'successful' => false,
-                    'error'      => $exception->getMessage(),
+                    'error'      => 'Provider request failed.',
                 ],
                 $endpoints,
             );
@@ -148,12 +148,12 @@ final readonly class RemotePurgeDispatcher
                 'successful' => $status >= 200 && $status < 300,
                 'error'      => null,
             ];
-        } catch (\Throwable $exception) {
+        } catch (\Throwable) {
             return [
                 'endpoint'   => $endpoint,
                 'status'     => null,
                 'successful' => false,
-                'error'      => $exception->getMessage(),
+                'error'      => 'Provider request failed.',
             ];
         }
     }

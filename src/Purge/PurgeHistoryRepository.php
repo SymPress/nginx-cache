@@ -89,20 +89,8 @@ final readonly class PurgeHistoryRepository
 
     private function clientIp(): ?string
     {
-        foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $key) {
-            $value = is_string($_SERVER[$key] ?? null) ? (string) $_SERVER[$key] : '';
+        $value = $_SERVER['REMOTE_ADDR'] ?? null;
 
-            if ($value === '') {
-                continue;
-            }
-
-            $candidate = trim(explode(',', $value)[0]);
-
-            if (filter_var($candidate, FILTER_VALIDATE_IP)) {
-                return $candidate;
-            }
-        }
-
-        return null;
+        return is_string($value) && filter_var($value, FILTER_VALIDATE_IP) ? $value : null;
     }
 }

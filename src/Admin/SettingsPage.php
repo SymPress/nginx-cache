@@ -633,7 +633,7 @@ final readonly class SettingsPage
                                     </label>
                                     <label class="sympress-field">
                                         <span class="sympress-field__label"><?php echo esc_html__('Cloudflare API token', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                        <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_CLOUDFLARE_API_TOKEN); ?>" type="password" class="regular-text code sympress-input" value="<?php echo esc_attr($option(WordPressCacheSettings::OPTION_CLOUDFLARE_API_TOKEN)); ?>" autocomplete="new-password" />
+                                    <?php SecretField::render(WordPressCacheSettings::OPTION_CLOUDFLARE_API_TOKEN); ?>
                                     </label>
                                 </div>
 
@@ -676,7 +676,7 @@ final readonly class SettingsPage
                                 </label>
                                 <label class="sympress-field">
                                     <span class="sympress-field__label"><?php echo esc_html__('Signing secret', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                    <input id="<?php echo esc_attr(WordPressCacheSettings::OPTION_REMOTE_SECRET); ?>" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_REMOTE_SECRET); ?>" type="password" class="regular-text code sympress-input" value="<?php echo esc_attr($option(WordPressCacheSettings::OPTION_REMOTE_SECRET)); ?>" autocomplete="new-password" />
+                                    <?php SecretField::render(WordPressCacheSettings::OPTION_REMOTE_SECRET); ?>
                                     <span class="sympress-field__description"><?php echo esc_html__('Used to sign remote purge payloads for edge workers or sidecar agents.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                 </label>
                                 <div class="sympress-inline-state">
@@ -688,6 +688,7 @@ final readonly class SettingsPage
                             </div>
                         </section>
 
+                        <p><label><input type="hidden" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_DELETE_ON_UNINSTALL); ?>" value="0" /><input type="checkbox" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_DELETE_ON_UNINSTALL); ?>" value="1" <?php checked((bool) get_option(WordPressCacheSettings::OPTION_DELETE_ON_UNINSTALL, false)); ?> /> <?php echo esc_html__('Delete plugin settings, queues and tag index on uninstall (cache files are retained)', WordPressCacheSettings::TEXT_DOMAIN); ?></label></p>
                         <section id="sympress-tab-layers" class="sympress-cache-panel" data-sympress-panel="layers">
                             <div class="sympress-section-heading">
                                 <div>
@@ -1968,19 +1969,7 @@ final readonly class SettingsPage
 
     private function currentUrl(): string
     {
-        $scheme = is_ssl() ? 'https://' : 'http://';
-        $host = isset($_SERVER['HTTP_HOST'])
-            ? sanitize_text_field((string) wp_unslash($_SERVER['HTTP_HOST']))
-            : wp_parse_url(admin_url(), PHP_URL_HOST);
-        $uri = isset($_SERVER['REQUEST_URI'])
-            ? sanitize_text_field((string) wp_unslash($_SERVER['REQUEST_URI']))
-            : '/wp-admin/';
-
-        if (!is_string($host) || $host === '' || $uri === '') {
-            return $this->pageUrl();
-        }
-
-        return esc_url_raw($scheme . $host . $uri);
+        return $this->pageUrl();
     }
 
     private function redirectUrl(): string
