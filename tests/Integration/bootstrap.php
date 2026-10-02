@@ -42,7 +42,7 @@ function testMutex(): \SymPress\NginxCache\Support\OptionMutex
     return new \SymPress\NginxCache\Support\OptionMutex(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore()));
 }
 
-function testQueue(): \SymPress\NginxCache\Purge\PurgeQueueRepository
+function testQueue(?\SymPress\NginxCache\Time\CacheClock $clock = null): \SymPress\NginxCache\Purge\PurgeQueueRepository
 {
-    return new \SymPress\NginxCache\Purge\PurgeQueueRepository(new \SymPress\NginxCache\Purge\PurgeRequestMerger(), testMutex());
+    return new \SymPress\NginxCache\Purge\PurgeQueueRepository(new \SymPress\NginxCache\Purge\PurgeRequestMerger(), testMutex(), $clock ?? new \SymPress\NginxCache\Time\CacheClock(new \Symfony\Component\Clock\NativeClock()));
 }

@@ -14,8 +14,12 @@ final readonly class CacheLayerCoordinator
     ) {
     }
 
-    /** @return list<array{layer: string, flushed: bool, message: string}> */
-    public function sync(PurgeResult $result): array
+    /**
+     * @param list<string> $completed
+     * @param (callable(string): void)|null $checkpoint
+     * @return list<array{layer: string, flushed: bool, message: string}>
+     */
+    public function sync(PurgeResult $result, array $completed = [], ?callable $checkpoint = null): array
     {
         if (!$this->settings->layerSyncEnabled() || $result->dryRun || !$result->successful) {
             return [];
@@ -27,20 +31,22 @@ final readonly class CacheLayerCoordinator
             $layers = (array) apply_filters('sympress_nginx_cache_sync_layers', $layers, $result);
         }
 
-        return $this->flush($this->normalizeLayers($layers), $result);
+        $pending = array_values(array_diff($this->normalizeLayers($layers), $completed));
+        return $pending === [] ? [] : $this->flush($pending, $result, $checkpoint);
     }
 
     /**
      * @param list<string> $layers
+     * @param (callable(string): void)|null $checkpoint
      * @return list<array{layer: string, flushed: bool, message: string}>
      */
-    public function flush(array $layers = [], ?PurgeResult $result = null): array
+    public function flush(array $layers = [], ?PurgeResult $result = null, ?callable $checkpoint = null): array
     {
         $layers = $layers === [] ? ['object-cache', 'opcache', 'wordpress-hooks'] : $this->normalizeLayers($layers);
         $responses = [];
 
         foreach ($layers as $layer) {
-            $responses[] = match ($layer) {
+            $response = match ($layer) {
                 'object-cache' => $this->flushObjectCache(),
                 'opcache' => $this->flushOpcache(),
                 'wordpress-hooks' => $this->flushHooks($result),
@@ -50,6 +56,12 @@ final readonly class CacheLayerCoordinator
                     'message' => 'Unknown cache layer.',
                 ],
             };
+            $responses[] = $response;
+            if (!$response['flushed'] || $checkpoint === null) {
+                continue;
+            }
+
+            $checkpoint($layer);
         }
 
         return $responses;

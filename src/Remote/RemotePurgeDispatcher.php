@@ -21,8 +21,12 @@ final readonly class RemotePurgeDispatcher
     ) {
     }
 
-    /** @return list<array{endpoint: string, status: int|null, successful: bool, error: string|null}> */
-    public function dispatch(PurgeResult $result, PurgeRequest $request): array
+    /**
+     * @param list<string> $completed
+     * @param (callable(string): void)|null $checkpoint
+     * @return list<array{endpoint: string, status: int|null, successful: bool, error: string|null}>
+     */
+    public function dispatch(PurgeResult $result, PurgeRequest $request, array $completed = [], ?callable $checkpoint = null): array
     {
         if (!$result->successful || $result->dryRun) {
             return [];
@@ -34,6 +38,7 @@ final readonly class RemotePurgeDispatcher
                 static fn (string $endpoint): bool => $endpoint !== '',
             ),
         );
+        $endpoints = array_values(array_diff($endpoints, $completed));
 
         if ($endpoints === []) {
             return [];
@@ -71,7 +76,13 @@ final readonly class RemotePurgeDispatcher
         $responses = [];
 
         foreach ($endpoints as $endpoint) {
-            $responses[] = $this->dispatchEndpoint($endpoint, $body);
+            $response = $this->dispatchEndpoint($endpoint, $body);
+            $responses[] = $response;
+            if (!$response['successful'] || $checkpoint === null) {
+                continue;
+            }
+
+            $checkpoint($endpoint);
         }
 
         if (function_exists('do_action')) {

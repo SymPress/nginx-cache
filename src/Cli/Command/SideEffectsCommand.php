@@ -23,7 +23,7 @@ final class SideEffectsCommand extends AbstractCacheCommand
 
     protected function configure(): void
     {
-        $this->addArgument('action', InputArgument::OPTIONAL, 'Use "flush" to process queued side effects.', 'status');
+        $this->addArgument('action', InputArgument::OPTIONAL, 'Use status, details, flush (due work), or retry (reset the retry budget).', 'status');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -46,12 +46,29 @@ final class SideEffectsCommand extends AbstractCacheCommand
 
         if ($action === 'flush') {
             $this->sideEffects->process();
+            if ($this->sideEffects->count() > 0) {
+                return $this->error('Side effects remain pending; inspect details for retry timing or exhaustion.', $output);
+            }
             $this->success('Processed queued Nginx cache side effects.', $output);
 
             return Command::SUCCESS;
         }
 
+        if ($action === 'retry') {
+            $this->sideEffects->retry();
+            $this->success('Reset the pending side-effect retry budget and scheduled processing.', $output);
+            return Command::SUCCESS;
+        }
+        if ($action === 'details') {
+            $this->line($this->json($this->sideEffects->inspect()), $output);
+            return Command::SUCCESS;
+        }
+        if ($action !== 'status') {
+            return $this->error('Unknown action. Use status, details, flush, or retry.', $output);
+        }
+
         $this->log(sprintf('Pending side-effect tasks: %d', $this->sideEffects->count()), $output);
+        $this->log(sprintf('Exhausted side-effect tasks: %d', count(array_filter($this->sideEffects->inspect(), static fn (array $task): bool => $task['exhausted']))), $output);
 
         return Command::SUCCESS;
     }

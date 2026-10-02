@@ -80,7 +80,8 @@ try {
     }
     check($index->stats()['tags'] <= 1000, 'global tag retention remains bounded');
 
-    $queue = testQueue();
+    $queueClock = new \Symfony\Component\Clock\MockClock('2026-10-02');
+    $queue = testQueue(new \SymPress\NginxCache\Time\CacheClock($queueClock));
     $workers = [];
     for ($i = 0; $i < 12; ++$i) {
         $workers[] = startWorker('queue', $i);
@@ -92,22 +93,49 @@ try {
     wp_cache_set('sympress_nginx_cache_queue', [], 'options');
     check($queue->count() === 1, 'stale option cache cannot hide pending work');
     check(!$queue->process(static fn (): bool => false) && $queue->count() === 1, 'failed purge stays queued');
+    $queueClock->sleep(60);
     try {
         $queue->process(static function (): bool { throw new RuntimeException('fixture failure'); });
     } catch (RuntimeException) {
     }
     check($queue->count() === 1, 'exception leaves purge queued');
+    check($queue->inspect()[0]['attempts'] === 2, 'purge exception consumes a persisted retry attempt');
+    $queueClock->sleep(120);
     $queue->process(static function () use ($queue): bool {
         $queue->push(\SymPress\NginxCache\Value\PurgeRequest::urls(['https://example.test/arrived-during-purge/']));
         return true;
     });
     check(in_array('https://example.test/arrived-during-purge/', $queue->all()[0]->urls, true), 'producer during acknowledgement is retained');
+    $queueClock->sleep(240);
     check($queue->process(static fn (): bool => true) && $queue->count() === 0, 'successful retry acknowledges work');
     $identical = \SymPress\NginxCache\Value\PurgeRequest::urls(['https://example.test/same-event/']);
     $queue->push($identical);
     $queue->process(static function () use ($queue, $identical): bool { $queue->push($identical); return true; });
     check($queue->count() === 1, 'identical event during purge gets a fresh generation and is retained');
+    check($queue->inspect()[0]['attempts'] === 0, 'successful purge gives concurrent new work a fresh retry budget');
+    $queueClock->sleep(60);
     $queue->process(static fn (): bool => true);
+    $queue->push($identical);
+    $failedCalls = 0;
+    foreach ([60, 120, 240, 300, 300] as $attemptIndex => $delay) {
+        $before = $queueClock->now()->getTimestamp();
+        $queue->process(static function () use (&$failedCalls): bool { ++$failedCalls; return false; });
+        $state = $queue->inspect()[0];
+        check($state['attempts'] === $attemptIndex + 1 && $state['retry_at'] === $before + $delay, 'purge persists bounded attempt and backoff ' . ($attemptIndex + 1));
+        $queue->process(static function () use (&$failedCalls): bool { ++$failedCalls; return false; });
+        check($failedCalls === $attemptIndex + 1, 'early purge worker cannot bypass backoff ' . ($attemptIndex + 1));
+        $queueClock->sleep($delay);
+    }
+    $queue->push(\SymPress\NginxCache\Value\PurgeRequest::urls(['https://example.test/retained-after-exhaustion/']));
+    $queueClock->sleep(10000);
+    $queue->process(static function () use (&$failedCalls): bool { ++$failedCalls; return true; });
+    check($failedCalls === 5 && $queue->count() === 1 && $queue->inspect()[0]['exhausted'] && $queue->nextAttemptAt() === null, 'exhausted purge work survives new producers without automatic retries');
+    check(in_array('https://example.test/retained-after-exhaustion/', $queue->all()[0]->urls, true), 'exhausted purge retains concurrent new URLs');
+    $queue->retry();
+    check($queue->process(static fn (): bool => true) && $queue->count() === 0, 'explicit purge retry resets exhaustion and acknowledges retained work');
+    // Upgrade legacy queue records without losing their first acknowledgement.
+    update_option('sympress_nginx_cache_queue', [$identical->toArray()], false);
+    check($queue->process(static fn (): bool => true) && $queue->count() === 0, 'legacy purge queue gains metadata and still acknowledges');
     // Real database advisory lock excludes another connection beyond callback lifetime.
     $scope = $wpdb->get_var('SELECT DATABASE()') . ':' . $wpdb->prefix . ':blocking-fixture';
     $key = 'sympress-cache:' . substr(hash('sha256', $scope), 0, 40);
@@ -215,9 +243,13 @@ try {
     $method = new ReflectionMethod($history, 'clientIp');
     check($method->invoke($history) === '192.0.2.10', 'IP history ignores forwarded headers');
     $rules = (new \SymPress\NginxCache\Config\BypassRuleProvider($settings))->rules(\SymPress\NginxCache\Value\CacheProfile::Safe);
-    check(in_array('sympress_consent', $rules['cookies'], true), 'default consent cookie bypass');
+    check(!in_array('sympress_consent', $rules['cookies'], true), 'cookie-invariant SymPress consent keeps page cache enabled');
     update_option($settings::OPTION_BYPASS_COOKIES, 'custom_consent');
     check(in_array('custom_consent', (new \SymPress\NginxCache\Config\BypassRuleProvider($settings))->rules(\SymPress\NginxCache\Value\CacheProfile::Safe)['cookies'], true), 'custom consent cookie bypass');
+    $customConsent = static fn (array $cookies): array => [...$cookies, 'sympress_consent'];
+    add_filter('sympress_nginx_cache_bypass_cookies', $customConsent);
+    check(in_array('sympress_consent', (new \SymPress\NginxCache\Config\BypassRuleProvider($settings))->rules(\SymPress\NginxCache\Value\CacheProfile::Safe)['cookies'], true), 'server-dependent consent integration can explicitly opt in to bypass');
+    remove_filter('sympress_nginx_cache_bypass_cookies', $customConsent);
     wp_set_current_user(0);
     $published = wp_insert_post(['post_title' => 'Published target', 'post_status' => 'publish']);
     $draft = wp_insert_post(['post_title' => 'Draft target', 'post_status' => 'draft']);
@@ -254,11 +286,14 @@ try {
     $orderUrls = $collector->collect('woocommerce_reduce_order_stock', [$order]);
     check(in_array(get_permalink($published), $orderUrls, true) && !in_array(home_url('/?p=999999'), $orderUrls, true), 'order stock maps order items to products, never order id');
     // No provider calls: side effects use only MockHttpClient.
-    $side = new \SymPress\NginxCache\Purge\PurgeSideEffectQueueRepository(testMutex(), new \SymPress\NginxCache\Time\CacheClock(new \Symfony\Component\Clock\NativeClock()));
+    $sideClock = new \Symfony\Component\Clock\MockClock('2026-10-02');
+    $clock = new \SymPress\NginxCache\Time\CacheClock($sideClock);
+    $side = new \SymPress\NginxCache\Purge\PurgeSideEffectQueueRepository(testMutex(), $clock);
     $result = \SymPress\NginxCache\Value\PurgeResult::success('/tmp/disposable-cache', 0, 0.1);
     $request = \SymPress\NginxCache\Value\PurgeRequest::urls([get_permalink($published)]);
     $side->push($result, $request);
     check(!$side->process(static fn (): bool => false) && $side->count() === 1, 'failed side effect remains stored');
+    $sideClock->sleep(60);
     check($side->process(static fn (): bool => true) && $side->count() === 0, 'successful side-effect retry acknowledges');
     for ($i = 0; $i < 50; ++$i) {
         $side->push($result, $request);
@@ -270,6 +305,35 @@ try {
         check($side->count() === 50, 'side-effect overflow preserves all previous work');
     }
     $side->process(static fn (): bool => true);
+    $side->push($result, $request);
+    $sideCalls = 0;
+    foreach ([60, 120, 240, 300, 300] as $attemptIndex => $delay) {
+        $before = $sideClock->now()->getTimestamp();
+        $side->process(static function () use (&$sideCalls): bool { ++$sideCalls; throw new RuntimeException('fixture provider exception'); });
+        $state = $side->inspect()[0];
+        check($state['attempts'] === $attemptIndex + 1 && $state['retry_at'] === $before + $delay, 'side-effect exception persists capped retry ' . ($attemptIndex + 1));
+        $side->process(static function () use (&$sideCalls): bool { ++$sideCalls; return true; });
+        check($sideCalls === $attemptIndex + 1, 'side-effect worker respects backoff ' . ($attemptIndex + 1));
+        $sideClock->sleep($delay);
+    }
+    $side->push($result, $request);
+    $side->process(static fn (): bool => true);
+    check($sideCalls === 5 && $side->count() === 1 && $side->inspect()[0]['exhausted'] && $side->nextAttemptAt() === null, 'exhausted side effects remain inspectable while newer tasks can succeed');
+    $side->retry();
+    check($side->process(static fn (): bool => true) && $side->count() === 0, 'explicit side-effect retry resets budget');
+    update_option('sympress_nginx_cache_side_effect_queue', [
+        ['result' => $result->toArray(), 'request' => $request->toArray(), 'queued_at' => 1],
+        ['result' => $result->toArray(), 'request' => $request->toArray(), 'queued_at' => 1],
+    ], false);
+    check($side->process(static fn (): bool => true) && $side->count() === 0, 'identical legacy side-effect tasks gain distinct stable identities');
+    $side->push($result, $request);
+    $side->process(static function (array $task) use ($side, $result, $request): bool {
+        $side->checkpoint($task['id'], 'fixture-action');
+        $side->push($result, $request);
+        return true;
+    });
+    check($side->count() === 1 && $side->inspect()[0]['completed'] === [], 'side-effect checkpoint and acknowledgement preserve concurrent producer');
+    $side->process(static fn (): bool => true);
     update_option($settings::OPTION_CLOUDFLARE_ENABLED, 1);
     update_option($settings::OPTION_CLOUDFLARE_ZONE_ID, 'fixture-zone');
     $calls = 0;
@@ -278,21 +342,85 @@ try {
         ++$calls;
         return new \Symfony\Component\HttpClient\Response\MockResponse($accept ? '{"success":true}' : '{"success":false}', ['http_code' => 200]);
     });
-    $clock = new \SymPress\NginxCache\Time\CacheClock(new \Symfony\Component\Clock\NativeClock());
     $effects = new \SymPress\NginxCache\Purge\PurgeSideEffectProcessor($settings, $side,
         new \SymPress\NginxCache\Purge\Prewarmer($mock, $settings, $policy, $clock), new \SymPress\NginxCache\Layer\CacheLayerCoordinator($settings),
         new \SymPress\NginxCache\Remote\RemotePurgeDispatcher($mock, $settings, $policy, $clock),
         new \SymPress\NginxCache\Remote\CloudflarePurgeDispatcher($mock, $settings, new \SymPress\NginxCache\Surrogate\CacheTagResolver(), $policy), $clock);
     $effects->enqueue($result, $request);
+    wp_clear_scheduled_hook($effects::HOOK);
     $effects->process();
     check($side->count() === 1 && $calls === 0, 'unreadable Cloudflare token fails closed and preserves provider work');
+    $scheduled = wp_next_scheduled($effects::HOOK);
+    check($scheduled === $sideClock->now()->getTimestamp() + 60, 'side-effect cron retry waits 60 seconds instead of every second');
+    $effects->process();
+    check($side->inspect()[0]['attempts'] === 1 && $calls === 0, 'processor cannot retry before persisted due time');
+    $sideClock->sleep(60);
     update_option($settings::OPTION_CLOUDFLARE_API_TOKEN, 'fixture-provider-token');
     $effects->process();
     check($side->count() === 1 && $calls === 1, 'provider rejection with HTTP 200 remains queued');
+    $sideClock->sleep(120);
     $accept = true;
     $effects->process();
     check($side->count() === 0 && $calls === 2, 'mock provider acceptance acknowledges retry');
+    $layerCalls = 0;
+    $layerAction = static function () use (&$layerCalls): void { ++$layerCalls; };
+    add_action('sympress_nginx_cache_flush_layers', $layerAction);
+    update_option($settings::OPTION_LAYER_SYNC_ENABLED, 1);
+    $accept = false;
+    $effects->enqueue($result, $request);
+    $effects->process();
+    check($layerCalls === 1 && in_array('layer:wordpress-hooks', $side->inspect()[0]['completed'], true), 'successful layer work is durably checkpointed before failed provider');
+    $sideClock->sleep(60);
+    $accept = true;
+    $effects->process();
+    check($layerCalls === 1 && $side->count() === 0, 'provider retry does not duplicate a successful destructive layer action');
+    remove_action('sympress_nginx_cache_flush_layers', $layerAction);
+    update_option($settings::OPTION_LAYER_SYNC_ENABLED, 0);
+    $accept = false;
+    $effects->enqueue($result, $request);
+    foreach ([60, 120, 240, 300, 300] as $delay) {
+        wp_clear_scheduled_hook($effects::HOOK);
+        $effects->process();
+        $sideClock->sleep($delay);
+    }
+    check($side->inspect()[0]['exhausted'] && wp_next_scheduled($effects::HOOK) === false, 'exhausted side-effect processor stops scheduling cron and retains task');
+    $sideCommand = new \Symfony\Component\Console\Tester\CommandTester(new \SymPress\NginxCache\Cli\Command\SideEffectsCommand($effects));
+    $sideCommand->execute(['action' => 'status']);
+    check(str_contains($sideCommand->getDisplay(), 'Exhausted side-effect tasks: 1'), 'side-effect CLI status exposes exhausted work');
+    $sideCommand->execute(['action' => 'details']);
+    $details = json_decode($sideCommand->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+    check($details[0]['attempts'] === 5 && $details[0]['exhausted'], 'side-effect CLI details exposes attempts and exhaustion');
+    check($sideCommand->execute(['action' => 'flush']) === 1, 'side-effect CLI flush reports retained exhausted work');
+    $sideCommand->execute(['action' => 'retry']);
+    check($side->inspect()[0]['attempts'] === 0 && wp_next_scheduled($effects::HOOK) !== false, 'side-effect operator retry resets budget and schedules without calling providers');
+    $accept = true;
+    $effects->process();
     update_option($settings::OPTION_CLOUDFLARE_ENABLED, 0);
+    // Public-IP fixtures avoid DNS; MockHttpClient prevents any network call.
+    $firstRemote = 'https://1.1.1.1/fixture-first';
+    $secondRemote = 'https://1.1.1.1/fixture-second';
+    update_option($settings::OPTION_REMOTE_ENDPOINTS, $firstRemote . "\n" . $secondRemote);
+    update_option($settings::OPTION_REMOTE_SECRET, 'fixture-remote-signing-secret');
+    $remoteCalls = [];
+    $acceptRemote = false;
+    $remoteMock = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url) use (&$remoteCalls, &$acceptRemote, $firstRemote): \Symfony\Component\HttpClient\Response\MockResponse {
+        $remoteCalls[$url] = ($remoteCalls[$url] ?? 0) + 1;
+        return new \Symfony\Component\HttpClient\Response\MockResponse('', ['http_code' => $url === $firstRemote || $acceptRemote ? 204 : 500]);
+    });
+    $remoteEffects = new \SymPress\NginxCache\Purge\PurgeSideEffectProcessor($settings, $side,
+        new \SymPress\NginxCache\Purge\Prewarmer($remoteMock, $settings, $policy, $clock), new \SymPress\NginxCache\Layer\CacheLayerCoordinator($settings),
+        new \SymPress\NginxCache\Remote\RemotePurgeDispatcher($remoteMock, $settings, $policy, $clock),
+        new \SymPress\NginxCache\Remote\CloudflarePurgeDispatcher($remoteMock, $settings, new \SymPress\NginxCache\Surrogate\CacheTagResolver(), $policy), $clock);
+    $remoteEffects->enqueue($result, $request);
+    $remoteEffects->process();
+    check(($remoteCalls[$firstRemote] ?? 0) === 1 && ($remoteCalls[$secondRemote] ?? 0) === 1 && $side->count() === 1, 'mixed remote fixture success and failure retains task');
+    check(in_array('remote:' . $firstRemote, $side->inspect()[0]['completed'], true), 'successful remote endpoint is durably checkpointed');
+    $sideClock->sleep(60);
+    $acceptRemote = true;
+    $remoteEffects->process();
+    check($remoteCalls[$firstRemote] === 1 && $remoteCalls[$secondRemote] === 2 && $side->count() === 0, 'retry skips successful remote endpoint and only repeats the failed endpoint');
+    update_option($settings::OPTION_REMOTE_ENDPOINTS, '');
+    delete_option($settings::OPTION_REMOTE_SECRET);
     $calls = 0;
     update_option($settings::OPTION_FULL_PURGE_ENDPOINT, 'https://example.test/__purge');
     $endpoint = new \SymPress\NginxCache\Purge\FullPurgeEndpointDispatcher($mock, $settings, $policy, $clock);
@@ -315,7 +443,7 @@ try {
         new \SymPress\NginxCache\Purge\CachePurger(new \Symfony\Component\Filesystem\Filesystem(), new \SymPress\NginxCache\Filesystem\CachePathValidator(new \Symfony\Component\Filesystem\Filesystem()), new \SymPress\NginxCache\Purge\CacheFileResolver($settings, new \SymPress\NginxCache\Key\CacheKeyStrategy()), new \SymPress\NginxCache\Purge\FullPurgeEndpointDispatcher($http, $settings, $policy, $clock), $clock),
         $history, new \SymPress\NginxCache\Purge\PurgeEventEmitter(), $index,
         new \SymPress\NginxCache\Purge\PurgeSideEffectProcessor($settings, $side, new \SymPress\NginxCache\Purge\Prewarmer($http, $settings, $policy, $clock), new \SymPress\NginxCache\Layer\CacheLayerCoordinator($settings), new \SymPress\NginxCache\Remote\RemotePurgeDispatcher($http, $settings, $policy, $clock), new \SymPress\NginxCache\Remote\CloudflarePurgeDispatcher($http, $settings, new \SymPress\NginxCache\Surrogate\CacheTagResolver(), $policy), $clock));
-    $processor = new \SymPress\NginxCache\Purge\PurgeQueueProcessor($settings, $queue, $manager, $clock);
+    $processor = new \SymPress\NginxCache\Purge\PurgeQueueProcessor($settings, $queue, $manager, new \SymPress\NginxCache\Time\CacheClock($queueClock));
     $subscriber = new \SymPress\NginxCache\Hook\AutomaticPurgeSubscriber($settings, $manager, $processor, $collector, new \SymPress\NginxCache\Purge\PurgeRequestMerger());
     update_option($settings::OPTION_AUTO_PURGE, 1);
     do_action('save_post', $published, get_post($published), true);
@@ -339,6 +467,25 @@ try {
     $immediate->purgeOnce('save_post', $published, get_post($published));
     $immediate->flushPending();
     check($queue->count() === 1, 'failed immediate purge falls back to persistent retry');
+    foreach ([60, 120, 240, 300, 300] as $attemptIndex => $delay) {
+        wp_clear_scheduled_hook($processor::HOOK);
+        $processor->process();
+        check($queue->inspect()[0]['attempts'] === $attemptIndex + 1, 'purge processor reserves failed attempt ' . ($attemptIndex + 1));
+        if ($attemptIndex < 4) {
+            check(wp_next_scheduled($processor::HOOK) === $queueClock->now()->getTimestamp() + $delay, 'purge processor schedules capped backoff ' . ($attemptIndex + 1));
+        }
+        $queueClock->sleep($delay);
+    }
+    check($queue->inspect()[0]['exhausted'] && wp_next_scheduled($processor::HOOK) === false, 'purge processor stops scheduling exhausted work');
+    $queueCommand = new \Symfony\Component\Console\Tester\CommandTester(new \SymPress\NginxCache\Cli\Command\QueueCommand($processor));
+    $queueCommand->execute(['action' => 'status']);
+    check(str_contains($queueCommand->getDisplay(), 'Exhausted purge requests: 1'), 'purge CLI status exposes exhausted work');
+    $queueCommand->execute(['action' => 'details']);
+    $details = json_decode($queueCommand->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+    check($details[0]['attempts'] === 5 && $details[0]['exhausted'], 'purge CLI details exposes retained requests and retry state');
+    check($queueCommand->execute(['action' => 'flush']) === 1, 'purge CLI flush reports retained exhausted work');
+    $queueCommand->execute(['action' => 'retry']);
+    check($queue->inspect()[0]['attempts'] === 0 && wp_next_scheduled($processor::HOOK) !== false, 'purge operator retry schedules preserved work without filesystem execution');
     remove_filter('sympress_nginx_cache_path', $invalidRoot);
     // Default retention and explicit data removal, without filesystem operations.
     \SymPress\NginxCache\Support\UninstallPolicy::removeCurrentSiteData();
