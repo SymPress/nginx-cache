@@ -120,6 +120,7 @@ final readonly class CachePurger
             );
         } finally {
             flock($lock, LOCK_UN);
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Close the connection-local POSIX flock resource after releasing ownership.
             fclose($lock);
         }
     }
@@ -213,6 +214,7 @@ final readonly class CachePurger
     /** @return resource|null */
     private function openLock(string $path): mixed
     {
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Atomic local flock needs a native descriptor inside the validated managed cache root.
         $lock = @fopen(sprintf('%s/%s', rtrim($path, '/'), self::LOCK_FILE), 'c');
 
         return is_resource($lock) ? $lock : null;

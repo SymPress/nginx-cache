@@ -31,6 +31,7 @@ final readonly class EnvironmentDetector
             $signals[] = $name;
         }
 
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Server metadata is used for diagnostics only; display sites escape it, and it authorizes no filesystem operation.
         $software = is_string($_SERVER['SERVER_SOFTWARE'] ?? null) ? $_SERVER['SERVER_SOFTWARE'] : '';
         $nginx = stripos($software, 'nginx') !== false;
 

@@ -89,6 +89,7 @@ final readonly class PurgeHistoryRepository
 
     private function clientIp(): ?string
     {
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Direct server peer is immediately validated with FILTER_VALIDATE_IP; forwarded addresses are excluded.
         $value = $_SERVER['REMOTE_ADDR'] ?? null;
 
         return is_string($value) && filter_var($value, FILTER_VALIDATE_IP) ? $value : null;
