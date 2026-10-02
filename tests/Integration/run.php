@@ -48,6 +48,15 @@ try {
     update_option('permalink_structure', '/%postname%/');
     $GLOBALS['wp_rewrite']->init();
     $index = testIndex();
+    $scope = $wpdb->get_var('SELECT DATABASE()') . ':' . $wpdb->prefix . ':' . $index::LEGACY_OPTION;
+    $indexLock = 'sympress-cache:' . substr(hash('sha256', $scope), 0, 40);
+    $statement = $pdo->prepare('SELECT GET_LOCK(?, 0)');
+    $statement->execute([$indexLock]);
+    $started = microtime(true);
+    $index->install();
+    check(microtime(true) - $started < 0.5 && get_option($index::OPTION_VERSION, null) === null, 'contended schema initialization returns immediately without a success marker');
+    $statement = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+    $statement->execute([$indexLock]);
     update_option($index::LEGACY_OPTION, ['legacy' => ['https://example.test/legacy/' => time()]], false);
     $denySchema = static fn (string $sql): string => str_starts_with($sql, 'CREATE TABLE IF NOT EXISTS') ? 'INVALID SCHEMA SQL' : $sql;
     $quiet = $wpdb->suppress_errors(true);
@@ -71,6 +80,10 @@ try {
     $index->remember('https://example.test/concurrent/1/', ['concurrent', 'item:1']);
     $writes = array_filter($wpdb->queries, static fn (array $query): bool => preg_match('/^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|START|COMMIT)/i', $query[0]) === 1);
     check($writes === [], 'repeated identical request issues zero database writes');
+    for ($i = 0; $i < 50; ++$i) {
+        $index->remember('https://example.test/tracking/?utm_source=' . $i, ['tracking']);
+    }
+    check($index->urlsForTags(['tracking']) === ['https://example.test/tracking/'], '50 tracking queries retain one canonical tag-index URL');
     for ($i = 0; $i < 55; ++$i) { $index->remember('https://example.test/bounded/' . $i . '/', ['bounded']); }
     check(count($index->urlsForTags(['bounded'])) === 50, 'per-tag URL retention remains bounded');
     for ($i = 0; $i < 17; ++$i) {
@@ -90,6 +103,22 @@ try {
         finishWorker($worker);
     }
     check(count($queue->all()[0]->urls) === 12, '12 concurrent queue producers survive merge');
+    $scope = $wpdb->get_var('SELECT DATABASE()') . ':' . $wpdb->prefix . ':sympress_nginx_cache_queue';
+    $heldQueueKey = 'sympress-cache:' . substr(hash('sha256', $scope), 0, 40);
+    $statement = $pdo->prepare('SELECT GET_LOCK(?, 0)');
+    $statement->execute([$heldQueueKey]);
+    $started = microtime(true);
+    $queue->push(\SymPress\NginxCache\Value\PurgeRequest::urls(['https://example.test/contended-producer/']));
+    check(microtime(true) - $started < 0.5, 'producer persists without waiting for a contended mutation lock');
+    check(in_array('https://example.test/contended-producer/', $queue->all()[0]->urls, true), 'essential purge survives lock contention in durable inbox');
+    $called = false;
+    try {
+        $queue->process(static function () use (&$called): bool { $called = true; return true; });
+    } catch (\SymPress\NginxCache\Support\MutationLockUnavailable) {
+    }
+    check(!$called && $queue->count() === 1, 'contended processing cannot delete or execute unreserved work');
+    $statement = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+    $statement->execute([$heldQueueKey]);
     wp_cache_set('sympress_nginx_cache_queue', [], 'options');
     check($queue->count() === 1, 'stale option cache cannot hide pending work');
     check(!$queue->process(static fn (): bool => false) && $queue->count() === 1, 'failed purge stays queued');
@@ -142,12 +171,15 @@ try {
     $wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 1)', $key));
     $worker = startWorker('lock', 0);
     $workers[] = $worker;
-    usleep(800000);
-    check(get_option('sympress_nginx_cache_worker_entered', false) === false, 'database mutex excludes competing process');
-    $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $key));
+    $started = microtime(true);
     finishWorker($worker);
+    check(microtime(true) - $started < 1, 'contended database mutex returns without waiting');
+    check(get_option('sympress_nginx_cache_worker_entered', false) === false, 'database mutex excludes competing process');
+    check(get_option('sympress_nginx_cache_worker_contended') === '1', 'contended worker reports retryable lock failure');
+    $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $key));
+    finishWorker(startWorker('lock', 0));
     wp_cache_delete('notoptions', 'options');
-    check(get_option('sympress_nginx_cache_worker_entered') === '1', 'blocked process proceeds after owner releases');
+    check(get_option('sympress_nginx_cache_worker_entered') === '1', 'new attempt proceeds after owner releases');
     $scope = $wpdb->get_var('SELECT DATABASE()') . ':' . $wpdb->prefix . ':failed-acquisition';
     $held = 'sympress-cache:' . substr(hash('sha256', $scope), 0, 40);
     $statement = $pdo->prepare('SELECT GET_LOCK(?, 0)');
@@ -155,9 +187,9 @@ try {
     $called = false;
     try {
         testMutex()->synchronized('failed-acquisition', static function () use (&$called): void { $called = true; });
-        check(false, 'contended lock must time out');
+        check(false, 'contended lock must fail immediately');
     } catch (RuntimeException) {
-        check(!$called, 'lock acquisition timeout prevents mutation callback');
+        check(!$called, 'lock contention prevents mutation callback');
     } finally {
         $statement = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $statement->execute([$held]);

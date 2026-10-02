@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Surrogate;
 
 use SymPress\NginxCache\Security\UrlPolicy;
+use SymPress\NginxCache\Support\MutationLockUnavailable;
 use SymPress\NginxCache\Support\OptionMutex;
 use SymPress\NginxCache\Time\CacheClock;
 
@@ -26,6 +27,15 @@ final readonly class TagIndexRepository
     }
 
     public function install(): void
+    {
+        try {
+            $this->installSchema();
+        } catch (MutationLockUnavailable) {
+            // Another installer owns initialization. A later init retries safely.
+        }
+    }
+
+    private function installSchema(): void
     {
         if (get_option(self::OPTION_VERSION) === '1') {
             return;
@@ -74,7 +84,7 @@ final readonly class TagIndexRepository
     /** @param list<string> $tags */
     public function remember(string $url, array $tags): void
     {
-        $url = $this->urls->normalizeSameOriginHttpUrl($url);
+        $url = $this->urls->normalizeSameOriginHttpUrl(explode('?', $url, 2)[0]);
         if ($url === '') {
             return;
         }

@@ -7,6 +7,7 @@ namespace SymPress\NginxCache\Key;
 final readonly class CacheKeyStrategy
 {
     public const string TEMPLATE = '$scheme|$request_method|$host|$request_uri';
+    public const string TRACKING_QUERY_PATTERN = '^(?:utm_[A-Za-z0-9_]+|gclid|fbclid|msclkid)=[^&]*(?:&(?:utm_[A-Za-z0-9_]+|gclid|fbclid|msclkid)=[^&]*)*$';
 
     public function template(): string
     {
@@ -191,6 +192,9 @@ final readonly class CacheKeyStrategy
     {
         $path = is_string($parts['path'] ?? null) && $parts['path'] !== '' ? $parts['path'] : '/';
         $query = is_string($parts['query'] ?? null) && $parts['query'] !== '' ? '?' . $parts['query'] : '';
+        if ($query !== '' && preg_match('/' . self::TRACKING_QUERY_PATTERN . '/D', substr($query, 1)) === 1) {
+            $query = '';
+        }
 
         return $path . $query;
     }

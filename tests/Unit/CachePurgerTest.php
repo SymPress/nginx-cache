@@ -61,6 +61,29 @@ final class CachePurgerTest extends TestCase
         }
     }
 
+    public function testContendedFilesystemLockReturnsImmediatelyAndRetainsCacheFiles(): void
+    {
+        $filesystem = new Filesystem();
+        $path = sys_get_temp_dir() . '/sympress-nginx-cache-contended-' . bin2hex(random_bytes(8));
+        $filesystem->mkdir($path . '/a/b');
+        $cache = $path . '/a/b/' . str_repeat('a', 32);
+        file_put_contents($cache, 'cached');
+        $lock = fopen($path . '/.sympress-nginx-cache.lock', 'c+');
+        self::assertIsResource($lock);
+        self::assertTrue(flock($lock, LOCK_EX | LOCK_NB));
+        try {
+            $started = microtime(true);
+            $result = $this->purger($filesystem, $path)->purgeRequest($path, PurgeRequest::full(dryRun: true));
+            self::assertFalse($result->successful);
+            self::assertLessThan(0.5, microtime(true) - $started);
+            self::assertFileExists($cache);
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+            $filesystem->remove($path);
+        }
+    }
+
     private function purger(Filesystem $filesystem, string $path): CachePurger
     {
         $settings = new WordPressCacheSettings($path);

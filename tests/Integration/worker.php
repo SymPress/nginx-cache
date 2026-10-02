@@ -6,13 +6,26 @@ require __DIR__ . '/bootstrap.php';
 
 $number = (int) ($argv[2] ?? 0);
 if (($argv[1] ?? '') === 'index') {
-    testIndex()->remember('https://example.test/concurrent/' . $number . '/', ['concurrent', 'item:' . $number]);
+    $deadline = microtime(true) + 5;
+    do {
+        try {
+            testIndex()->remember('https://example.test/concurrent/' . $number . '/', ['concurrent', 'item:' . $number]);
+            break;
+        } catch (\SymPress\NginxCache\Support\MutationLockUnavailable $error) {
+            if (microtime(true) >= $deadline) { throw $error; }
+            usleep(10000);
+        }
+    } while (true);
 } elseif (($argv[1] ?? '') === 'queue') {
     testQueue()->push(\SymPress\NginxCache\Value\PurgeRequest::urls(['https://example.test/queued/' . $number . '/']));
 } elseif (($argv[1] ?? '') === 'lock') {
-    testMutex()->synchronized('blocking-fixture', static function (): void {
-        update_option('sympress_nginx_cache_worker_entered', true, false);
-    });
+    try {
+        testMutex()->synchronized('blocking-fixture', static function (): void {
+            update_option('sympress_nginx_cache_worker_entered', true, false);
+        });
+    } catch (\SymPress\NginxCache\Support\MutationLockUnavailable) {
+        update_option('sympress_nginx_cache_worker_contended', true, false);
+    }
 } elseif (($argv[1] ?? '') === 'option-lock') {
     $store = new \SymPress\NginxCache\Support\WordPressOptionLockStore(new \SymPress\NginxCache\Time\CacheClock(new \Symfony\Component\Clock\NativeClock()));
     $key = new \Symfony\Component\Lock\Key('simultaneous-option-lock');
