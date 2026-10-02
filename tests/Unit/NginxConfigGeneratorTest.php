@@ -9,6 +9,7 @@ use SymPress\NginxCache\Config\BypassRuleProvider;
 use SymPress\NginxCache\Config\NginxConfigGenerator;
 use SymPress\NginxCache\Key\CacheKeyStrategy;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
+use SymPress\NginxCache\Value\CacheProfile;
 
 final class NginxConfigGeneratorTest extends TestCase
 {
@@ -28,5 +29,13 @@ final class NginxConfigGeneratorTest extends TestCase
         self::assertStringContainsString('add_header Cache-Control "public, max-age=31536000, immutable" always;', $config);
         self::assertStringNotContainsString('$http_x_forwarded_proto|$scheme', $config);
         self::assertStringNotContainsString('fastcgi_cache_valid 200 301 302', $config);
+        self::assertStringNotContainsString('sympress_consent', $config);
+    }
+
+    public function testConsentDoesNotBypassAnyDefaultProfile(): void
+    {
+        foreach (CacheProfile::cases() as $profile) {
+            self::assertNotContains('sympress_consent', (new BypassRuleProvider())->rules($profile)['cookies']);
+        }
     }
 }

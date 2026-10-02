@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Purge;
 
 use SymPress\NginxCache\Support\OptionMutex;
+use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
+use SymPress\NginxCache\Value\QueueRetryState;
 
 final readonly class PurgeQueueRepository
 {
@@ -14,6 +16,7 @@ final readonly class PurgeQueueRepository
     public function __construct(
         private PurgeRequestMerger $merger,
         private OptionMutex $mutex,
+        private CacheClock $clock,
     ) {
     }
 
@@ -27,7 +30,7 @@ final readonly class PurgeQueueRepository
             self::OPTION_QUEUE,
             function () use ($request): void {
                 $merged = $this->merger->merge([...$this->all(), $request]);
-                if (!$this->persist($merged)) {
+                if (!$this->persist($merged, $this->retryState())) {
                     throw new \RuntimeException('Unable to persist the purge request.');
                 }
             },
@@ -94,20 +97,38 @@ final readonly class PurgeQueueRepository
     public function process(callable $purge): bool
     {
         return $this->mutex->synchronized(self::OPTION_QUEUE . '.process', function () use ($purge): bool {
-            $snapshot = $this->mutex->synchronized(self::OPTION_QUEUE, fn (): array => [$this->all(), $this->generation()]);
+            $snapshot = $this->mutex->synchronized(self::OPTION_QUEUE, function (): array {
+                $requests = $this->all();
+                $retry = $this->retryState();
+                if ($requests === [] || !$retry->ready($this->clock->timestamp())) {
+                    return [[], null];
+                }
+                $generation = $this->generation() ?? bin2hex(random_bytes(16));
+                // Reserve before side effects so a crash also consumes this attempt.
+                if (!$this->persist($requests, $retry->reserve($this->clock->timestamp()), $generation)) {
+                    throw new \RuntimeException('Unable to reserve the purge attempt.');
+                }
+                return [$requests, $generation];
+            });
             foreach ($snapshot[0] as $request) {
-                if (!$purge($request)) {
+                try {
+                    $successful = $purge($request);
+                } catch (\Throwable) {
+                    $successful = false;
+                }
+                if (!$successful) {
                     return false;
                 }
                 $acknowledged = $this->mutex->synchronized(self::OPTION_QUEUE, function () use ($request, $snapshot): bool {
                     $pending = $this->all();
                     if ($this->generation() !== $snapshot[1]) {
-                        return true;
+                        // The purge succeeded; new concurrent work gets a fresh budget.
+                        return $this->persist($pending, new QueueRetryState(), $this->generation());
                     }
                     foreach ($pending as $index => $current) {
                         if ($current->toArray() === $request->toArray()) {
                             unset($pending[$index]);
-                            return $this->persist(array_values($pending));
+                            return $this->persist(array_values($pending), $this->retryState(), $snapshot[1]);
                         }
                     }
                     // A concurrent producer merged new work into this item. Retain that work.
@@ -121,6 +142,48 @@ final readonly class PurgeQueueRepository
         });
     }
 
+    public function nextAttemptAt(): ?int
+    {
+        if ($this->all() === []) {
+            return null;
+        }
+        $retry = $this->retryState();
+        return $retry->exhausted() ? null : $retry->retryAt;
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function inspect(): array
+    {
+        $requests = $this->all();
+        $retry = $this->retryState();
+        return array_map(static fn (PurgeRequest $request): array => [
+            'request'   => $request->toArray(),
+            ...$retry->toArray(),
+            'exhausted' => $retry->exhausted(),
+        ], $requests);
+    }
+
+    public function retry(): void
+    {
+        $this->mutex->synchronized(self::OPTION_QUEUE . '.process', fn () => $this->mutex->synchronized(
+            self::OPTION_QUEUE,
+            function (): void {
+                if (!$this->persist($this->all(), new QueueRetryState())) {
+                    throw new \RuntimeException('Unable to reset the purge retry budget.');
+                }
+            },
+        ));
+    }
+
+    private function retryState(): QueueRetryState
+    {
+        if (!function_exists('get_option')) {
+            return new QueueRetryState();
+        }
+        $queue = get_option(self::OPTION_QUEUE, []);
+        return QueueRetryState::fromArray(is_array($queue) ? ($queue[0]['_retry'] ?? null) : null);
+    }
+
     private function generation(): ?string
     {
         $queue = get_option(self::OPTION_QUEUE, []);
@@ -128,14 +191,18 @@ final readonly class PurgeQueueRepository
     }
 
     /** @param list<PurgeRequest> $requests */
-    private function persist(array $requests): bool
+    private function persist(array $requests, QueueRetryState $retry, ?string $generation = null): bool
     {
         if (!function_exists('update_option')) {
             return false;
         }
 
-        $generation = bin2hex(random_bytes(16));
-        $payload = array_map(static fn (PurgeRequest $item): array => [...$item->toArray(), '_generation' => $generation], $requests);
+        $generation ??= bin2hex(random_bytes(16));
+        $payload = array_map(static fn (PurgeRequest $item): array => [
+            ...$item->toArray(),
+            '_generation' => $generation,
+            '_retry'      => $retry->toArray(),
+        ], $requests);
 
         return update_option(self::OPTION_QUEUE, $payload, false) || get_option(self::OPTION_QUEUE) === $payload;
     }

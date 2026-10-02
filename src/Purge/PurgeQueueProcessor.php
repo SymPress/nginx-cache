@@ -42,24 +42,37 @@ final readonly class PurgeQueueProcessor
 
         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- credential-free retry signal.
         error_log('SymPress cache purge failed; pending requests are retained for retry.');
-        $this->schedule();
+        $this->schedule(60);
     }
 
-    public function schedule(): void
+    public function schedule(int $minimumDelay = 0): void
     {
         if (!function_exists('wp_next_scheduled') || !function_exists('wp_schedule_single_event')) {
             return;
         }
 
-        if (wp_next_scheduled(self::HOOK) !== false) {
+        $next = $this->queue->nextAttemptAt();
+        if ($next === null || wp_next_scheduled(self::HOOK) !== false) {
             return;
         }
 
-        wp_schedule_single_event($this->clock->timestamp() + $this->settings->debounceSeconds(), self::HOOK);
+        wp_schedule_single_event(max($next, $this->clock->timestamp() + max($minimumDelay, $this->settings->debounceSeconds())), self::HOOK);
     }
 
     public function count(): int
     {
         return $this->queue->count();
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function inspect(): array
+    {
+        return $this->queue->inspect();
+    }
+
+    public function retry(): void
+    {
+        $this->queue->retry();
+        $this->schedule();
     }
 }

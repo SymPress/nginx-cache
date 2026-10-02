@@ -23,7 +23,7 @@ final class QueueCommand extends AbstractCacheCommand
 
     protected function configure(): void
     {
-        $this->addArgument('action', InputArgument::OPTIONAL, 'Use "flush" to process queued purge requests.', 'status');
+        $this->addArgument('action', InputArgument::OPTIONAL, 'Use status, details, flush (due work), or retry (reset the retry budget).', 'status');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -46,12 +46,29 @@ final class QueueCommand extends AbstractCacheCommand
 
         if ($action === 'flush') {
             $this->queue->process();
+            if ($this->queue->count() > 0) {
+                return $this->error('Purge requests remain pending; inspect details for retry timing or exhaustion.', $output);
+            }
             $this->success('Processed queued purge requests.', $output);
 
             return Command::SUCCESS;
         }
 
+        if ($action === 'retry') {
+            $this->queue->retry();
+            $this->success('Reset the pending purge retry budget and scheduled processing.', $output);
+            return Command::SUCCESS;
+        }
+        if ($action === 'details') {
+            $this->line($this->json($this->queue->inspect()), $output);
+            return Command::SUCCESS;
+        }
+        if ($action !== 'status') {
+            return $this->error('Unknown action. Use status, details, flush, or retry.', $output);
+        }
+
         $this->log(sprintf('Pending purge requests: %d', $this->queue->count()), $output);
+        $this->log(sprintf('Exhausted purge requests: %d', count(array_filter($this->queue->inspect(), static fn (array $task): bool => $task['exhausted']))), $output);
 
         return Command::SUCCESS;
     }

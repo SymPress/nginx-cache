@@ -8,4 +8,9 @@ where applicable.
 
 ## Unreleased
 
+- Keep cookie-invariant SymPress Consent responses cacheable in every profile;
+  server-dependent consent integrations can still configure an explicit bypass.
+- Bound durable purge and side-effect retries to five attempts with capped
+  backoff, retained exhaustion, CLI inspection and explicit operator retry.
+- Preserve successful side-effect checkpoints across provider retries.
 - Initial Nginx cache package documentation.

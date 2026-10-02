@@ -34,9 +34,16 @@ wp nginx-cache purge /
 wp nginx-cache purge --queue --prewarm
 wp nginx-cache diagnostics
 wp nginx-cache config
+wp nginx-cache queue details
+wp nginx-cache side-effects details
 ```
 
 The legacy `edge-cache` namespace is also registered for compatibility.
+Queues retain failed work, retry at most five times with capped exponential
+backoff, and expose exhausted work through `status` and `details`. After fixing
+the cause, `wp nginx-cache queue retry` or `wp nginx-cache side-effects retry`
+resets its retry budget and schedules processing. See the
+[side-effect contract](docs/side-effects.md) for timing and delivery guarantees.
 
 ## Features
 
