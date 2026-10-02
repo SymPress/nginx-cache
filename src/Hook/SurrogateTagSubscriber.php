@@ -83,6 +83,7 @@ final class SurrogateTagSubscriber
             return false;
         }
 
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only literal GET/HEAD methods pass the following allowlist; transforming input could broaden caching.
         $method = is_string($_SERVER['REQUEST_METHOD'] ?? null) ? strtoupper($_SERVER['REQUEST_METHOD']) : 'GET';
 
         if (!in_array($method, ['GET', 'HEAD'], true)) {
@@ -120,6 +121,7 @@ final class SurrogateTagSubscriber
 
     private function currentUrl(): string
     {
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Unslash below, then TagIndexRepository validates canonical same-origin URLs before persistence.
         $uri = is_string($_SERVER['REQUEST_URI'] ?? null) ? $_SERVER['REQUEST_URI'] : '/';
         $uri = function_exists('wp_unslash') ? (string) wp_unslash($uri) : $uri;
 
@@ -132,6 +134,7 @@ final class SurrogateTagSubscriber
 
     private function requestHasAuthorization(): bool
     {
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Any nonempty authorization header prevents caching; sanitizing could turn an authenticated request into a cacheable one.
         return isset($_SERVER['HTTP_AUTHORIZATION']) && is_string($_SERVER['HTTP_AUTHORIZATION']) && trim($_SERVER['HTTP_AUTHORIZATION']) !== '';
     }
 

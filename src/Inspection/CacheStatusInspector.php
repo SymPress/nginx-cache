@@ -34,6 +34,7 @@ final readonly class CacheStatusInspector
                 $path,
                 true,
                 true,
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Inspect the local PHP/Nginx filesystem, not a remote WP_Filesystem transport.
                 is_writable($path),
                 $files,
                 $directories,
@@ -45,6 +46,7 @@ final readonly class CacheStatusInspector
                 $path,
                 true,
                 true,
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Inspect the local PHP/Nginx filesystem, not a remote WP_Filesystem transport.
                 is_writable($path),
                 0,
                 0,

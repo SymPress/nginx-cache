@@ -60,6 +60,7 @@ final readonly class CachePathValidator
             $errors[] = 'Cache path is not a directory.';
         } elseif (!is_readable($path)) {
             $errors[] = 'Cache directory is not readable.';
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Purging requires the local process to write the validated private cache root.
         } elseif (!is_writable($path)) {
             $errors[] = 'Cache directory is not writable.';
         }
@@ -162,7 +163,9 @@ final readonly class CachePathValidator
             $directories[] = (string) get_theme_root();
         }
 
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Server filesystem path adds a deletion-deny boundary; transforming it could remove that protection.
         if (isset($_SERVER['DOCUMENT_ROOT']) && is_string($_SERVER['DOCUMENT_ROOT'])) {
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Preserve the exact server filesystem deletion-deny boundary; this value is never rendered.
             $directories[] = $_SERVER['DOCUMENT_ROOT'];
         }
 

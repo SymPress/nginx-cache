@@ -284,13 +284,12 @@ final readonly class WordPressCacheSettings
     public function sanitizeStoredSecret(mixed $value, string $option): string
     {
         $previous = $this->rawOptionString($option) ?? '';
-        // WordPress options.php verifies capability and nonce before sanitizing.
         if (
             isset($_POST[$option . '_clear'], $_POST['_wpnonce'])
             && $_POST[$option . '_clear'] === '1'
             && is_string($_POST['_wpnonce'])
             && function_exists('current_user_can') && current_user_can('manage_options')
-            && wp_verify_nonce(wp_unslash($_POST['_wpnonce']), 'sympress_nginx_cache-options')
+            && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_wpnonce'])), 'sympress_nginx_cache-options')
         ) {
             return '';
         }
@@ -298,7 +297,6 @@ final readonly class WordPressCacheSettings
         if ($value === '') {
             return $previous;
         }
-        // add_option sanitizes twice: authenticated ciphertext is already sanitized.
         if (str_starts_with($value, SecretCipher::PREFIX)) {
             return $this->secrets->decrypt($value, $option) !== null ? $value : $previous;
         }
@@ -783,7 +781,7 @@ final readonly class WordPressCacheSettings
             return (string) sanitize_text_field($path);
         }
 
-        return trim(strip_tags($path));
+        return trim(strip_tags($path)); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- WordPress-free fallback after native sanitizer check.
     }
 
     public function sanitizeTextarea(mixed $value): string
@@ -798,7 +796,7 @@ final readonly class WordPressCacheSettings
             return (string) sanitize_textarea_field($text);
         }
 
-        return trim(strip_tags($text));
+        return trim(strip_tags($text)); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- WordPress-free fallback after native sanitizer check.
     }
 
     public function sanitizeProfile(mixed $value): string
@@ -820,7 +818,10 @@ final readonly class WordPressCacheSettings
             $secret = (string) wp_unslash($secret);
         }
 
-        return trim(strip_tags($secret));
+        if (function_exists('wp_strip_all_tags')) {
+            return trim(wp_strip_all_tags($secret));
+        }
+        return trim(strip_tags($secret)); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- WordPress-free secret fallback.
     }
 
     public function sanitizeInteger(mixed $value): int

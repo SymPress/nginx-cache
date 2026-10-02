@@ -165,6 +165,7 @@ try {
     foreach ($workers as $worker) { finishWorker($worker); }
     check($winners === 1, '12 simultaneous option lock contenders have exactly one owner');
     $settings = new \SymPress\NginxCache\Settings\WordPressCacheSettings('/tmp/sympress-nginx-missing-cache-' . $schema);
+    check($settings->sanitizeSecret(' token<script>blocked</script><style>blocked</style> ') === 'token', 'native WordPress secret sanitization removes script and style bodies');
     $settings->register();
     wp_set_current_user(1);
     $_POST['_wpnonce'] = wp_create_nonce('sympress_nginx_cache-options');

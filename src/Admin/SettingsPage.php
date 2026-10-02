@@ -186,6 +186,7 @@ final readonly class SettingsPage
     {
         $message = $this->pullNotice();
 
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
         if ($message === 'purged') {
             $this->renderNotice(__('Cache purged.', WordPressCacheSettings::TEXT_DOMAIN), 'success');
 
@@ -1857,10 +1858,12 @@ final readonly class SettingsPage
 
     private function addRequestNotice(?string $pathError): void
     {
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Display-only legacy fixed notice selector; it is unslashed, sanitized, allowlisted and never mutates cache.
         $message = isset($_GET[self::LEGACY_MESSAGE_QUERY_VAR])
             ? sanitize_key((string) wp_unslash($_GET[self::LEGACY_MESSAGE_QUERY_VAR]))
             : '';
 
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
         if ($message === 'purged') {
             add_settings_error(
                 'sympress_nginx_cache',
@@ -1891,10 +1894,12 @@ final readonly class SettingsPage
 
     private function isPurgeRequest(): bool
     {
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended -- Action discriminator only; handlePageAction verifies nonce and capability before any purge.
         $action = isset($_GET['sympress-action'])
             ? sanitize_key((string) wp_unslash($_GET['sympress-action']))
             : '';
 
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended
         return $action === 'purge';
     }
 
@@ -1940,12 +1945,14 @@ final readonly class SettingsPage
 
     private function dryRunRequested(): bool
     {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Called only by nonce/capability-checked purge handlers; exact literal '1' is the boolean allowlist.
         return isset($_REQUEST['dry_run']) && (string) wp_unslash($_REQUEST['dry_run']) === '1';
     }
 
     private function prewarmRequested(): bool
     {
         return $this->settings->prewarmEnabled()
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Called only by nonce/capability-checked purge handlers; exact literal '1' is the boolean allowlist.
             || (isset($_REQUEST['prewarm']) && (string) wp_unslash($_REQUEST['prewarm']) === '1');
     }
 
@@ -1974,10 +1981,12 @@ final readonly class SettingsPage
 
     private function redirectUrl(): string
     {
+        // phpcs:disable WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce/capability-checked action handlers only; wp_validate_redirect enforces local redirect policy below.
         $redirect = isset($_REQUEST['redirect_to'])
             ? (string) wp_unslash($_REQUEST['redirect_to'])
             : '';
 
+        // phpcs:enable WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
         if ($redirect === '') {
             $redirect = (string) wp_get_referer();
         }
