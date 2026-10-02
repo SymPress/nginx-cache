@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Config;
 
+use SymPress\NginxCache\Key\CacheKeyStrategy;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Value\CacheProfile;
 
@@ -39,7 +40,7 @@ final readonly class BypassRuleProvider
             'preview=true',
         ];
         $userAgents = [];
-        $queryAllowlist = ['^$'];
+        $queryAllowlist = ['^$', CacheKeyStrategy::TRACKING_QUERY_PATTERN];
 
         if (in_array($profile, [CacheProfile::Commerce, CacheProfile::Safe], true)) {
             $cookies = [

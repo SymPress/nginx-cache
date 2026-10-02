@@ -35,9 +35,19 @@ retry. WordPress 6.2 or later identifier placeholders are required. The database
 account needs CREATE for installation, ordinary SELECT/INSERT/DELETE permissions
 for operation, and DROP only for explicitly enabled uninstall.
 
-The index stores individual `(tag, sha256(url))` rows. An unchanged retained URL
+The index stores individual `(tag, sha256(url))` rows. New registrations remove
+query strings from canonical index URLs. Tracking-only queries (`utm_*`, `gclid`,
+`fbclid`, `msclkid`) share the query-free FastCGI cache key in generated snippets,
+so distinct tracking values reuse the same cached response. Queries containing
+other parameters retain the bypass policy unless explicitly allowlisted.
+Explicitly allowlisted semantic query variants need matching URL or full purges;
+the canonical tag index stores the path only.
+Regenerate and reload existing snippets; deploy the cache-key change together
+with purge tooling. Tracking values must not personalize cached HTML.
+
+An unchanged retained URL
 mapping performs reads only: no option rewrite, timestamp touch, transaction or
-write lock. Changes are serialized per site with a database advisory lock and
+write lock. Changes are serialized per site with a nonblocking database advisory lock and
 committed as one transaction. Registration accepts at most 64 tags, retains at
 most 1,000 tags and 50 URLs per tag, and removes excess rows in bounded batches.
 Retention uses the last mapping change, not the last anonymous page view. A URL
@@ -48,8 +58,14 @@ purge. Author and taxonomy archive URLs are collected explicitly.
 
 Both queues retain each task until success. Database mutation locks are scoped
 by database, table prefix and queue name. Execution uses a separate process lock;
-producers can enqueue while HTTP or filesystem work runs. Purge requests carry a
-new generation on each enqueue, including identical URLs, so an invalidation
+producers can enqueue while HTTP or filesystem work runs. Purge producers first
+persist uniquely named immutable option inbox items without acquiring the merge
+lock. Workers acknowledge inbox items only after the merged request is durable.
+Existing option queue data and retry budgets remain compatible. Contended workers
+return immediately and retain queued and inbox data for retry; filesystem purge
+locks are also nonblocking. Optional anonymous tag registration skips a contended
+index lock and retries on a later uncached response. Each merged inbox item creates
+a new aggregate generation, including identical URLs, so an invalidation
 arriving during execution survives acknowledgement. Option caches, including
 cached absent options, are invalidated before reading. Failed/exceptional
 purges and prewarm/provider/layer work remain queued. Both queues reserve each
@@ -93,7 +109,7 @@ against the observed serialized token. It reads ownership directly from the
 database. WordPress `add_option()` is not an atomic lock acquisition primitive:
 its duplicate-key update can overwrite another contender after concurrent cached
 absence. An expired owner cannot refresh or delete a replacement owner's lock.
-`OptionMutex` uses connection-owned GET_LOCK/RELEASE_LOCK without lease expiry;
+`OptionMutex` uses connection-owned GET_LOCK with zero wait and RELEASE_LOCK without lease expiry;
 acquisition failure throws before any mutation. Database connection termination
 releases advisory locks. See the [MariaDB GET_LOCK contract](https://mariadb.com/docs/server/reference/sql-functions/secondary-functions/miscellaneous-functions/get_lock)
 and [WordPress identifier placeholders](https://developer.wordpress.org/reference/classes/wpdb/prepare/).
@@ -156,5 +172,11 @@ schema. Set `NGINX_TEST_DB_HOST`, `NGINX_TEST_DB_USER` and
 existing schemas, creates WordPress tables, runs concurrent workers and drops
 only its newly created schema in finally. Missing requirements fail, never skip.
 All external WordPress HTTP is blocked; provider behavior uses MockHttpClient.
+The harness checks canonical tracking URLs, subsecond lock contention, durable
+producers during contention, retry budgets and concurrent acknowledgements.
+Also validate the regenerated snippet in real Nginx and PHP-FPM: 50 sequential
+unique `?utm_source=` requests to one anonymous path must cause one PHP entry
+(MISS then HITs) and one canonical index URL. Search and preview queries must
+bypass cache. Use a disposable cache path and database.
 QA's `WordPress MariaDB integration` job runs this on a separate MariaDB service
 and a hash-verified WordPress 7.1.2 archive. Require this check before merging.

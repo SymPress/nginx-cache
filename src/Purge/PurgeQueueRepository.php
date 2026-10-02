@@ -26,6 +26,16 @@ final readonly class PurgeQueueRepository
             return;
         }
 
+        if (($GLOBALS['wpdb'] ?? null) instanceof \wpdb) {
+            // Each producer owns a unique immutable inbox item: no contended merge lock.
+            // Processing merges and removes it only after the aggregate is durable.
+            $name = self::OPTION_QUEUE . '_inbox_' . bin2hex(random_bytes(16));
+            if (!add_option($name, $request->toArray(), '', false)) {
+                throw new \RuntimeException('Unable to persist the purge inbox request.');
+            }
+            return;
+        }
+
         $this->mutex->synchronized(
             self::OPTION_QUEUE,
             function () use ($request): void {
@@ -63,12 +73,13 @@ final readonly class PurgeQueueRepository
             return [];
         }
 
-        return array_values(
+        $requests = array_values(
             array_map(
                 static fn (array $item): PurgeRequest => PurgeRequest::fromArray($item),
                 array_filter($queue, static fn (mixed $item): bool => is_array($item)),
             ),
         );
+        return $this->merger->merge([...$requests, ...array_column($this->inbox(), 'request')]);
     }
 
     /** @return list<PurgeRequest> */
@@ -77,6 +88,7 @@ final readonly class PurgeQueueRepository
         return $this->mutex->synchronized(
             self::OPTION_QUEUE,
             function (): array {
+                $this->ingestInbox();
                 $queue = $this->all();
 
                 if (function_exists('delete_option')) {
@@ -98,6 +110,7 @@ final readonly class PurgeQueueRepository
     {
         return $this->mutex->synchronized(self::OPTION_QUEUE . '.process', function () use ($purge): bool {
             $snapshot = $this->mutex->synchronized(self::OPTION_QUEUE, function (): array {
+                $this->ingestInbox();
                 $requests = $this->all();
                 $retry = $this->retryState();
                 if ($requests === [] || !$retry->ready($this->clock->timestamp())) {
@@ -120,6 +133,7 @@ final readonly class PurgeQueueRepository
                     return false;
                 }
                 $acknowledged = $this->mutex->synchronized(self::OPTION_QUEUE, function () use ($request, $snapshot): bool {
+                    $this->ingestInbox();
                     $pending = $this->all();
                     if ($this->generation() !== $snapshot[1]) {
                         // The purge succeeded; new concurrent work gets a fresh budget.
@@ -182,6 +196,44 @@ final readonly class PurgeQueueRepository
         }
         $queue = get_option(self::OPTION_QUEUE, []);
         return QueueRetryState::fromArray(is_array($queue) ? ($queue[0]['_retry'] ?? null) : null);
+    }
+
+    /** @return list<array{name: string, value: string, request: PurgeRequest}> */
+    private function inbox(): array
+    {
+        $db = $GLOBALS['wpdb'] ?? null;
+        if (!$db instanceof \wpdb) {
+            return [];
+        }
+        $rows = $db->get_results($db->prepare('SELECT option_name, option_value FROM %i WHERE option_name LIKE %s ORDER BY option_id', $db->options, $db->esc_like(self::OPTION_QUEUE . '_inbox_') . '%'), ARRAY_A);
+        $items = [];
+        foreach ($rows ?? [] as $row) {
+            $payload = maybe_unserialize($row['option_value']);
+            if (!is_array($payload)) {
+                throw new \RuntimeException('Invalid retained purge inbox payload.');
+            }
+            $items[] = ['name' => (string) $row['option_name'], 'value' => (string) $row['option_value'], 'request' => PurgeRequest::fromArray($payload)];
+        }
+        return $items;
+    }
+
+    /** Caller owns the aggregate mutation lock. */
+    private function ingestInbox(): void
+    {
+        $items = $this->inbox();
+        if ($items === []) {
+            return;
+        }
+        if (!$this->persist($this->all(), $this->retryState())) {
+            throw new \RuntimeException('Unable to merge the purge inbox.');
+        }
+        $db = $GLOBALS['wpdb'];
+        foreach ($items as $item) {
+            if ($db->query((string) $db->prepare('DELETE FROM %i WHERE option_name = %s AND option_value = %s', $db->options, $item['name'], $item['value'])) === false) {
+                throw new \RuntimeException('Unable to acknowledge the purge inbox.');
+            }
+            wp_cache_delete($item['name'], 'options');
+        }
     }
 
     private function generation(): ?string

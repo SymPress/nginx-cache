@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Hook;
 
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
+use SymPress\NginxCache\Support\MutationLockUnavailable;
 use SymPress\NginxCache\Surrogate\CacheTagHeaderFormatter;
 use SymPress\NginxCache\Surrogate\CacheTagResolver;
 use SymPress\NginxCache\Surrogate\TagIndexRepository;
@@ -64,7 +65,12 @@ final class SurrogateTagSubscriber
             return;
         }
 
-        $this->index->remember($url, $tags);
+        try {
+            $this->index->remember($url, $tags);
+        } catch (MutationLockUnavailable) {
+            // An optional index registration must never block or fail an anonymous page.
+            // A later uncached response can register the same canonical URL.
+        }
     }
 
     /** @return list<string> */
@@ -124,6 +130,7 @@ final class SurrogateTagSubscriber
         // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Unslash below, then TagIndexRepository validates canonical same-origin URLs before persistence.
         $uri = is_string($_SERVER['REQUEST_URI'] ?? null) ? $_SERVER['REQUEST_URI'] : '/';
         $uri = function_exists('wp_unslash') ? (string) wp_unslash($uri) : $uri;
+        $uri = explode('?', $uri, 2)[0];
 
         if (function_exists('home_url')) {
             return (string) home_url($uri);

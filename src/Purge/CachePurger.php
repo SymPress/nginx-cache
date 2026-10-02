@@ -70,7 +70,7 @@ final readonly class CachePurger
         }
 
         try {
-            if (!flock($lock, LOCK_EX)) {
+            if (!flock($lock, LOCK_EX | LOCK_NB)) {
                 return PurgeResult::failure(
                     $validation->path,
                     'Could not acquire cache purge lock.',

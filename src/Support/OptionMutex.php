@@ -25,8 +25,8 @@ final readonly class OptionMutex
             $scope = $database->get_var('SELECT DATABASE()') . ':' . $database->prefix . ':' . $name;
             $key = 'sympress-cache:' . substr(hash('sha256', $scope), 0, 40);
 
-            if ((string) $database->get_var($database->prepare('SELECT GET_LOCK(%s, 10)', $key)) !== '1') {
-                throw new \RuntimeException('Unable to acquire the cache mutation lock.');
+            if ((string) $database->get_var($database->prepare('SELECT GET_LOCK(%s, 0)', $key)) !== '1') {
+                throw new MutationLockUnavailable('Unable to acquire the cache mutation lock.');
             }
 
             try {
@@ -39,13 +39,13 @@ final readonly class OptionMutex
         $lock = $this->locks->createLock($this->normalizeName($name), self::TTL_SECONDS);
 
         try {
-            $acquired = $lock->acquire(true);
+            $acquired = $lock->acquire(false);
         } catch (LockConflictedException) {
             $acquired = false;
         }
 
         if (!$acquired) {
-            throw new \RuntimeException('Unable to acquire the cache mutation lock.');
+            throw new MutationLockUnavailable('Unable to acquire the cache mutation lock.');
         }
 
         try {
