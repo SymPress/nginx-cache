@@ -46,7 +46,7 @@ final class SideEffectsCommand extends AbstractCacheCommand
 
         if ($action === 'flush') {
             $this->sideEffects->process();
-            if ($this->sideEffects->count() > 0) {
+            if ($this->sideEffects->count() > 0 || $this->sideEffects->attentionReason() === 'storage-error') {
                 return $this->error('Side effects remain pending; inspect details for retry timing or exhaustion.', $output);
             }
             $this->success('Processed queued Nginx cache side effects.', $output);
@@ -69,6 +69,9 @@ final class SideEffectsCommand extends AbstractCacheCommand
 
         $this->log(sprintf('Pending side-effect tasks: %d', $this->sideEffects->count()), $output);
         $this->log(sprintf('Exhausted side-effect tasks: %d', count(array_filter($this->sideEffects->inspect(), static fn (array $task): bool => $task['exhausted']))), $output);
+        if ($this->sideEffects->attentionReason() !== '') {
+            $this->log('External queue attention: ' . $this->sideEffects->attentionReason(), $output);
+        }
 
         return Command::SUCCESS;
     }

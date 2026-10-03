@@ -12,28 +12,40 @@ permissions:
 
 jobs:
   workflows:
-    uses: sympress/workflows/.github/workflows/lint-workflows.yml@177fa0d727b278d2103052ec77c102b4a4c492a0
+    uses: sympress/workflows/.github/workflows/lint-workflows.yml@78d083a9a0176cf0252318b0c69fc64938a727d6
 
   qa:
-    uses: sympress/workflows/.github/workflows/sympress-qa.yml@177fa0d727b278d2103052ec77c102b4a4c492a0
+    uses: sympress/workflows/.github/workflows/sympress-qa.yml@78d083a9a0176cf0252318b0c69fc64938a727d6
     with:
       php_version: '8.5'
     secrets:
       COMPOSER_AUTH_JSON: ${{ secrets.COMPOSER_AUTH_JSON }}
 
   wordpress-integration:
-    name: WordPress MariaDB integration
+    name: WordPress ${{ matrix.engine }} integration
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: MariaDB
+            image: mariadb:11.8@sha256:79d59758afc91b89b120b0a8904d637f5a3b3e1c4900f29b740d6d46c72fef68
+            health: healthcheck.sh --connect --innodb_initialized
+          - engine: MySQL
+            image: mysql:8.4@sha256:80f4933e3835f9dc4d35a28ec500d7986cb4414e6c6821c5461239cb7beb8995
+            health: mysqladmin ping -h 127.0.0.1 --silent
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
-      mariadb:
-        image: mariadb:11.8@sha256:79d59758afc91b89b120b0a8904d637f5a3b3e1c4900f29b740d6d46c72fef68
+      database:
+        image: ${{ matrix.image }}
         env:
-          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: 'yes'
+          MARIADB_ROOT_PASSWORD: sympress-db-test-only
+          MYSQL_ROOT_PASSWORD: sympress-db-test-only
+          MYSQL_ROOT_HOST: '%'
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mariadb-admin ping --host=127.0.0.1"
+          --health-cmd="${{ matrix.health }}"
           --health-interval=5s --health-timeout=3s --health-retries=20
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -59,5 +71,6 @@ jobs:
         env:
           NGINX_TEST_DB_NAME: sympress_review_nginx_ci
           NGINX_TEST_DB_HOST: 127.0.0.1:3306
+          NGINX_TEST_DB_PASSWORD: sympress-db-test-only
           NGINX_TEST_WORDPRESS_DIR: ${{ runner.temp }}/nginx-wordpress
         run: php tests/Integration/run.php

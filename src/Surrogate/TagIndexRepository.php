@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Surrogate;
 
+use SymPress\NginxCache\Key\CacheKeyStrategy;
 use SymPress\NginxCache\Security\UrlPolicy;
 use SymPress\NginxCache\Support\MutationLockUnavailable;
 use SymPress\NginxCache\Support\OptionMutex;
@@ -84,7 +85,11 @@ final readonly class TagIndexRepository
     /** @param list<string> $tags */
     public function remember(string $url, array $tags): void
     {
-        $url = $this->urls->normalizeSameOriginHttpUrl(explode('?', $url, 2)[0]);
+        $parts = explode('?', $url, 2);
+        if (isset($parts[1]) && preg_match('/' . CacheKeyStrategy::TRACKING_QUERY_PATTERN . '/D', $parts[1]) === 1) {
+            $url = $parts[0];
+        }
+        $url = $this->urls->normalizeSameOriginHttpUrl($url);
         if ($url === '') {
             return;
         }

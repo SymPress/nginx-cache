@@ -100,9 +100,20 @@ must accept repeated invalidation calls. Queue storage/lock failures prevent
 unreserved execution; scheduling uses a minimum 60-second delay after these
 failures. Production must run WordPress cron externally and monitor pending and
 exhausted work in both queues. Side-effect capacity is 50, including exhausted
-tasks: overflow throws and preserves prior work; the originating purge remains
-retryable within its budget. The existing purge URL overflow policy remains an
-explicit full purge above 500 URLs.
+tasks. Overflow coalesces retained selective work into a fresh full invalidation,
+with a new identity, empty checkpoints and a bounded retry budget. This includes
+whole-zone Cloudflare invalidation when that provider is configured. Completed
+actions cannot acknowledge the fresh generation. Local purge success is retained
+when optional external queue storage is unavailable; an Admin notice and a
+credential-free deduplicated log message expose the problem. The next successful
+enqueue or explicit side-effect retry schedules a full recovery invalidation.
+Exhausted local and external work is visible in Admin and CLI. Corrupt producer
+inbox payloads are quarantined as private options while valid requests continue.
+The existing purge URL overflow policy remains an explicit full purge above 500 URLs.
+
+Only entirely tracking queries are removed from tag-index identities. Functional
+queries such as `?s=foo`, `?p=123` and mixed tracking/search queries retain their
+complete URL, so they cannot replace the home page's tag set.
 
 `WordPressOptionLockStore` uses atomic INSERT IGNORE and conditional UPDATE/DELETE
 against the observed serialized token. It reads ownership directly from the
