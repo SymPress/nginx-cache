@@ -84,6 +84,12 @@ try {
         $index->remember('https://example.test/tracking/?utm_source=' . $i, ['tracking']);
     }
     check($index->urlsForTags(['tracking']) === ['https://example.test/tracking/'], '50 tracking queries retain one canonical tag-index URL');
+    $index->remember('https://example.test/', ['homepage']);
+    $index->remember('https://example.test/?s=foo', ['search']);
+    $index->remember('https://example.test/?p=123', ['post']);
+    $index->remember('https://example.test/?s=foo&utm_source=ad', ['mixed']);
+    check($index->urlsForTags(['homepage']) === ['https://example.test/'], 'functional queries do not overwrite homepage tags');
+    check($index->urlsForTags(['post']) === ['https://example.test/?p=123'], 'simple permalink query identity is retained');
     for ($i = 0; $i < 55; ++$i) { $index->remember('https://example.test/bounded/' . $i . '/', ['bounded']); }
     check(count($index->urlsForTags(['bounded'])) === 50, 'per-tag URL retention remains bounded');
     for ($i = 0; $i < 17; ++$i) {
@@ -111,6 +117,10 @@ try {
     $queue->push(\SymPress\NginxCache\Value\PurgeRequest::urls(['https://example.test/contended-producer/']));
     check(microtime(true) - $started < 0.5, 'producer persists without waiting for a contended mutation lock');
     check(in_array('https://example.test/contended-producer/', $queue->all()[0]->urls, true), 'essential purge survives lock contention in durable inbox');
+    add_option('sympress_nginx_cache_queue_inbox_corrupt_fixture', 'invalid retained payload', '', false);
+    check(in_array('https://example.test/contended-producer/', $queue->all()[0]->urls, true), 'corrupt inbox item does not stop valid purges');
+    check(get_option('sympress_nginx_cache_queue_inbox_corrupt_fixture', null) === null, 'corrupt inbox item leaves the active inbox');
+    check((int) $wpdb->get_var($wpdb->prepare('SELECT COUNT(*) FROM %i WHERE option_name LIKE %s', $wpdb->options, 'sympress_nginx_cache_queue_quarantine_%')) === 1, 'corrupt inbox payload retained in quarantine for inspection');
     $called = false;
     try {
         $queue->process(static function () use (&$called): bool { $called = true; return true; });
@@ -330,12 +340,8 @@ try {
     for ($i = 0; $i < 50; ++$i) {
         $side->push($result, $request);
     }
-    try {
-        $side->push($result, $request);
-        check(false, 'queue overflow rejected');
-    } catch (RuntimeException) {
-        check($side->count() === 50, 'side-effect overflow preserves all previous work');
-    }
+    check($side->push($result, $request), 'side-effect overflow is coalesced');
+    check($side->count() === 1 && \SymPress\NginxCache\Value\PurgeRequest::fromArray($side->all()[0]['request'])->requiresFullPurge(), 'bounded full invalidation covers every pending task');
     $side->process(static fn (): bool => true);
     $side->push($result, $request);
     $sideCalls = 0;
@@ -444,6 +450,20 @@ try {
         new \SymPress\NginxCache\Remote\RemotePurgeDispatcher($remoteMock, $settings, $policy, $clock),
         new \SymPress\NginxCache\Remote\CloudflarePurgeDispatcher($remoteMock, $settings, new \SymPress\NginxCache\Surrogate\CacheTagResolver(), $policy), $clock);
     $remoteEffects->enqueue($result, $request);
+    $side->drain();
+    $lockScope = $wpdb->get_var('SELECT DATABASE()') . ':' . $wpdb->prefix . ':sympress_nginx_cache_side_effect_queue';
+    $sideLock = 'sympress-cache:' . substr(hash('sha256', $lockScope), 0, 40);
+    $statement = $pdo->prepare('SELECT GET_LOCK(?, 0)');
+    $statement->execute([$sideLock]);
+    check($remoteEffects->enqueue($result, $request) === [], 'external enqueue contention does not fail successful local work');
+    check($remoteEffects->attentionReason() === 'storage-error', 'external storage failure remains visible');
+    $statement = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+    $statement->execute([$sideLock]);
+    $remoteEffects->enqueue($result, $request);
+    check(\SymPress\NginxCache\Value\PurgeRequest::fromArray($side->all()[0]['request'])->requiresFullPurge(), 'next external enqueue recovers missing invalidations with full scope');
+    $side->drain();
+    delete_option($remoteEffects::HEALTH_OPTION);
+    $remoteEffects->enqueue($result, $request);
     $remoteEffects->process();
     check(($remoteCalls[$firstRemote] ?? 0) === 1 && ($remoteCalls[$secondRemote] ?? 0) === 1 && $side->count() === 1, 'mixed remote fixture success and failure retains task');
     check(in_array('remote:' . $firstRemote, $side->inspect()[0]['completed'], true), 'successful remote endpoint is durably checkpointed');
@@ -476,6 +496,22 @@ try {
         $history, new \SymPress\NginxCache\Purge\PurgeEventEmitter(), $index,
         new \SymPress\NginxCache\Purge\PurgeSideEffectProcessor($settings, $side, new \SymPress\NginxCache\Purge\Prewarmer($http, $settings, $policy, $clock), new \SymPress\NginxCache\Layer\CacheLayerCoordinator($settings), new \SymPress\NginxCache\Remote\RemotePurgeDispatcher($http, $settings, $policy, $clock), new \SymPress\NginxCache\Remote\CloudflarePurgeDispatcher($http, $settings, new \SymPress\NginxCache\Surrogate\CacheTagResolver(), $policy), $clock));
     $processor = new \SymPress\NginxCache\Purge\PurgeQueueProcessor($settings, $queue, $manager, new \SymPress\NginxCache\Time\CacheClock($queueClock));
+    $cacheRoot = sys_get_temp_dir() . '/sympress-nginx-followup-' . bin2hex(random_bytes(8));
+    mkdir($cacheRoot, 0700);
+    touch($cacheRoot . '/' . \SymPress\NginxCache\Filesystem\CachePathValidator::SENTINEL_FILE);
+    file_put_contents($cacheRoot . '/old-cache-entry', 'fixture');
+    $fixturePath = static fn (): string => $cacheRoot;
+    add_filter('sympress_nginx_cache_path', $fixturePath);
+    update_option($settings::OPTION_PREWARM_ENABLED, 1);
+    $side->drain();
+    for ($i = 0; $i < 50; ++$i) { $side->push($result, $request); }
+    $localResult = $manager->purgeConfiguredPath(\SymPress\NginxCache\Value\PurgeRequest::full());
+    check($localResult->successful && !is_file($cacheRoot . '/old-cache-entry'), 'saturated external queue cannot stop local purges');
+    check($side->count() === 1, 'local success coalesces saturated follow-up queue');
+    remove_filter('sympress_nginx_cache_path', $fixturePath);
+    update_option($settings::OPTION_PREWARM_ENABLED, 0);
+    $side->drain();
+    (new \Symfony\Component\Filesystem\Filesystem())->remove($cacheRoot);
     $subscriber = new \SymPress\NginxCache\Hook\AutomaticPurgeSubscriber($settings, $manager, $processor, $collector, new \SymPress\NginxCache\Purge\PurgeRequestMerger());
     update_option($settings::OPTION_AUTO_PURGE, 1);
     do_action('save_post', $published, get_post($published), true);
@@ -520,13 +556,14 @@ try {
     check($queue->inspect()[0]['attempts'] === 0 && wp_next_scheduled($processor::HOOK) !== false, 'purge operator retry schedules preserved work without filesystem execution');
     remove_filter('sympress_nginx_cache_path', $invalidRoot);
     // Default retention and explicit data removal, without filesystem operations.
+    $index->remember('https://example.test/retention-fixture/', ['retained']);
     \SymPress\NginxCache\Support\UninstallPolicy::removeCurrentSiteData();
     check($index->stats()['urls'] > 0 && $queue->count() === 1, 'default uninstall retains index and queue');
     update_option($settings::OPTION_DELETE_ON_UNINSTALL, 1);
     \SymPress\NginxCache\Support\UninstallPolicy::removeCurrentSiteData();
     check(get_option($settings::OPTION_AUTO_PURGE, null) === null && get_option($index::OPTION_VERSION, null) === null, 'explicit uninstall removes owned settings');
     check($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->prefix . $index::TABLE_SUFFIX)) === null, 'explicit uninstall drops only owned index table');
-    echo 'Integration complete: ' . $checks . ' assertions; real WordPress ' . $GLOBALS['wp_version'] . '/MariaDB; zero external HTTP.' . PHP_EOL;
+    echo 'Integration complete: ' . $checks . ' assertions; real WordPress ' . $GLOBALS['wp_version'] . '/' . $pdo->query('SELECT VERSION()')->fetchColumn() . '; zero external HTTP.' . PHP_EOL;
 } finally {
     foreach ($workers ?? [] as $worker) {
         [$process, $pipes] = $worker;

@@ -12,6 +12,7 @@ use SymPress\NginxCache\Inspection\EnvironmentDetector;
 use SymPress\NginxCache\Purge\CacheManager;
 use SymPress\NginxCache\Purge\PurgeHistoryRepository;
 use SymPress\NginxCache\Purge\PurgeQueueProcessor;
+use SymPress\NginxCache\Purge\PurgeSideEffectProcessor;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Value\CacheProfile;
 use SymPress\NginxCache\Value\PurgeRequest;
@@ -184,6 +185,15 @@ final readonly class SettingsPage
 
     public function renderAdminNotice(): void
     {
+        if (current_user_can(self::CAPABILITY) && get_option(PurgeSideEffectProcessor::HEALTH_OPTION, '') !== '') {
+            $this->renderNotice(__('External cache follow-up work needs attention. Local purges remain active. Inspect wp nginx-cache side-effects details and retry after resolving the provider error.', WordPressCacheSettings::TEXT_DOMAIN), 'warning');
+        }
+        foreach ($this->queue->inspect() as $task) {
+            if (current_user_can(self::CAPABILITY) && $task['exhausted'] === true) {
+                $this->renderNotice(__('Automatic local purge retries are exhausted. Inspect wp nginx-cache queue details and retry after resolving the cause.', WordPressCacheSettings::TEXT_DOMAIN), 'error');
+                break;
+            }
+        }
         $message = $this->pullNotice();
 
         // phpcs:enable WordPress.Security.NonceVerification.Recommended

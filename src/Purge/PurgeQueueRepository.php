@@ -208,9 +208,27 @@ final readonly class PurgeQueueRepository
         $rows = $db->get_results($db->prepare('SELECT option_name, option_value FROM %i WHERE option_name LIKE %s ORDER BY option_id', $db->options, $db->esc_like(self::OPTION_QUEUE . '_inbox_') . '%'), ARRAY_A);
         $items = [];
         foreach ($rows ?? [] as $row) {
-            $payload = maybe_unserialize($row['option_value']);
-            if (!is_array($payload)) {
-                throw new \RuntimeException('Invalid retained purge inbox payload.');
+            $value = (string) $row['option_value'];
+            // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize -- Existing WP option format; object instantiation explicitly forbidden.
+            $payload = is_serialized($value) ? unserialize($value, ['allowed_classes' => false]) : $value;
+            $safe = is_array($payload)
+                && in_array($payload['mode'] ?? null, ['full', 'urls'], true)
+                && is_array($payload['urls'] ?? null);
+            if (is_array($payload)) {
+                array_walk_recursive($payload, static function (mixed $item) use (&$safe): void {
+                    $safe = $safe && (is_scalar($item) || $item === null);
+                });
+            }
+            if (!$safe) {
+                $name = (string) $row['option_name'];
+                $quarantine = self::OPTION_QUEUE . '_quarantine_' . substr(hash('sha256', $name), 0, 32);
+                if ($db->query((string) $db->prepare('UPDATE %i SET option_name = %s WHERE option_name = %s AND option_value = %s', $db->options, $quarantine, $name, $value)) === false) {
+                    throw new \RuntimeException('Unable to quarantine invalid purge inbox payload.');
+                }
+                wp_cache_delete($name, 'options');
+                // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Credential-free signal; corrupt input retained outside active queue.
+                error_log('SymPress Nginx Cache: corrupt purge inbox item quarantined; other purges remain active.');
+                continue;
             }
             $items[] = ['name' => (string) $row['option_name'], 'value' => (string) $row['option_value'], 'request' => PurgeRequest::fromArray($payload)];
         }

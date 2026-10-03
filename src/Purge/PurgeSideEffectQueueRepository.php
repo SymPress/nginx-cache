@@ -22,15 +22,15 @@ final readonly class PurgeSideEffectQueueRepository
     ) {
     }
 
-    public function push(PurgeResult $result, PurgeRequest $request): void
+    public function push(PurgeResult $result, PurgeRequest $request): bool
     {
         if (!function_exists('update_option')) {
-            return;
+            return false;
         }
 
-        $this->mutex->synchronized(
+        return $this->mutex->synchronized(
             self::OPTION_QUEUE,
-            function () use ($result, $request): void {
+            function () use ($result, $request): bool {
                 $tasks = [
                 ...$this->all(), [
                     'result'    => $result->toArray(),
@@ -42,9 +42,30 @@ final readonly class PurgeSideEffectQueueRepository
                 ],
                 ];
 
-                if (count($tasks) > self::MAX_TASKS || !$this->persist($tasks)) {
-                    throw new \RuntimeException('Side-effect queue is full or cannot be saved; pending tasks were retained.');
+                $coalesced = count($tasks) > self::MAX_TASKS;
+                if ($coalesced) {
+                    // A whole-cache invalidation covers every retained selective task.
+                    // Fresh identity prevents an in-flight worker acknowledging new work.
+                    $prewarm = $request->prewarm;
+                    foreach ($tasks as $task) {
+                        $prewarm = $prewarm || PurgeRequest::fromArray($task['request'])->prewarm;
+                    }
+                    $full = PurgeRequest::full('side-effect-overflow', 'queue', prewarm: $prewarm);
+                    $tasks = [
+                    [
+                        'result'    => PurgeResult::success($result->path, $result->removedEntries, $result->durationSeconds, reason: 'side-effect-overflow', source: 'queue')->toArray(),
+                        'request'   => $full->toArray(),
+                        'queued_at' => $this->clock->timestamp(),
+                        'id'        => bin2hex(random_bytes(16)),
+                        'completed' => [],
+                        'retry'     => (new QueueRetryState())->toArray(),
+                    ],
+                    ];
                 }
+                if (!$this->persist($tasks)) {
+                    throw new \RuntimeException('Side-effect queue cannot be saved; pending tasks were retained.');
+                }
+                return $coalesced;
             },
         );
     }

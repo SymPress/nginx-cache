@@ -16,6 +16,7 @@ use SymPress\NginxCache\Value\PurgeResult;
 final readonly class PurgeSideEffectProcessor
 {
     public const string HOOK = 'sympress_nginx_cache_process_side_effects';
+    public const string HEALTH_OPTION = 'sympress_nginx_cache_side_effect_health';
 
     public function __construct(
         private WordPressCacheSettings $settings,
@@ -37,7 +38,23 @@ final readonly class PurgeSideEffectProcessor
             return [];
         }
 
-        $this->queue->push($result, $request);
+        try {
+            if ($this->attentionReason() === 'storage-error') {
+                // A full invalidation covers work that could not previously be enqueued.
+                $request = PurgeRequest::full('side-effect-recovery', 'queue', prewarm: $request->prewarm);
+                $result = PurgeResult::success($result->path, 0, 0.0, reason: 'side-effect-recovery', source: 'queue');
+            }
+            if ($this->queue->push($result, $request)) {
+                $this->signal('coalesced');
+            } elseif ($request->reason === 'side-effect-recovery') {
+                $this->signal('recovering');
+            }
+        } catch (\Throwable) {
+            // A successful local purge must not become a failed local retry because
+            // an optional external queue cannot accept follow-up work.
+            $this->signal('storage-error');
+            return [];
+        }
         $this->schedule();
 
         return $tasks;
@@ -49,9 +66,20 @@ final readonly class PurgeSideEffectProcessor
             $this->queue->process($this->executeTask(...));
         } catch (\Throwable) {
             // Leave the stored task for retry, without logging provider credentials.
+            $this->signal('storage-error');
         }
         if ($this->queue->count() <= 0) {
+            if ($this->attentionReason() !== 'storage-error' && function_exists('delete_option')) {
+                delete_option(self::HEALTH_OPTION);
+            }
             return;
+        }
+
+        foreach ($this->queue->inspect() as $task) {
+            if ($task['exhausted'] === true) {
+                $this->signal('exhausted');
+                break;
+            }
         }
 
         $this->schedule(60);
@@ -84,8 +112,31 @@ final readonly class PurgeSideEffectProcessor
 
     public function retry(): void
     {
+        if ($this->attentionReason() === 'storage-error') {
+            $request = PurgeRequest::full('side-effect-recovery', 'queue');
+            $this->queue->push(PurgeResult::success($this->settings->cachePath(), 0, 0.0), $request);
+            $this->signal('recovering');
+        }
         $this->queue->retry();
         $this->schedule();
+    }
+
+    public function attentionReason(): string
+    {
+        $reason = function_exists('get_option') ? get_option(self::HEALTH_OPTION, '') : '';
+        return is_string($reason) ? $reason : '';
+    }
+
+    private function signal(string $reason): void
+    {
+        if (function_exists('get_option') && get_option(self::HEALTH_OPTION) === $reason) {
+            return;
+        }
+        if (function_exists('update_option')) {
+            update_option(self::HEALTH_OPTION, $reason, false);
+        }
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Fixed credential-free operational signal, deduplicated in persistent state.
+        error_log('SymPress Nginx Cache: external follow-up queue requires attention (' . $reason . '); local purges remain active.');
     }
 
     /** @param QueueTask $task */

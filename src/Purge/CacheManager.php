@@ -31,8 +31,9 @@ final readonly class CacheManager
             $this->syncTagIndex($result);
             $queuedSideEffects = $this->sideEffects->enqueue($result, $request);
 
-            if ($queuedSideEffects !== []) {
-                $result = $result->withSideEffects(['queued' => $queuedSideEffects]);
+            $warning = $this->sideEffects->attentionReason();
+            if ($queuedSideEffects !== [] || $warning !== '') {
+                $result = $result->withSideEffects(['queued' => $queuedSideEffects, 'warning' => $warning]);
             }
         }
 
