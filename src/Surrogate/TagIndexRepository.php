@@ -86,7 +86,12 @@ final readonly class TagIndexRepository
     public function remember(string $url, array $tags): void
     {
         $parts = explode('?', $url, 2);
-        if (isset($parts[1]) && preg_match('/' . CacheKeyStrategy::TRACKING_QUERY_PATTERN . '/D', $parts[1]) === 1) {
+        if (isset($parts[1])) {
+            if ($parts[1] !== '' && preg_match('/' . CacheKeyStrategy::TRACKING_QUERY_PATTERN . '/D', $parts[1]) !== 1) {
+                // The shipped Nginx policy bypasses every semantic/mixed query.
+                // Do not issue a DB read or displace a genuinely cached URL.
+                return;
+            }
             $url = $parts[0];
         }
         $url = $this->urls->normalizeSameOriginHttpUrl($url);

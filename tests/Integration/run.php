@@ -89,7 +89,7 @@ try {
     $index->remember('https://example.test/?p=123', ['post']);
     $index->remember('https://example.test/?s=foo&utm_source=ad', ['mixed']);
     check($index->urlsForTags(['homepage']) === ['https://example.test/'], 'functional queries do not overwrite homepage tags');
-    check($index->urlsForTags(['post']) === ['https://example.test/?p=123'], 'simple permalink query identity is retained');
+    check($index->urlsForTags(['post']) === [] && $index->urlsForTags(['search']) === [] && $index->urlsForTags(['mixed']) === [], 'bypassed semantic and mixed queries consume no tag-index entries');
     for ($i = 0; $i < 55; ++$i) { $index->remember('https://example.test/bounded/' . $i . '/', ['bounded']); }
     check(count($index->urlsForTags(['bounded'])) === 50, 'per-tag URL retention remains bounded');
     for ($i = 0; $i < 17; ++$i) {
@@ -455,12 +455,11 @@ try {
     $sideLock = 'sympress-cache:' . substr(hash('sha256', $lockScope), 0, 40);
     $statement = $pdo->prepare('SELECT GET_LOCK(?, 0)');
     $statement->execute([$sideLock]);
-    check($remoteEffects->enqueue($result, $request) === [], 'external enqueue contention does not fail successful local work');
-    check($remoteEffects->attentionReason() === 'storage-error', 'external storage failure remains visible');
+    check($remoteEffects->enqueue($result, $request) !== [], 'external enqueue contention durably retains selective follow-up work');
+    check($remoteEffects->attentionReason() !== 'storage-error', 'ordinary contention is not an external storage failure');
     $statement = $pdo->prepare('SELECT RELEASE_LOCK(?)');
     $statement->execute([$sideLock]);
-    $remoteEffects->enqueue($result, $request);
-    check(\SymPress\NginxCache\Value\PurgeRequest::fromArray($side->all()[0]['request'])->requiresFullPurge(), 'next external enqueue recovers missing invalidations with full scope');
+    check(!\SymPress\NginxCache\Value\PurgeRequest::fromArray($side->all()[0]['request'])->requiresFullPurge(), 'contended selective work keeps its scope after the lock is released');
     $side->drain();
     delete_option($remoteEffects::HEALTH_OPTION);
     $remoteEffects->enqueue($result, $request);

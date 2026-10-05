@@ -25,8 +25,12 @@ final readonly class OptionMutex
             $scope = $database->get_var('SELECT DATABASE()') . ':' . $database->prefix . ':' . $name;
             $key = 'sympress-cache:' . substr(hash('sha256', $scope), 0, 40);
 
-            if ((string) $database->get_var($database->prepare('SELECT GET_LOCK(%s, 0)', $key)) !== '1') {
+            $acquired = $database->get_var($database->prepare('SELECT GET_LOCK(%s, 0)', $key));
+            if ((string) $acquired === '0') {
                 throw new MutationLockUnavailable('Unable to acquire the cache mutation lock.');
+            }
+            if ((string) $acquired !== '1') {
+                throw new \RuntimeException('Unable to read the cache mutation lock result.');
             }
 
             try {

@@ -8,6 +8,7 @@ use SymPress\NginxCache\Layer\CacheLayerCoordinator;
 use SymPress\NginxCache\Remote\CloudflarePurgeDispatcher;
 use SymPress\NginxCache\Remote\RemotePurgeDispatcher;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
+use SymPress\NginxCache\Support\MutationLockUnavailable;
 use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
@@ -64,6 +65,10 @@ final readonly class PurgeSideEffectProcessor
     {
         try {
             $this->queue->process($this->executeTask(...));
+        } catch (MutationLockUnavailable) {
+            // Another connection owns normal queue work; retain its scope and retry.
+            $this->schedule(60);
+            return;
         } catch (\Throwable) {
             // Leave the stored task for retry, without logging provider credentials.
             $this->signal('storage-error');

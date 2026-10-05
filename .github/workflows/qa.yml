@@ -73,4 +73,6 @@ jobs:
           NGINX_TEST_DB_HOST: 127.0.0.1:3306
           NGINX_TEST_DB_PASSWORD: sympress-db-test-only
           NGINX_TEST_WORDPRESS_DIR: ${{ runner.temp }}/nginx-wordpress
-        run: php tests/Integration/run.php
+        run: |
+          php tests/Integration/run.php
+          php tests/Integration/query-contention.php
