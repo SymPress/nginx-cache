@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Plugin Name:       Nginx Cache
  * Description:       Kernel-integrated purge controls for Nginx FastCGI, proxy and uWSGI cache zones.
- * Version:           0.1.5
+ * Version:           0.1.6
  * Requires at least: 6.9
  * Requires PHP:      8.5
  * Author:            SymPress

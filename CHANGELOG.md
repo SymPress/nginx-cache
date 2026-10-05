@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## 0.1.6 — 2026-10-05
+
+- Pass the canonical URI and empty tracking-only query to PHP as well as the cache key. The first campaign request cannot contaminate a shared cached response; semantic and mixed queries retain their parameters and bypass caching.
+- Apply generated FastCGI parameters after the standard `fastcgi_params` include. Existing Nginx configurations must be regenerated and reloaded to activate this change.
+
 ## 0.1.5 — 2026-10-05
 
 - Retain contended selective follow-up tasks in a durable inbox without turning
