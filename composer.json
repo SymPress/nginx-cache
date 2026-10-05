@@ -65,7 +65,8 @@
         ],
         "tests:integration": [
             "Composer\\Config::disableProcessTimeout",
-            "php tests/Integration/run.php"
+            "php tests/Integration/run.php",
+            "php tests/Integration/query-contention.php"
         ]
     },
     "config": {

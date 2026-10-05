@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## 0.1.5 — 2026-10-05
+
+- Retain contended selective follow-up tasks in a durable inbox without turning
+  normal database lock competition into a storage error or a Cloudflare zone purge.
+- Keep queue identities stable through inbox ingestion; quarantine malformed
+  inbox records, and preserve full recovery for genuine storage failures.
+- Skip semantic and mixed query-string tag registrations before any database
+  access, matching the shipped Nginx bypass policy and preserving real cache URLs.
+- Run native contention, provider-payload and query-flood regressions against
+  MariaDB and MySQL in CI.
+
 ## 0.1.4 — 2026-10-03
 
 - Keep local purges active during remote-provider outages and coalesce external

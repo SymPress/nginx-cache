@@ -36,12 +36,13 @@ account needs CREATE for installation, ordinary SELECT/INSERT/DELETE permissions
 for operation, and DROP only for explicitly enabled uninstall.
 
 The index stores individual `(tag, sha256(url))` rows. New registrations remove
-query strings from canonical index URLs. Tracking-only queries (`utm_*`, `gclid`,
+tracking query strings from canonical index URLs. Tracking-only queries (`utm_*`, `gclid`,
 `fbclid`, `msclkid`) share the query-free FastCGI cache key in generated snippets,
 so distinct tracking values reuse the same cached response. Queries containing
 other parameters retain the bypass policy unless explicitly allowlisted.
-Explicitly allowlisted semantic query variants need matching URL or full purges;
-the canonical tag index stores the path only.
+Semantic and mixed queries are excluded from the index before any database call.
+If an operator explicitly caches semantic query variants, use matching URL or
+full purges; the default tag index does not describe those custom cache entries.
 Regenerate and reload existing snippets; deploy the cache-key change together
 with purge tooling. Tracking values must not personalize cached HTML.
 
@@ -96,9 +97,13 @@ processing later providers. Successful prewarm and Cloudflare work are also
 checkpointed. A failing provider therefore does not replay acknowledged actions.
 Delivery remains at least once: a crash or storage failure between the external
 action and its durable checkpoint can cause a repeat, so receivers and adapters
-must accept repeated invalidation calls. Queue storage/lock failures prevent
-unreserved execution; scheduling uses a minimum 60-second delay after these
-failures. Production must run WordPress cron externally and monitor pending and
+must accept repeated invalidation calls. Queue lock contention prevents
+unreserved execution and schedules another attempt after at least 60 seconds.
+Contended side-effect producers retain their original payload and identity in
+immutable, uniquely named inbox records; no provider-wide purge or storage-error
+signal is caused by ordinary contention. The active queue remains bounded to 50
+tasks; inbox ingestion reads at most 64 records per batch and acknowledges them
+only after the merged queue is durable. Production must run WordPress cron externally and monitor pending and
 exhausted work in both queues. Side-effect capacity is 50, including exhausted
 tasks. Overflow coalesces retained selective work into a fresh full invalidation,
 with a new identity, empty checkpoints and a bounded retry budget. This includes
@@ -106,14 +111,16 @@ whole-zone Cloudflare invalidation when that provider is configured. Completed
 actions cannot acknowledge the fresh generation. Local purge success is retained
 when optional external queue storage is unavailable; an Admin notice and a
 credential-free deduplicated log message expose the problem. The next successful
-enqueue or explicit side-effect retry schedules a full recovery invalidation.
+enqueue or explicit side-effect retry schedules a full recovery invalidation
+only after genuine storage failure has lost an invalidation.
 Exhausted local and external work is visible in Admin and CLI. Corrupt producer
 inbox payloads are quarantined as private options while valid requests continue.
 The existing purge URL overflow policy remains an explicit full purge above 500 URLs.
 
-Only entirely tracking queries are removed from tag-index identities. Functional
-queries such as `?s=foo`, `?p=123` and mixed tracking/search queries retain their
-complete URL, so they cannot replace the home page's tag set.
+Only entirely tracking queries share a query-free tag-index identity. Functional
+queries such as `?s=foo`, `?p=123` and mixed tracking/search queries bypass the
+default Nginx cache and never enter the index, displace the home page's tags, or
+issue tag-index database calls.
 
 `WordPressOptionLockStore` uses atomic INSERT IGNORE and conditional UPDATE/DELETE
 against the observed serialized token. It reads ownership directly from the
