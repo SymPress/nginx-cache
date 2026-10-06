@@ -12,6 +12,8 @@ use SymPress\NginxCache\Value\QueueRetryState;
 final readonly class PurgeQueueRepository
 {
     private const string OPTION_QUEUE = 'sympress_nginx_cache_queue';
+    private const int INBOX_SLOTS = 64;
+    private const int INBOX_BATCH = self::INBOX_SLOTS + 4;
 
     public function __construct(
         private PurgeRequestMerger $merger,
@@ -27,12 +29,7 @@ final readonly class PurgeQueueRepository
         }
 
         if (($GLOBALS['wpdb'] ?? null) instanceof \wpdb) {
-            // Each producer owns a unique immutable inbox item: no contended merge lock.
-            // Processing merges and removes it only after the aggregate is durable.
-            $name = self::OPTION_QUEUE . '_inbox_' . bin2hex(random_bytes(16));
-            if (!add_option($name, $request->toArray(), '', false)) {
-                throw new \RuntimeException('Unable to persist the purge inbox request.');
-            }
+            $this->pushInbox($request);
             return;
         }
 
@@ -65,7 +62,7 @@ final readonly class PurgeQueueRepository
     }
 
     /** @return list<PurgeRequest> */
-    private function readQueue(): array
+    private function readQueue(bool $includeInbox = true): array
     {
         $queue = get_option(self::OPTION_QUEUE, []);
 
@@ -79,7 +76,7 @@ final readonly class PurgeQueueRepository
                 array_filter($queue, static fn (mixed $item): bool => is_array($item)),
             ),
         );
-        return $this->merger->merge([...$requests, ...array_column($this->inbox(), 'request')]);
+        return $this->merger->merge([...$requests, ...($includeInbox ? array_column($this->inbox(), 'request') : [])]);
     }
 
     /** @return list<PurgeRequest> */
@@ -158,11 +155,13 @@ final readonly class PurgeQueueRepository
 
     public function nextAttemptAt(): ?int
     {
-        if ($this->all() === []) {
+        // An exhausted queue has no automatic worker. Do not materialize its
+        // inbox on every content-change hook merely to discover that fact.
+        $retry = $this->retryState();
+        if ($retry->exhausted() || $this->all() === []) {
             return null;
         }
-        $retry = $this->retryState();
-        return $retry->exhausted() ? null : $retry->retryAt;
+        return $retry->retryAt;
     }
 
     /** @return list<array<string, mixed>> */
@@ -205,21 +204,12 @@ final readonly class PurgeQueueRepository
         if (!$db instanceof \wpdb) {
             return [];
         }
-        $rows = $db->get_results($db->prepare('SELECT option_name, option_value FROM %i WHERE option_name LIKE %s ORDER BY option_id', $db->options, $db->esc_like(self::OPTION_QUEUE . '_inbox_') . '%'), ARRAY_A);
+        $rows = $db->get_results($db->prepare('SELECT option_name, option_value FROM %i WHERE option_name LIKE %s ORDER BY option_id LIMIT %d', $db->options, $db->esc_like(self::OPTION_QUEUE . '_inbox_') . '%', self::INBOX_BATCH), ARRAY_A);
         $items = [];
         foreach ($rows ?? [] as $row) {
             $value = (string) $row['option_value'];
-            // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize -- Existing WP option format; object instantiation explicitly forbidden.
-            $payload = is_serialized($value) ? unserialize($value, ['allowed_classes' => false]) : $value;
-            $safe = is_array($payload)
-                && in_array($payload['mode'] ?? null, ['full', 'urls'], true)
-                && is_array($payload['urls'] ?? null);
-            if (is_array($payload)) {
-                array_walk_recursive($payload, static function (mixed $item) use (&$safe): void {
-                    $safe = $safe && (is_scalar($item) || $item === null);
-                });
-            }
-            if (!$safe) {
+            $request = $this->decodeInbox($value);
+            if ($request === null) {
                 $name = (string) $row['option_name'];
                 $quarantine = self::OPTION_QUEUE . '_quarantine_' . substr(hash('sha256', $name), 0, 32);
                 if ($db->query((string) $db->prepare('UPDATE %i SET option_name = %s WHERE option_name = %s AND option_value = %s', $db->options, $quarantine, $name, $value)) === false) {
@@ -230,7 +220,7 @@ final readonly class PurgeQueueRepository
                 error_log('SymPress Nginx Cache: corrupt purge inbox item quarantined; other purges remain active.');
                 continue;
             }
-            $items[] = ['name' => (string) $row['option_name'], 'value' => (string) $row['option_value'], 'request' => PurgeRequest::fromArray($payload)];
+            $items[] = ['name' => (string) $row['option_name'], 'value' => $value, 'request' => $request];
         }
         return $items;
     }
@@ -242,7 +232,12 @@ final readonly class PurgeQueueRepository
         if ($items === []) {
             return;
         }
-        if (!$this->persist($this->all(), $this->retryState())) {
+        wp_cache_delete(self::OPTION_QUEUE, 'options');
+        wp_cache_delete('notoptions', 'options');
+        // Persist exactly the captured batch; an arriving producer's nonce
+        // prevents its update from being acknowledged by this older snapshot.
+        $merged = $this->merger->merge([...$this->readQueue(false), ...array_column($items, 'request')]);
+        if (!$this->persist($merged, $this->retryState())) {
             throw new \RuntimeException('Unable to merge the purge inbox.');
         }
         $db = $GLOBALS['wpdb'];
@@ -252,6 +247,54 @@ final readonly class PurgeQueueRepository
             }
             wp_cache_delete($item['name'], 'options');
         }
+    }
+
+    private function pushInbox(PurgeRequest $request): void
+    {
+        $db = $GLOBALS['wpdb'];
+        $slot = hexdec(substr(hash('sha256', maybe_serialize($request->toArray())), 0, 4)) % self::INBOX_SLOTS;
+        $name = self::OPTION_QUEUE . '_inbox_slot_' . $slot;
+        for ($attempt = 0; $attempt < 3; ++$attempt) {
+            $previous = $db->get_var($db->prepare('SELECT option_value FROM %i WHERE option_name = %s', $db->options, $name));
+            $oldRequest = is_string($previous) ? $this->decodeInbox($previous) : null;
+            $merged = is_string($previous) && $oldRequest === null
+                ? PurgeRequest::full('Invalid inbox payload', 'queue', $request->dryRun, $request->prewarm)
+                : ($this->merger->merge([$request, ...($oldRequest !== null ? [$oldRequest] : [])])[0] ?? $request);
+            $value = maybe_serialize([...$merged->toArray(), '_id' => bin2hex(random_bytes(16))]);
+            $query = $previous === null
+                ? $db->prepare('INSERT IGNORE INTO %i (option_name, option_value, autoload) VALUES (%s, %s, %s)', $db->options, $name, $value, 'off')
+                : $db->prepare('UPDATE %i SET option_value = %s WHERE option_name = %s AND option_value = %s', $db->options, $value, $name, $previous);
+            $result = $db->query($query);
+            if ($result === false) {
+                throw new \RuntimeException('Unable to persist the purge inbox request.');
+            }
+            if ($result === 1) {
+                wp_cache_delete($name, 'options');
+                return;
+            }
+        }
+        // Bounded contention fallback: an atomic full-purge marker covers all
+        // affected URLs. Separate flags preserve dry-run and prewarm semantics.
+        $name = self::OPTION_QUEUE . '_inbox_overflow_' . (int) $request->dryRun . (int) $request->prewarm;
+        $full = PurgeRequest::full('Inbox contention', 'queue', $request->dryRun, $request->prewarm);
+        $value = maybe_serialize([...$full->toArray(), '_id' => bin2hex(random_bytes(16))]);
+        if ($db->query($db->prepare('INSERT INTO %i (option_name, option_value, autoload) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE option_value = VALUES(option_value)', $db->options, $name, $value, 'off')) === false) {
+            throw new \RuntimeException('Unable to persist the purge overflow marker.');
+        }
+        wp_cache_delete($name, 'options');
+    }
+
+    private function decodeInbox(string $value): ?PurgeRequest
+    {
+        // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize -- WordPress option format; objects forbidden.
+        $payload = is_serialized($value) ? unserialize($value, ['allowed_classes' => false]) : $value;
+        $safe = is_array($payload) && in_array($payload['mode'] ?? null, ['full', 'urls'], true) && is_array($payload['urls'] ?? null);
+        if (is_array($payload)) {
+            array_walk_recursive($payload, static function (mixed $item) use (&$safe): void {
+                $safe = $safe && (is_scalar($item) || $item === null);
+            });
+        }
+        return $safe && is_array($payload) ? PurgeRequest::fromArray($payload) : null;
     }
 
     private function generation(): ?string

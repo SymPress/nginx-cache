@@ -544,6 +544,18 @@ try {
         $queueClock->sleep($delay);
     }
     check($queue->inspect()[0]['exhausted'] && wp_next_scheduled($processor::HOOK) === false, 'purge processor stops scheduling exhausted work');
+    for ($event = 0; $event < 2000; ++$event) {
+        $queue->push(\SymPress\NginxCache\Value\PurgeRequest::urls(['https://example.test/exhausted/' . $event . '/']));
+    }
+    $inboxRows = (int) $wpdb->get_var($wpdb->prepare('SELECT COUNT(*) FROM %i WHERE option_name LIKE %s', $wpdb->options, $wpdb->esc_like('sympress_nginx_cache_queue_inbox_') . '%'));
+    check($inboxRows <= 68, '2000 new invalidations retain at most 68 producer inbox slots');
+    $wpdb->queries = [];
+    check($queue->nextAttemptAt() === null, 'new work preserves the exhausted retry budget');
+    $inboxQueries = array_filter($wpdb->queries, static fn (array $query): bool => str_contains($query[0], 'option_name LIKE'));
+    check($inboxQueries === [], 'exhausted scheduling does not load the inbox');
+    check($queue->all()[0]->requiresFullPurge(), 'bounded inbox overflow covers every invalidation with a full purge');
+    $inboxQueries = array_filter($wpdb->queries, static fn (array $query): bool => str_contains($query[0], 'option_name LIKE'));
+    check($inboxQueries !== [] && array_all($inboxQueries, static fn (array $query): bool => str_contains($query[0], 'LIMIT 68')), 'all inbox reads have a fixed batch limit');
     $queueCommand = new \Symfony\Component\Console\Tester\CommandTester(new \SymPress\NginxCache\Cli\Command\QueueCommand($processor));
     $queueCommand->execute(['action' => 'status']);
     check(str_contains($queueCommand->getDisplay(), 'Exhausted purge requests: 1'), 'purge CLI status exposes exhausted work');

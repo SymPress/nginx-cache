@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## 0.1.7 — 2026-10-06
+
+- Bound new purge inbox production to 64 merge slots and four full-invalidation overflow markers. Overflow retains invalidation coverage without accumulating one option per event.
+- Avoid scanning the inbox when the retry budget is exhausted; preserve explicit operator retry and bounded ingestion of legacy rows.
+- Cover 2,000 invalidations, concurrent producers and acknowledgement races against a real database.
+
 ## 0.1.6 — 2026-10-05
 
 - Pass the canonical URI and empty tracking-only query to PHP as well as the cache key. The first campaign request cannot contaminate a shared cached response; semantic and mixed queries retain their parameters and bypass caching.

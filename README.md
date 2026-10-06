@@ -45,6 +45,12 @@ the cause, `wp nginx-cache queue retry` or `wp nginx-cache side-effects retry`
 resets its retry budget and schedules processing. See the
 [side-effect contract](docs/side-effects.md) for timing and delivery guarantees.
 
+New purge events use 64 bounded merge slots plus at most four overflow markers
+for the dry-run/prewarm combinations. When selective work exceeds the URL budget,
+it becomes a full invalidation rather than losing URLs. Retry exhaustion does
+not scan the inbox on content hooks. Existing legacy inbox rows are ingested in
+batches of at most 68 after processing or an explicit retry resumes.
+
 ## Features
 
 - Purge Nginx cache files by URL, path, cache layer or full cache directory.
