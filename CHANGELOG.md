@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## 0.2.0 — 2026-10-07
+
+- Add Redis full-page cache purging, separate from WordPress object cache, with bounded prefix scans and selective Nginx Helper/SymPress key support.
+- Add protected, signed GET requests to Nginx `/purge/<path>` locations for selective invalidation. Full HTTP purges require a configured full-purge endpoint.
+- Configure homepage, page and archive purge scopes independently for post edits/deletion and new/deleted comments, without reintroducing excluded URLs through cache tags.
+- Optionally discover same-origin sitemap indexes for preload, with bounded XML sizes, requests and warmed URLs; reject redirects and external XML declarations.
+- Preview Multisite maps and optionally write them atomically to an explicit destination, supporting subdomain and subdirectory networks. Nginx reload remains an operator action.
+- Optionally append HTML rendering stamps with timestamp, query count and rendering time; skip private and non-HTML responses.
+- Add real Redis integration with anonymous and encrypted-password authentication, and compiled kernel consumer checks in the MariaDB/MySQL WordPress harnesses.
+- Require PHP DOM for sitemap parsing. New tools and alternative backends require explicit configuration; existing defaults remain in effect.
+
 ## 0.1.7 — 2026-10-06
 
 - Bound new purge inbox production to 64 merge slots and four full-invalidation overflow markers. Overflow retains invalidation coverage without accumulating one option per event.
