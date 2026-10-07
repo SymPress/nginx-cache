@@ -17,13 +17,21 @@ final readonly class Prewarmer
         private WordPressCacheSettings $settings,
         private UrlPolicy $urls,
         private CacheClock $clock,
+        private ?SitemapUrlProvider $sitemaps = null,
     ) {
     }
 
     /** @param list<string> $urls */
     public function prewarm(array $urls = []): PrewarmResult
     {
+        $discover = $urls === [] && ($this->sitemaps?->enabled() ?? false);
         $urls = $urls !== [] ? $urls : $this->settings->prewarmUrls();
+        $errors = [];
+        if ($discover && $this->sitemaps !== null) {
+            $discovered = $this->sitemaps->discover(max(0, $this->settings->maxPrewarmUrls() - count($urls)));
+            $urls = [...$urls, ...$discovered['urls']];
+            $errors = $discovered['errors'];
+        }
         $urls = array_values(
             array_slice(
                 array_unique(
@@ -37,7 +45,6 @@ final readonly class Prewarmer
             ),
         );
         $responses = [];
-        $errors = [];
 
         foreach ($urls as $url) {
             try {
@@ -45,8 +52,9 @@ final readonly class Prewarmer
                     'headers'       => [
                         'User-Agent' => 'SymPress Nginx Cache Prewarmer',
                     ],
-                    'max_redirects' => 3,
+                    'max_redirects' => 0,
                     'timeout'       => 5,
+                    'max_duration'  => 5,
                 ]);
                 $responses[$url] = $response->getStatusCode();
             } catch (\Throwable $exception) {
