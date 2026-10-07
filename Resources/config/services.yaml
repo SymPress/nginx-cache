@@ -39,6 +39,13 @@ services:
         arguments:
             $defaultPath: '%sympress_nginx_cache.default_path%'
 
+    SymPress\NginxCache\Purge\RedisPageCacheStore:
+        alias: SymPress\NginxCache\Purge\PredisPageCacheStore
+
+    SymPress\NginxCache\Settings\CompatibilitySettings:
+        tags:
+            - { name: kernel.hook, hook: 'admin_init', method: register }
+
     SymPress\NginxCache\Inspection\CacheStatusInspector:
         arguments:
             $scanLimit: '%sympress_nginx_cache.status_scan_limit%'

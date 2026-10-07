@@ -14,6 +14,25 @@ request to local deletion and follow-up work.
 
 ## Safety gates
 
+The optional `purge_backend` setting selects local files (the existing default),
+Redis page-cache keys, or same-origin Nginx `GET /purge/<path>` requests. All
+entry points still pass through `CacheManager`, history, events, and the durable
+side-effect queue. Redis uses a lazy Predis connection with TCP/ACL or Unix socket
+credentials; its password uses the existing authenticated encryption and empty
+password-field preservation. Full Redis purges use bounded SCAN/DEL batches only
+under a nonempty literal, site-dedicated prefix, never FLUSHDB or FLUSHALL. A
+budget-exhausted scan fails and remains retryable. Dry runs perform no Redis I/O.
+Selective keys cover GET/HEAD, HTTP/HTTPS and both SymPress and nginx-srcache's
+concatenated key format. The server's cache key must match one of these formats.
+
+HTTP URL purges validate every URL before the first request, keep functional
+queries, prohibit redirects, and require the existing signing secret. Protect the
+Nginx location with an IP allowlist and/or a signature verifier; a purge module
+alone does not verify the added signature headers. HTTP 404 means already absent;
+other non-2xx responses fail and retain queued work. Full HTTP purges require the
+existing protected full-purge endpoint; they never fall back to deleting disk
+files. Redis/HTTP modes do not require access to the local Nginx cache directory.
+
 - `CachePathValidator` rejects unsafe/unmanaged paths; `CachePurger` locks the
   validated directory and preserves its sentinel and lock files.
 - `UrlPolicy` restricts URL purges to same-origin URLs and rejects unsafe remote

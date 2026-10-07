@@ -19,13 +19,15 @@ final readonly class CacheManager
         private PurgeEventEmitter $events,
         private TagIndexRepository $tagIndex,
         private PurgeSideEffectProcessor $sideEffects,
+        private ?AlternativeCachePurger $alternative = null,
     ) {
     }
 
     public function purgeConfiguredPath(?PurgeRequest $request = null): PurgeResult
     {
         $request ??= PurgeRequest::full(prewarm: $this->settings->prewarmEnabled());
-        $result = $this->purger->purgeRequest($this->settings->cachePath(), $request);
+        $result = $this->alternative?->purge($request)
+            ?? $this->purger->purgeRequest($this->settings->cachePath(), $request);
 
         if ($result->successful && !$result->dryRun) {
             $this->syncTagIndex($result);

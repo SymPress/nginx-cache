@@ -37,6 +37,7 @@ final readonly class SettingsPage
         private Diagnostics $diagnostics,
         private NginxConfigGenerator $config,
         private EnvironmentDetector $environment,
+        private ?CompatibilityFields $compatibility = null,
     ) {
     }
 
@@ -525,6 +526,7 @@ final readonly class SettingsPage
                                 </div>
 
                                 <div class="sympress-toggle-stack">
+                                    <?php $this->compatibility?->render(); ?>
                                     <?php $this->renderSwitch(WordPressCacheSettings::OPTION_AUTO_PURGE, $this->settings->autoPurgeEnabled(), __('Automatic purge', WordPressCacheSettings::TEXT_DOMAIN), __('Purge once per request when content, comments, menus, terms, users or theme state changes.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
                                     <?php $this->renderSwitch(WordPressCacheSettings::OPTION_SELECTIVE_PURGE, $this->settings->selectivePurgeEnabled(), __('Selective purge', WordPressCacheSettings::TEXT_DOMAIN), __('Purge changed URLs when they can be mapped to cache files, falling back to full purges when needed.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
                                     <?php $this->renderSwitch(WordPressCacheSettings::OPTION_QUEUE_ENABLED, $this->settings->queueEnabled(), __('Queue and debounce', WordPressCacheSettings::TEXT_DOMAIN), __('Collect automatic purge requests and process them once after the debounce window.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
