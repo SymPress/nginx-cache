@@ -16,6 +16,7 @@ final readonly class PurgeUrlCollector
         private TagIndexRepository $tagIndex,
         private UrlPolicy $urls,
         private WordPressCacheSettings $settings,
+        private ?PurgeRules $rules = null,
     ) {
     }
 
@@ -26,13 +27,18 @@ final readonly class PurgeUrlCollector
     public function collect(string $hook, array $arguments): array
     {
         $urls = [];
+        $affectedPostIds = [];
         $productIds = $this->publicProductIds($hook, $arguments);
+        $affectedPostIds = [...$affectedPostIds, ...$productIds];
 
         foreach ($productIds as $productId) {
             $urls = [...$urls, ...$this->postUrls($productId)];
         }
 
         $postId = $this->postId($hook, $arguments);
+        if ($postId !== null) {
+            $affectedPostIds[] = $postId;
+        }
 
         if ($postId !== null && !in_array($postId, $productIds, true)) {
             $urls = [...$urls, ...$this->postUrls($postId)];
@@ -43,6 +49,7 @@ final readonly class PurgeUrlCollector
         }
 
         foreach ($this->commentPostIds($hook, $arguments) as $commentPostId) {
+            $affectedPostIds[] = $commentPostId;
             $urls = [...$urls, ...$this->postUrls($commentPostId)];
         }
 
@@ -58,7 +65,7 @@ final readonly class PurgeUrlCollector
 
         $tags = $this->collectTags($hook, $arguments);
 
-        if ($tags !== []) {
+        if ($tags !== [] && !($this->rules?->limited($hook, $arguments) ?? false)) {
             $urls = [...$urls, ...$this->tagIndex->urlsForTags($tags)];
         }
 
@@ -71,6 +78,8 @@ final readonly class PurgeUrlCollector
         if (function_exists('apply_filters')) {
             $urls = (array) apply_filters('sympress_nginx_cache_purge_urls', $urls, $hook, $arguments);
         }
+
+        $urls = $this->rules?->filter($hook, $arguments, $urls, array_values(array_unique($affectedPostIds))) ?? $urls;
 
         return array_values(
             array_unique(
@@ -88,6 +97,10 @@ final readonly class PurgeUrlCollector
      */
     public function collectTags(string $hook, array $arguments): array
     {
+        if ($this->rules?->limited($hook, $arguments)) {
+            // URL purges preserve disabled scopes; shared tags could widen them again.
+            return [];
+        }
         $tags = [$hook];
         $productIds = $this->publicProductIds($hook, $arguments);
 
@@ -335,6 +348,10 @@ final readonly class PurgeUrlCollector
      */
     private function commentPostIds(string $hook, array $arguments): array
     {
+        if ($hook === 'transition_comment_status') {
+            $comment = $arguments[2] ?? null;
+            return is_object($comment) && isset($comment->comment_post_ID) ? [(int) $comment->comment_post_ID] : [];
+        }
         if (!in_array($hook, ['comment_post', 'edit_comment', 'delete_comment', 'wp_set_comment_status', 'clean_comment_cache'], true)) {
             return [];
         }

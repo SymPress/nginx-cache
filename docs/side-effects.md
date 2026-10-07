@@ -46,6 +46,17 @@ files. Redis/HTTP modes do not require access to the local Nginx cache directory
 
 ## Persistent index and retry contract
 
+The purge-rule matrix separates home, singular pages and archives/listings for
+edit/publish, deletion/trash, new/approved comments and removed/unapproved
+comments. Defaults preserve the existing all-scope behavior. Limited scopes use
+explicit URL invalidation instead of shared surrogate tags, so Cloudflare also
+receives URLs rather than tags that could invalidate a disabled scope. Once a
+rule is customized, generic post/comment cache-clean hooks are omitted because
+they cannot distinguish edit/delete/comment intent; explicit content hooks and
+comment status transitions retain that context. Unapproved new comments are
+no-ops. Whole-cache modes, imports and the documented queue-overflow full purge
+remain whole-cache operations. Use selective mode for the matrix's URL scopes.
+
 `TagIndexRepository::install()` runs at `init` priority 5. It creates the site's
 `{$wpdb->prefix}sympress_cache_tags` InnoDB table and migrates the legacy
 `sympress_nginx_cache_tag_index` option once. The legacy option is deleted only

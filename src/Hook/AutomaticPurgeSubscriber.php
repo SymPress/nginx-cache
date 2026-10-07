@@ -7,6 +7,7 @@ namespace SymPress\NginxCache\Hook;
 use SymPress\NginxCache\Purge\CacheManager;
 use SymPress\NginxCache\Purge\PurgeQueueProcessor;
 use SymPress\NginxCache\Purge\PurgeRequestMerger;
+use SymPress\NginxCache\Purge\PurgeRules;
 use SymPress\NginxCache\Purge\PurgeUrlCollector;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Value\PurgeRequest;
@@ -22,6 +23,7 @@ final class AutomaticPurgeSubscriber
         private readonly PurgeQueueProcessor $queue,
         private readonly PurgeUrlCollector $urls,
         private readonly PurgeRequestMerger $merger,
+        private readonly ?PurgeRules $rules = null,
     ) {
     }
 
@@ -106,6 +108,7 @@ final class AutomaticPurgeSubscriber
             'edit_comment',
             'delete_comment',
             'wp_set_comment_status',
+            'transition_comment_status',
             'created_term',
             'edited_term',
             'delete_term',
@@ -121,6 +124,10 @@ final class AutomaticPurgeSubscriber
             'upgrader_process_complete',
         ];
 
+        if ($this->rules?->customized()) {
+            // Generic cache-clean events have no edit/delete/comment context.
+            $actions = array_values(array_diff($actions, ['clean_post_cache', 'clean_comment_cache']));
+        }
         if (function_exists('apply_filters')) {
             $actions = (array) apply_filters('nginx_cache_purge_actions', $actions);
             $actions = (array) apply_filters('sympress_nginx_cache_purge_actions', $actions);
