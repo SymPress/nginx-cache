@@ -50,7 +50,38 @@ final readonly class CompatibilityFields
                 <span class="sympress-field__label"><?php echo esc_html__('Redis password', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                 <?php SecretField::render(CompatibilitySettings::REDIS_PASSWORD); ?>
             </div>
+            <?php $this->renderRules(); ?>
         </div>
+        <?php
+    }
+
+    private function renderRules(): void
+    {
+        $events = [
+            'edit' => __('Edit / publish', WordPressCacheSettings::TEXT_DOMAIN),
+            'delete' => __('Delete / trash', WordPressCacheSettings::TEXT_DOMAIN),
+            'comment_new' => __('New / approved comment', WordPressCacheSettings::TEXT_DOMAIN),
+            'comment_delete' => __('Removed / unapproved comment', WordPressCacheSettings::TEXT_DOMAIN),
+        ];
+        ?>
+        <fieldset>
+            <legend><h3><?php echo esc_html__('Automatic purge rules', WordPressCacheSettings::TEXT_DOMAIN); ?></h3></legend>
+            <p><?php echo esc_html__('Choose which pages are invalidated by each content event. Existing defaults purge every scope. Whole-cache purges and queue overflow still invalidate the entire selected cache.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+            <table class="widefat">
+                <thead><tr><th scope="col"><?php echo esc_html__('Scope', WordPressCacheSettings::TEXT_DOMAIN); ?></th>
+                    <?php foreach ($events as $label) : ?><th scope="col"><?php echo esc_html($label); ?></th><?php endforeach; ?>
+                </tr></thead>
+                <tbody>
+                    <?php foreach (['home' => __('Homepage', WordPressCacheSettings::TEXT_DOMAIN), 'page' => __('Changed page', WordPressCacheSettings::TEXT_DOMAIN), 'archive' => __('Archives / listings', WordPressCacheSettings::TEXT_DOMAIN)] as $scope => $scopeLabel) : ?>
+                        <tr><th scope="row"><?php echo esc_html($scopeLabel); ?></th>
+                            <?php foreach ($events as $event => $label) : $name = 'purge_' . $scope . '_' . $event; ?>
+                                <td><label><input type="hidden" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="0" /><input type="checkbox" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="1" <?php checked($this->settings->integer($name) !== 0); ?> /><span class="screen-reader-text"><?php echo esc_html($scopeLabel . ': ' . $label); ?></span></label></td>
+                            <?php endforeach; ?>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </fieldset>
         <?php
     }
 }

@@ -45,6 +45,18 @@ final readonly class CompatibilitySettings
             'redis_socket'      => '',
             'redis_username'    => '',
             'http_purge_prefix' => '/purge',
+            'purge_home_edit' => 1,
+            'purge_home_delete' => 1,
+            'purge_home_comment_new' => 1,
+            'purge_home_comment_delete' => 1,
+            'purge_page_edit' => 1,
+            'purge_page_delete' => 1,
+            'purge_page_comment_new' => 1,
+            'purge_page_comment_delete' => 1,
+            'purge_archive_edit' => 1,
+            'purge_archive_delete' => 1,
+            'purge_archive_comment_new' => 1,
+            'purge_archive_comment_delete' => 1,
         ];
     }
 
