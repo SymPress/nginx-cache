@@ -14,6 +14,23 @@ request to local deletion and follow-up work.
 
 ## Safety gates
 
+Sitemap prewarming is opt-in and runs inside the existing deferred prewarm task
+after full purges or explicit prewarm requests with no URL list. It does not run
+on dry purges. Discovery follows only same-origin index entries, prohibits HTTP
+redirects and XML DTD/entities, limits each streamed XML response to 2 MiB, visits
+at most 20 maps, and shares the configured 0..200 URL budget with explicit URLs.
+Discovery failures remain prewarm errors and retain the task for retry.
+
+`MultisiteMapGenerator::refresh()` handles site creation/update/deletion and
+admin initialization. Without the private `SYMPRESS_NGINX_CACHE_MULTISITE_MAP_FILE`
+constant it performs no file writes. The absolute .conf destination and its
+parents must not be symlinks; data is validated before atomic replacement.
+Unchanged content is left untouched and failures retain the prior map and expose
+a network-admin error. No Nginx reload occurs. Multiple networks must have
+separate destinations. The HTML stamp is independently opt-in, runs at shutdown,
+and writes only a fixed-format anonymous text/html comment, never JSON/XML,
+authenticated/admin/login, REST, cron or AJAX responses.
+
 The optional `purge_backend` setting selects local files (the existing default),
 Redis page-cache keys, or same-origin Nginx `GET /purge/<path>` requests. All
 entry points still pass through `CacheManager`, history, events, and the durable

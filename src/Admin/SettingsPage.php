@@ -13,6 +13,7 @@ use SymPress\NginxCache\Purge\CacheManager;
 use SymPress\NginxCache\Purge\PurgeHistoryRepository;
 use SymPress\NginxCache\Purge\PurgeQueueProcessor;
 use SymPress\NginxCache\Purge\PurgeSideEffectProcessor;
+use SymPress\NginxCache\Settings\CompatibilitySettings;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Value\CacheProfile;
 use SymPress\NginxCache\Value\PurgeRequest;
@@ -38,6 +39,7 @@ final readonly class SettingsPage
         private NginxConfigGenerator $config,
         private EnvironmentDetector $environment,
         private ?CompatibilityFields $compatibility = null,
+        private ?CompatibilitySettings $backendSettings = null,
     ) {
     }
 
@@ -264,11 +266,18 @@ final readonly class SettingsPage
         $healthDescription = $healthOk
             ? __('Alle Systeme betriebsbereit', WordPressCacheSettings::TEXT_DOMAIN)
             : __('Bitte Cache-Pfad und Nginx-Probe prüfen', WordPressCacheSettings::TEXT_DOMAIN);
+        $localBackend = ($this->backendSettings?->string('purge_backend') ?? 'local_files') === 'local_files';
+        if (!$localBackend) {
+            $healthLabel = __('Alternatives Purge-Backend konfiguriert', WordPressCacheSettings::TEXT_DOMAIN);
+            $healthDescription = __('Der lokale Cache-Pfad ist für dieses Backend nicht erforderlich. Serverzugriff wurde nicht geprüft.', WordPressCacheSettings::TEXT_DOMAIN);
+        }
         $option = static fn (string $name, string $default = ''): string => function_exists('get_option')
             ? (string) get_option($name, $default)
             : $default;
 
-        $this->addRequestNotice($validation->firstError());
+        if ($localBackend) {
+            $this->addRequestNotice($validation->firstError());
+        }
 
         ?>
         <div class="wrap sympress-cache-admin">

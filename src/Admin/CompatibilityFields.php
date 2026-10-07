@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Admin;
 
+use SymPress\NginxCache\Config\MultisiteMapGenerator;
 use SymPress\NginxCache\Settings\CompatibilitySettings;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 
 final readonly class CompatibilityFields
 {
-    public function __construct(private CompatibilitySettings $settings)
-    {
+    public function __construct(
+        private CompatibilitySettings $settings,
+        private ?MultisiteMapGenerator $maps = null,
+    ) {
     }
 
     public function render(): void
@@ -51,6 +54,7 @@ final readonly class CompatibilityFields
                 <?php SecretField::render(CompatibilitySettings::REDIS_PASSWORD); ?>
             </div>
             <?php $this->renderRules(); ?>
+            <?php $this->renderTools(); ?>
         </div>
         <?php
     }
@@ -58,9 +62,9 @@ final readonly class CompatibilityFields
     private function renderRules(): void
     {
         $events = [
-            'edit' => __('Edit / publish', WordPressCacheSettings::TEXT_DOMAIN),
-            'delete' => __('Delete / trash', WordPressCacheSettings::TEXT_DOMAIN),
-            'comment_new' => __('New / approved comment', WordPressCacheSettings::TEXT_DOMAIN),
+            'edit'           => __('Edit / publish', WordPressCacheSettings::TEXT_DOMAIN),
+            'delete'         => __('Delete / trash', WordPressCacheSettings::TEXT_DOMAIN),
+            'comment_new'    => __('New / approved comment', WordPressCacheSettings::TEXT_DOMAIN),
             'comment_delete' => __('Removed / unapproved comment', WordPressCacheSettings::TEXT_DOMAIN),
         ];
         ?>
@@ -69,12 +73,15 @@ final readonly class CompatibilityFields
             <p><?php echo esc_html__('Choose which pages are invalidated by each content event. Existing defaults purge every scope. Whole-cache purges and queue overflow still invalidate the entire selected cache.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
             <table class="widefat">
                 <thead><tr><th scope="col"><?php echo esc_html__('Scope', WordPressCacheSettings::TEXT_DOMAIN); ?></th>
-                    <?php foreach ($events as $label) : ?><th scope="col"><?php echo esc_html($label); ?></th><?php endforeach; ?>
+                    <?php foreach ($events as $label) :
+                        ?><th scope="col"><?php echo esc_html($label); ?></th><?php
+                    endforeach; ?>
                 </tr></thead>
                 <tbody>
                     <?php foreach (['home' => __('Homepage', WordPressCacheSettings::TEXT_DOMAIN), 'page' => __('Changed page', WordPressCacheSettings::TEXT_DOMAIN), 'archive' => __('Archives / listings', WordPressCacheSettings::TEXT_DOMAIN)] as $scope => $scopeLabel) : ?>
                         <tr><th scope="row"><?php echo esc_html($scopeLabel); ?></th>
-                            <?php foreach ($events as $event => $label) : $name = 'purge_' . $scope . '_' . $event; ?>
+                            <?php foreach ($events as $event => $label) :
+                                $name = 'purge_' . $scope . '_' . $event; ?>
                                 <td><label><input type="hidden" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="0" /><input type="checkbox" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="1" <?php checked($this->settings->integer($name) !== 0); ?> /><span class="screen-reader-text"><?php echo esc_html($scopeLabel . ': ' . $label); ?></span></label></td>
                             <?php endforeach; ?>
                         </tr>
@@ -83,5 +90,43 @@ final readonly class CompatibilityFields
             </table>
         </fieldset>
         <?php
+    }
+
+    private function renderTools(): void
+    {
+        ?>
+        <fieldset>
+            <legend><h3><?php echo esc_html__('Preload and diagnostics', WordPressCacheSettings::TEXT_DOMAIN); ?></h3></legend>
+            <?php foreach (['prewarm_sitemap' => __('Discover preload URLs from a sitemap after full purges', WordPressCacheSettings::TEXT_DOMAIN), 'html_stamp' => __('Add a rendering timestamp, query count and duration to public HTML', WordPressCacheSettings::TEXT_DOMAIN)] as $name => $label) : ?>
+                <label class="sympress-field"><input type="hidden" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="0" /><span><input type="checkbox" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="1" <?php checked($this->settings->integer($name) !== 0); ?> /> <?php echo esc_html($label); ?></span></label>
+            <?php endforeach; ?>
+            <label class="sympress-field">
+                <span class="sympress-field__label"><?php echo esc_html__('Sitemap URL (empty uses the WordPress sitemap)', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                <input type="url" class="regular-text code sympress-input" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . 'prewarm_sitemap_url'); ?>" value="<?php echo esc_attr($this->settings->string('prewarm_sitemap_url')); ?>" placeholder="<?php echo esc_attr(home_url('/wp-sitemap.xml')); ?>" />
+            </label>
+            <p><?php echo esc_html__('Enable prewarm in the Preload tab as well. Discovery accepts only this site, rejects external XML entities and redirects, and shares the existing preload URL limit.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+        </fieldset>
+        <?php
+        if ($this->maps === null || !is_multisite() || !current_user_can('manage_network_options')) {
+            return;
+        }
+        ?>
+        <h3><?php echo esc_html__('Multisite Nginx map', WordPressCacheSettings::TEXT_DOMAIN); ?></h3>
+        <p><?php echo esc_html__('Use this map with your Nginx static-upload configuration. Set SYMPRESS_NGINX_CACHE_MULTISITE_MAP_FILE to an absolute .conf path outside the public directory for automatic, atomic updates. Reload Nginx after changes.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+        <?php
+        try {
+            $map = $this->maps->generate();
+            ?>
+            <textarea class="large-text code" rows="8" readonly aria-label="<?php echo esc_attr__('Generated multisite map', WordPressCacheSettings::TEXT_DOMAIN); ?>"><?php echo esc_textarea($map); ?></textarea>
+            <?php
+        } catch (\RuntimeException) {
+            echo '<p>' . esc_html__('Multisite map generation failed; check site data and network size.', WordPressCacheSettings::TEXT_DOMAIN) . '</p>';
+        }
+        $error = get_site_transient('sympress_nginx_cache_multisite_map_error');
+        if (!is_string($error) || $error === '') {
+            return;
+        }
+
+        echo '<p role="alert">' . esc_html($error) . '</p>';
     }
 }

@@ -54,7 +54,7 @@ jobs:
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.5'
-          extensions: mysqli, pdo_mysql, sodium
+          extensions: dom, mysqli, pdo_mysql, sodium
           tools: composer:2.10.3
           coverage: none
       - name: Install dependencies
@@ -76,3 +76,34 @@ jobs:
         run: |
           php tests/Integration/run.php
           php tests/Integration/query-contention.php
+
+  redis-integration:
+    name: Redis page-cache integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      redis:
+        image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=5s --health-timeout=3s --health-retries=20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          extensions: dom, sodium
+          tools: composer:2.10.3
+          coverage: none
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --no-scripts
+      - name: Verify anonymous and encrypted-password Redis connections
+        env:
+          NGINX_TEST_REDIS_FIXTURE: '1'
+        run: |
+          set -euo pipefail
+          php tests/Integration/redis.php
+          docker exec "${{ job.services.redis.id }}" redis-cli CONFIG SET requirepass sympress-redis-test-only
+          NGINX_TEST_REDIS_PASSWORD=sympress-redis-test-only php tests/Integration/redis.php

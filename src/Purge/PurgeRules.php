@@ -69,16 +69,20 @@ final readonly class PurgeRules
     /** @param array<mixed> $arguments */
     private function event(string $hook, array $arguments): string
     {
-        if (in_array($hook, ['delete_comment', 'trashed_comment', 'spammed_comment'], true)
+        if (
+            in_array($hook, ['delete_comment', 'trashed_comment', 'spammed_comment'], true)
             || ($hook === 'wp_set_comment_status' && ($arguments[1] ?? '') !== 'approve')
-            || ($hook === 'transition_comment_status' && ($arguments[0] ?? '') !== 'approved')) {
+            || ($hook === 'transition_comment_status' && ($arguments[0] ?? '') !== 'approved')
+        ) {
             return 'comment_delete';
         }
         if (str_contains($hook, 'comment')) {
             return 'comment_new';
         }
-        if (in_array($hook, ['before_delete_post', 'deleted_post', 'delete_post', 'trashed_post', 'delete_attachment'], true)
-            || ($hook === 'transition_post_status' && ($arguments[0] ?? '') === 'trash')) {
+        if (
+            in_array($hook, ['before_delete_post', 'deleted_post', 'delete_post', 'trashed_post', 'delete_attachment'], true)
+            || ($hook === 'transition_post_status' && ($arguments[0] ?? '') === 'trash')
+        ) {
             return 'delete';
         }
         return 'edit';
@@ -87,8 +91,10 @@ final readonly class PurgeRules
     private function singularUrl(string $url, int $postId): bool
     {
         $base = function_exists('get_permalink') ? get_permalink($postId) : false;
-        if (is_string($base) && ($url === $base || str_starts_with($url, rtrim($base, '/') . '/amp/')
-            || str_starts_with($url, rtrim($base, '/') . '/feed/') || str_starts_with($url, $base . '?amp='))) {
+        if (
+            is_string($base) && ($url === $base || str_starts_with($url, rtrim($base, '/') . '/amp/')
+            || str_starts_with($url, rtrim($base, '/') . '/feed/') || str_starts_with($url, $base . '?amp='))
+        ) {
             return true;
         }
         if (!function_exists('get_post_type') || !function_exists('get_post_type_object') || !function_exists('rest_url')) {
@@ -96,7 +102,7 @@ final readonly class PurgeRules
         }
         $type = get_post_type($postId);
         $object = is_string($type) ? get_post_type_object($type) : null;
-        $restBase = is_object($object) && is_string($object->rest_base ?? null) && $object->rest_base !== '' ? $object->rest_base : $type;
+        $restBase = is_object($object) && is_string($object->rest_base) && $object->rest_base !== '' ? $object->rest_base : $type;
         return is_string($restBase) && $url === rest_url('wp/v2/' . $restBase . '/' . $postId);
     }
 }

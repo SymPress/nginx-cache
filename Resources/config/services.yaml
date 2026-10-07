@@ -46,6 +46,17 @@ services:
         tags:
             - { name: kernel.hook, hook: 'admin_init', method: register }
 
+    SymPress\NginxCache\Config\MultisiteMapGenerator:
+        tags:
+            - { name: kernel.hook, hook: 'wp_initialize_site', method: refresh }
+            - { name: kernel.hook, hook: 'wp_update_site', method: refresh }
+            - { name: kernel.hook, hook: 'wp_delete_site', method: refresh }
+            - { name: kernel.hook, hook: 'admin_init', method: refresh }
+
+    SymPress\NginxCache\Hook\HtmlCacheStampSubscriber:
+        tags:
+            - { name: kernel.hook, hook: 'shutdown', method: render, priority: 999999 }
+
     SymPress\NginxCache\Inspection\CacheStatusInspector:
         arguments:
             $scanLimit: '%sympress_nginx_cache.status_scan_limit%'

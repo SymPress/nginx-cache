@@ -566,6 +566,7 @@ try {
     $queueCommand->execute(['action' => 'retry']);
     check($queue->inspect()[0]['attempts'] === 0 && wp_next_scheduled($processor::HOOK) !== false, 'purge operator retry schedules preserved work without filesystem execution');
     remove_filter('sympress_nginx_cache_path', $invalidRoot);
+    require __DIR__ . '/compatibility.php';
     // Default retention and explicit data removal, without filesystem operations.
     $index->remember('https://example.test/retention-fixture/', ['retained']);
     \SymPress\NginxCache\Support\UninstallPolicy::removeCurrentSiteData();

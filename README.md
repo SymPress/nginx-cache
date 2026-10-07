@@ -53,6 +53,13 @@ batches of at most 68 after processing or an explicit retry resumes.
 
 ## Features
 
+- Select Redis page-cache or Nginx `GET /purge/<path>` backends instead of local files.
+- Configure separate homepage, singular-page and archive rules for edits, deletes
+  and comment approval/removal.
+- Discover prewarm URLs from same-origin sitemap indexes or URL sets.
+- Generate and optionally atomically maintain a Multisite Nginx map.
+- Optionally include a rendering timestamp, query count and duration in public HTML.
+
 - Purge Nginx cache files by URL, path, cache layer or full cache directory.
 - Queue purge requests and process side effects safely.
 - Track surrogate tags for targeted invalidation.
@@ -66,3 +73,42 @@ batches of at most 68 after processing or an explicit retry resumes.
 - Generate Nginx cache snippets for the configured profile.
 - Prewarm selected URLs after purge operations.
 - Expose admin dashboard actions and REST endpoints for integrations.
+
+## Nginx Helper compatibility
+
+The Cache settings tab contains backend connection settings and the purge-rule
+matrix. Existing installations continue using local files and their existing
+all-scope rules. Redis and HTTP are alternatives to disk purging, not WordPress
+object-cache adapters. Redis requires a site-dedicated, nonempty prefix; passwords
+are encrypted and are never exported or rendered. TCP, ACL users and Unix sockets
+are supported. Redis keys use either `PREFIX$scheme$request_method$host$request_uri`
+(nginx-srcache / Nginx Helper) or SymPress's pipe-separated key format. Coordinate
+the key and prefix with your server configuration. A full Redis purge removes
+only that prefix. It never runs FLUSHDB/FLUSHALL.
+
+For HTTP URL purges configure the same-origin prefix (default `/purge`) and the
+existing remote signing secret. A compatible FastCGI/proxy purge module must
+provide that location. Protect it with an IP allowlist or signature verification;
+the module does not itself authenticate signature headers. The existing protected
+full-purge endpoint is required for full HTTP purges. No redirects are followed.
+
+Enable both prewarm and sitemap discovery to preload after full purges, or run
+`wp nginx-cache prewarm`. The default sitemap is `/wp-sitemap.xml`; custom SEO
+sitemap indexes can be configured. Discovery reads at most 20 sitemaps (2 MiB
+each) and shares the existing configurable limit of up to 200 prewarm URLs.
+Foreign-origin entries, external entities and redirects are rejected. Selective
+purges continue warming only their affected URLs. The optional HTML stamp is
+restricted to anonymous HTML responses; REST, feeds, AJAX, cron and login/admin
+responses are unchanged. It records PHP rendering time, not a claim of a cache hit.
+
+Network administrators can preview the Multisite map. For automatic persistence,
+set `SYMPRESS_NGINX_CACHE_MULTISITE_MAP_FILE` to an absolute `.conf` filename outside
+the public document root. Site creation/update/deletion and admin initialization
+refresh that file atomically, leaving unchanged content and previous files on
+failure intact. Nginx must include the map in its HTTP context and use
+`$sympress_blog_id` in the appropriate static-upload rule. Nginx configuration,
+legacy/current upload paths and reloads remain operator responsibilities. Up to
+5000 active sites per current network are supported; domain aliases can be added
+with `sympress_nginx_cache_multisite_map_entries`. For multiple networks configure
+separate destinations per network in wp-config. WordPress itself detects Nginx
+rewrite support; no additional `index.php` permalink workaround is installed.

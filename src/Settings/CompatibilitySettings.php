@@ -37,25 +37,28 @@ final readonly class CompatibilitySettings
     public function defaults(): array
     {
         return [
-            'purge_backend'     => 'local_files',
-            'redis_host'        => '127.0.0.1',
-            'redis_port'        => 6379,
-            'redis_database'    => 0,
-            'redis_prefix'      => 'nginx-cache:',
-            'redis_socket'      => '',
-            'redis_username'    => '',
-            'http_purge_prefix' => '/purge',
-            'purge_home_edit' => 1,
-            'purge_home_delete' => 1,
-            'purge_home_comment_new' => 1,
-            'purge_home_comment_delete' => 1,
-            'purge_page_edit' => 1,
-            'purge_page_delete' => 1,
-            'purge_page_comment_new' => 1,
-            'purge_page_comment_delete' => 1,
-            'purge_archive_edit' => 1,
-            'purge_archive_delete' => 1,
-            'purge_archive_comment_new' => 1,
+            'purge_backend'                => 'local_files',
+            'redis_host'                   => '127.0.0.1',
+            'redis_port'                   => 6379,
+            'redis_database'               => 0,
+            'redis_prefix'                 => 'nginx-cache:',
+            'redis_socket'                 => '',
+            'redis_username'               => '',
+            'http_purge_prefix'            => '/purge',
+            'prewarm_sitemap'              => 0,
+            'prewarm_sitemap_url'          => '',
+            'html_stamp'                   => 0,
+            'purge_home_edit'              => 1,
+            'purge_home_delete'            => 1,
+            'purge_home_comment_new'       => 1,
+            'purge_home_comment_delete'    => 1,
+            'purge_page_edit'              => 1,
+            'purge_page_delete'            => 1,
+            'purge_page_comment_new'       => 1,
+            'purge_page_comment_delete'    => 1,
+            'purge_archive_edit'           => 1,
+            'purge_archive_delete'         => 1,
+            'purge_archive_comment_new'    => 1,
             'purge_archive_comment_delete' => 1,
         ];
     }
@@ -101,7 +104,7 @@ final readonly class CompatibilitySettings
             throw new \RuntimeException('Redis credentials are unavailable.');
         }
         $socket = $this->string('redis_socket');
-        return [
+        $parameters = [
             'scheme'             => $socket === '' ? 'tcp' : 'unix',
             'host'               => $this->string('redis_host'),
             'port'               => max(1, min(65535, $this->integer('redis_port'))),
@@ -112,6 +115,14 @@ final readonly class CompatibilitySettings
             'timeout'            => 3.0,
             'read_write_timeout' => 3.0,
         ];
+        foreach (['username', 'password'] as $name) {
+            if (($parameters[$name] ?? null) !== '') {
+                continue;
+            }
+
+            unset($parameters[$name]);
+        }
+        return $parameters;
     }
 
     public function redisPrefix(): string

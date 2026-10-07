@@ -11,6 +11,7 @@
         }
     ],
     "require": {
+        "ext-dom": "*",
         "ext-sodium": "*",
         "php": "^8.5",
         "predis/predis": "^3.6",

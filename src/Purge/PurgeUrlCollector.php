@@ -79,6 +79,7 @@ final readonly class PurgeUrlCollector
             $urls = (array) apply_filters('sympress_nginx_cache_purge_urls', $urls, $hook, $arguments);
         }
 
+        $urls = array_values(array_filter($urls, is_string(...)));
         $urls = $this->rules?->filter($hook, $arguments, $urls, array_values(array_unique($affectedPostIds))) ?? $urls;
 
         return array_values(
