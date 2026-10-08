@@ -60,6 +60,7 @@ final readonly class SettingsPage
         }
 
         add_action(sprintf('load-%s', $hook), $this->handlePageAction(...));
+        add_action(sprintf('load-%s', $hook), (new CacheMetricsPanel())->enqueueStyles(...));
     }
 
     /**
@@ -252,12 +253,6 @@ final readonly class SettingsPage
         $diagnostics = $this->diagnostics->report($status, $generatedConfig);
         $lastPurge = is_array($diagnostics['last_purge'] ?? null) ? $diagnostics['last_purge'] : null;
         $metrics = is_array($diagnostics['metrics'] ?? null) ? $diagnostics['metrics'] : [];
-        $metricsDescription = match ($metrics['log_state'] ?? 'unavailable') {
-            'missing' => __('Nginx-Messprotokoll fehlt', WordPressCacheSettings::TEXT_DOMAIN),
-            'unreadable' => __('Nginx-Messprotokoll nicht lesbar', WordPressCacheSettings::TEXT_DOMAIN),
-            'no_requests' => __('Keine Cache-Anfragen in den letzten 60 Min.', WordPressCacheSettings::TEXT_DOMAIN),
-            default => __('Keine Messdaten verfügbar', WordPressCacheSettings::TEXT_DOMAIN),
-        };
         $scanUsable = $status->exists && $status->directory && $status->error === null;
         $pluginData = get_file_data(__DIR__ . '/../../nginx-cache.php', ['version' => 'Version']);
         $configMissing = $diagnostics['nginx_config']['missing_directives'];
@@ -363,32 +358,14 @@ final readonly class SettingsPage
                                 </section>
                             <?php endif; ?>
 
-                            <div class="sympress-metrics-grid">
-                                <?php $this->renderMetricCard(__('Cache-Dateien', WordPressCacheSettings::TEXT_DOMAIN), $scanUsable ? (string) $status->files . ($status->scanComplete ? '' : '+') : '—', $scanUsable ? __('Dateien', WordPressCacheSettings::TEXT_DOMAIN) : __('Nicht verfügbar', WordPressCacheSettings::TEXT_DOMAIN), 'neutral', 'media-default'); ?>
-                                <?php $this->renderMetricCard(__('Cache-Größe', WordPressCacheSettings::TEXT_DOMAIN), $scanUsable ? $status->formattedSize() . ($status->scanComplete ? '' : '+') : '—', $scanUsable ? __('Belegter Speicher', WordPressCacheSettings::TEXT_DOMAIN) : __('Nicht verfügbar', WordPressCacheSettings::TEXT_DOMAIN), 'neutral', 'database'); ?>
-                                <?php $this->renderMetricCard(__('Angefragt (Queue)', WordPressCacheSettings::TEXT_DOMAIN), (string) $queueCount, $queueCount > 0 ? __('Wartend', WordPressCacheSettings::TEXT_DOMAIN) : __('Leer', WordPressCacheSettings::TEXT_DOMAIN), $queueCount > 0 ? 'warning' : 'good', 'clock'); ?>
-                                <?php $this->renderMetricCard(__('Tag-Index', WordPressCacheSettings::TEXT_DOMAIN), sprintf('%d', (int) ($tagStats['tags'] ?? 0)), sprintf(__('%d URLs', WordPressCacheSettings::TEXT_DOMAIN), (int) ($tagStats['urls'] ?? 0)), 'neutral', 'tag'); ?>
-                                <div class="sympress-metric">
-                                    <span><?php echo esc_html__('Cache-Trefferquote', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                    <strong><?php echo esc_html(isset($diagnostics['metrics']['hit_rate']) ? number_format_i18n((float) $diagnostics['metrics']['hit_rate'], 1) . ' %' : '—'); ?></strong>
-                                    <small><?php echo esc_html(isset($metrics['hit_rate']) ? sprintf(__('%1$d Anfragen · letzte 60 Min.%2$s', WordPressCacheSettings::TEXT_DOMAIN), (int) $metrics['requests'], !empty($metrics['sampled']) ? __(' · Stichprobe', WordPressCacheSettings::TEXT_DOMAIN) : '') : $metricsDescription); ?></small>
+                            <div class="sympress-cache-overview">
+                                <?php (new CacheMetricsPanel())->render($metrics); ?>
+                                <div class="sympress-metrics-grid">
+                                    <?php $this->renderMetricCard(__('Cache-Dateien', WordPressCacheSettings::TEXT_DOMAIN), $scanUsable ? (string) $status->files . ($status->scanComplete ? '' : '+') : '—', $scanUsable ? __('Dateien', WordPressCacheSettings::TEXT_DOMAIN) : __('Nicht verfügbar', WordPressCacheSettings::TEXT_DOMAIN), 'neutral', 'media-default'); ?>
+                                    <?php $this->renderMetricCard(__('Cache-Größe', WordPressCacheSettings::TEXT_DOMAIN), $scanUsable ? $status->formattedSize() . ($status->scanComplete ? '' : '+') : '—', $scanUsable ? __('Belegter Speicher', WordPressCacheSettings::TEXT_DOMAIN) : __('Nicht verfügbar', WordPressCacheSettings::TEXT_DOMAIN), 'neutral', 'database'); ?>
+                                    <?php $this->renderMetricCard(__('Angefragt (Queue)', WordPressCacheSettings::TEXT_DOMAIN), (string) $queueCount, $queueCount > 0 ? __('Wartend', WordPressCacheSettings::TEXT_DOMAIN) : __('Leer', WordPressCacheSettings::TEXT_DOMAIN), $queueCount > 0 ? 'warning' : 'good', 'clock'); ?>
+                                    <?php $this->renderMetricCard(__('Tag-Index', WordPressCacheSettings::TEXT_DOMAIN), sprintf('%d', (int) ($tagStats['tags'] ?? 0)), sprintf(__('%d URLs', WordPressCacheSettings::TEXT_DOMAIN), (int) ($tagStats['urls'] ?? 0)), 'neutral', 'tag'); ?>
                                 </div>
-                            </div>
-
-                            <div class="sympress-metric-details">
-                                <details class="sympress-card" data-sympress-metric-details open>
-                                    <summary><?php echo esc_html__('Messdetails zur Cache-Trefferquote', WordPressCacheSettings::TEXT_DOMAIN); ?></summary>
-                                    <p>
-                                    <?php foreach (($metrics['states'] ?? []) as $state => $count) : ?>
-                                        <span><?php echo esc_html($state . ': ' . number_format_i18n($count)); ?></span>
-                                    <?php endforeach; ?>
-                                    </p>
-                                    <p><?php echo esc_html__('HIT, STALE, UPDATING und REVALIDATED zählen als Cache-Treffer. MISS und EXPIRED benötigen eine neue Antwort. BYPASS, Admin- und angemeldete Anfragen sind ausgeschlossen. Prewarm-Abrufe zählen mit.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
-                                    <?php if (!empty($metrics['requests']) && !empty($metrics['small_sample'])) : ?>
-                                        <p><?php echo esc_html__('Kleine Datenbasis: unter 100 Anfragen. Ein einzelner MISS verändert die Quote deutlich.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
-                                    <?php endif; ?>
-                                    <p><?php echo esc_html(sprintf(__('Stand: %s. Aktualisierung beim Neuladen; Messfenster: letzte 60 Minuten.', WordPressCacheSettings::TEXT_DOMAIN), wp_date('H:i:s', (int) ($metrics['measured_at'] ?? time())))); ?></p>
-                                </details>
                             </div>
 
                             <div class="sympress-quick-actions">

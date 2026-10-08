@@ -1,0 +1,148 @@
+.sympress-cache-overview {
+    display: grid;
+    grid-template-columns: minmax(320px, 1fr) minmax(0, 1.35fr);
+    align-items: start;
+    gap: 14px;
+}
+.sympress-cache-overview .sympress-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+.sympress-cache-overview .sympress-metric { min-height: 118px; }
+.sympress-cache-performance {
+    min-width: 0;
+    padding: 20px;
+    color: var(--sympress-text);
+    background: var(--sympress-surface);
+    border: 1px solid var(--sympress-border);
+    border-radius: 8px;
+    font-variant-numeric: tabular-nums;
+}
+.sympress-performance-heading,
+.sympress-performance-result,
+.sympress-performance-totals,
+.sympress-performance-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+}
+.sympress-performance-heading h2 {
+    margin: 0;
+    color: var(--sympress-text);
+    font-size: 14px;
+    line-height: 1.5;
+    font-weight: 600;
+}
+.sympress-performance-window,
+.sympress-performance-meta {
+    color: var(--sympress-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+.sympress-performance-result {
+    justify-content: flex-start;
+    align-items: baseline;
+    margin: 14px 0;
+}
+.sympress-performance-rate {
+    color: var(--sympress-text);
+    font-size: 38px;
+    font-weight: 650;
+    line-height: 1.15;
+    letter-spacing: -1px;
+}
+.sympress-performance-result p {
+    margin: 0;
+    color: var(--sympress-muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+.sympress-performance-bar {
+    display: flex;
+    height: 8px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--sympress-bg);
+}
+.sympress-performance-bar > span { min-width: 0; }
+.sympress-performance-bar__hit { background: var(--sympress-blue); }
+.sympress-performance-bar__fresh { background: var(--sympress-warning); }
+.sympress-performance-totals {
+    margin: 10px 0 14px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+.sympress-performance-totals > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.sympress-performance-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--sympress-blue);
+}
+.sympress-performance-dot--fresh { background: var(--sympress-warning); }
+.sympress-performance-note {
+    display: inline-block;
+    padding: 2px 7px;
+    color: #754500;
+    background: #fff5df;
+    border-radius: 3px;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.sympress-performance-meta { margin: 0; }
+.sympress-performance-meta time { white-space: nowrap; }
+.sympress-performance-details {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--sympress-border);
+    font-size: 12px;
+    line-height: 1.6;
+}
+.sympress-performance-details summary {
+    width: fit-content;
+    color: var(--sympress-blue-dark);
+    font-weight: 600;
+    cursor: pointer;
+}
+.sympress-performance-details summary:focus-visible {
+    outline: 2px solid var(--sympress-blue);
+    outline-offset: 4px;
+    border-radius: 2px;
+}
+.sympress-performance-states {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px 12px;
+    margin: 14px 0;
+}
+.sympress-performance-states > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--sympress-border);
+}
+.sympress-performance-states dt { color: var(--sympress-muted); font-size: 11px; }
+.sympress-performance-states dd { margin: 0; font-weight: 600; }
+.sympress-performance-details p { margin: 10px 0 0; color: var(--sympress-muted); }
+.sympress-performance-empty {
+    margin: 14px 0;
+    color: var(--sympress-muted);
+    font-size: 13px;
+    line-height: 1.6;
+}
+@media (max-width: 1100px) {
+    .sympress-cache-overview { grid-template-columns: minmax(0, 1fr); }
+    .sympress-cache-overview .sympress-metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+    .sympress-cache-overview .sympress-metrics-grid { grid-template-columns: minmax(0, 1fr); }
+    .sympress-cache-performance { padding: 16px; }
+    .sympress-performance-states { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

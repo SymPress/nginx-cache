@@ -8,7 +8,7 @@ where applicable.
 
 ## Unreleased
 
-- Explain cache hit rates with per-status counts, measurement time, eligibility and small-sample notices; reuse one dashboard diagnostic snapshot.
+- Present cache hit rates with their request denominator and a proportional distribution, four adjacent operational KPIs and collapsed measurement details; preserve per-status counts, measurement time, eligibility and sample notices from one diagnostic snapshot.
 - Add validated cache validity, inactivity, disk and key-zone limits to generated Nginx configuration without changing profile defaults.
 - Process deferred prewarm in durable five-URL batches, checkpoint each successful URL and retain the failure budget across ordinary continuations.
 - Treat prewarm HTTP errors and redirects as failures instead of reporting them as successful cache fills.

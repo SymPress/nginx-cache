@@ -101,6 +101,14 @@ and query/authentication bypass maps against an isolated local Nginx instance.
 
 ### Dashboard metrics
 
+The performance panel combines the hit rate, its request denominator and a
+proportional cache-served/newly-requested split. File, size, queue and tag counts
+remain alongside it. Measurement details are initially collapsed and contain
+all six Nginx status counts, eligibility rules and sample limitations. Native
+keyboard controls open the details without submitting the settings form.
+The [HTML prototype](prototypes/cache-metrics.html) provides preview states;
+its example data and state selector are not production measurements or settings.
+
 Cache file count and size inspect the configured cache root (excluding the
 plugin lock and sentinel); queue count and tag/URL counts query their persistent
 stores. Counts can be zero when no anonymous page is cached. A bounded filesystem
