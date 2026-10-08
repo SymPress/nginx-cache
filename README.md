@@ -130,7 +130,50 @@ logs or no eligible samples show **no measurement**, never an invented 100%.
 The card distinguishes missing/unreadable logs from a readable log with no
 eligible requests in the current window. Dashboard values are a snapshot taken
 when the page loads; reload after generating anonymous traffic.
-The dashboard performs no HTTP probes, log writes or purge operations.
+The dashboard performs no HTTP probes, log writes or purge operations. One shared
+diagnostic snapshot supplies the page, avoiding duplicate filesystem scans,
+configuration generation, history and queue reads. The details show each cache
+status separately, the snapshot time, and a small-sample notice below 100 eligible
+requests. Prewarm requests are included in the percentage.
+
+### Cache limits and background prewarm
+
+The Cache tab configures these generated Nginx limits. All profiles preserve the
+same defaults; changing a profile does not silently increase cache lifetime.
+
+| Setting / `SYMPRESS_NGINX_CACHE_` constant suffix | Default | Allowed range |
+| --- | --- | --- |
+| `valid_seconds` / `VALID_SECONDS` | 600 seconds | 60–86400 seconds |
+| `inactive_seconds` / `INACTIVE_SECONDS` | 3600 seconds | 60–604800 seconds |
+| `max_size_mb` / `MAX_SIZE_MB` | 256 MiB | 16–65536 MiB |
+| `keys_zone_mb` / `KEYS_ZONE_MB` | 100 MiB | 1–1024 MiB |
+
+Options use the `sympress_nginx_cache_` prefix. Constants override saved options.
+Malformed values fall back to defaults and numeric values are bounded. Export,
+review and apply both HTTP and FastCGI includes, then run `nginx -t` before
+reloading Nginx. Saving plugin options alone does not alter the running server.
+Upstream cache headers can override validity; `inactive` can evict an entry even
+when its response remains fresh. Only extend validity with reliable automatic
+invalidation. See the [NGINX FastCGI cache directives](https://nginx.org/en/docs/http/ngx_http_fastcgi_module.html#fastcgi_cache_path).
+
+Enable automatic purge, selective purge, the queue and prewarm together for
+targeted invalidation followed by warming affected pages. Each side-effect tick
+handles at most one task and five prewarm URLs. Target discovery is checkpointed
+once; each successful URL is checkpointed individually. Successful continuations
+are scheduled again without spending the five-failure retry budget. Failed HTTP
+responses (including redirects) remain retryable; acknowledged URLs and other
+providers are not repeated. Delivery remains at least once around a crash before
+a checkpoint. Same-origin checks, no redirects and five-second request limits
+remain enforced. Initial opt-in sitemap discovery retains its separate bounded
+20-map budget. Explicit CLI prewarm remains synchronous and reports failure with
+a nonzero exit code.
+
+Run `wp cron event run --due-now` once per minute through an external scheduler
+under the site's normal user. Cached visitors do not execute WordPress and cannot
+be relied on to drain queues. Once that runner is verified, configure
+`DISABLE_WP_CRON=true` to avoid visitor-driven scheduling. Monitor pending and
+exhausted tasks via `wp nginx-cache queue` and `wp nginx-cache side-effects`.
+See [WordPress system scheduling](https://developer.wordpress.org/plugins/cron/hooking-wp-cron-into-the-system-task-scheduler/).
 
 Dry runs also work when Nginx has expired every cache file and retained only its
 empty hexadecimal directories. A dry run creates no cache directory, sentinel or

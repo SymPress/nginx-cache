@@ -8,11 +8,10 @@ use SymPress\NginxCache\Config\NginxConfigGenerator;
 use SymPress\NginxCache\Filesystem\CachePathValidator;
 use SymPress\NginxCache\Inspection\CacheStatusInspector;
 use SymPress\NginxCache\Inspection\Diagnostics;
-use SymPress\NginxCache\Inspection\EnvironmentDetector;
 use SymPress\NginxCache\Purge\CacheManager;
-use SymPress\NginxCache\Purge\PurgeHistoryRepository;
 use SymPress\NginxCache\Purge\PurgeQueueProcessor;
 use SymPress\NginxCache\Purge\PurgeSideEffectProcessor;
+use SymPress\NginxCache\Settings\CachePolicy;
 use SymPress\NginxCache\Settings\CompatibilitySettings;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Value\CacheProfile;
@@ -33,11 +32,9 @@ final readonly class SettingsPage
         private CacheManager $cache,
         private CachePathValidator $validator,
         private CacheStatusInspector $inspector,
-        private PurgeHistoryRepository $history,
         private PurgeQueueProcessor $queue,
         private Diagnostics $diagnostics,
         private NginxConfigGenerator $config,
-        private EnvironmentDetector $environment,
         private ?CompatibilityFields $compatibility = null,
         private ?CompatibilitySettings $backendSettings = null,
     ) {
@@ -251,8 +248,9 @@ final readonly class SettingsPage
         $validation = $this->validator->validate($path, false, true);
         $status = $this->inspector->inspect($path);
         $pathReadOnly = $this->settings->pathManagedByConstant();
-        $lastPurge = $this->history->last();
-        $diagnostics = $this->diagnostics->report();
+        $generatedConfig = $this->config->generate();
+        $diagnostics = $this->diagnostics->report($status, $generatedConfig);
+        $lastPurge = is_array($diagnostics['last_purge'] ?? null) ? $diagnostics['last_purge'] : null;
         $metrics = is_array($diagnostics['metrics'] ?? null) ? $diagnostics['metrics'] : [];
         $metricsDescription = match ($metrics['log_state'] ?? 'unavailable') {
             'missing' => __('Nginx-Messprotokoll fehlt', WordPressCacheSettings::TEXT_DOMAIN),
@@ -262,10 +260,9 @@ final readonly class SettingsPage
         };
         $scanUsable = $status->exists && $status->directory && $status->error === null;
         $pluginData = get_file_data(__DIR__ . '/../../nginx-cache.php', ['version' => 'Version']);
-        $generatedConfig = $this->config->generate();
-        $configMissing = $this->config->validate($generatedConfig);
-        $environment = $this->environment->detect();
-        $queueCount = $this->queue->count();
+        $configMissing = $diagnostics['nginx_config']['missing_directives'];
+        $environment = $diagnostics['environment'];
+        $queueCount = (int) $diagnostics['queue']['pending'];
         $tagStats = is_array($diagnostics['tag_index'] ?? null) ? $diagnostics['tag_index'] : [];
         $remote = is_array($diagnostics['remote'] ?? null) ? $diagnostics['remote'] : [];
         $cloudflare = is_array($remote['cloudflare'] ?? null) ? $remote['cloudflare'] : [];
@@ -376,6 +373,22 @@ final readonly class SettingsPage
                                     <strong><?php echo esc_html(isset($diagnostics['metrics']['hit_rate']) ? number_format_i18n((float) $diagnostics['metrics']['hit_rate'], 1) . ' %' : '—'); ?></strong>
                                     <small><?php echo esc_html(isset($metrics['hit_rate']) ? sprintf(__('%1$d Anfragen · letzte 60 Min.%2$s', WordPressCacheSettings::TEXT_DOMAIN), (int) $metrics['requests'], !empty($metrics['sampled']) ? __(' · Stichprobe', WordPressCacheSettings::TEXT_DOMAIN) : '') : $metricsDescription); ?></small>
                                 </div>
+                            </div>
+
+                            <div class="sympress-metric-details">
+                                <details class="sympress-card" data-sympress-metric-details open>
+                                    <summary><?php echo esc_html__('Messdetails zur Cache-Trefferquote', WordPressCacheSettings::TEXT_DOMAIN); ?></summary>
+                                    <p>
+                                    <?php foreach (($metrics['states'] ?? []) as $state => $count) : ?>
+                                        <span><?php echo esc_html($state . ': ' . number_format_i18n($count)); ?></span>
+                                    <?php endforeach; ?>
+                                    </p>
+                                    <p><?php echo esc_html__('HIT, STALE, UPDATING und REVALIDATED zählen als Cache-Treffer. MISS und EXPIRED benötigen eine neue Antwort. BYPASS, Admin- und angemeldete Anfragen sind ausgeschlossen. Prewarm-Abrufe zählen mit.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+                                    <?php if (!empty($metrics['requests']) && !empty($metrics['small_sample'])) : ?>
+                                        <p><?php echo esc_html__('Kleine Datenbasis: unter 100 Anfragen. Ein einzelner MISS verändert die Quote deutlich.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+                                    <?php endif; ?>
+                                    <p><?php echo esc_html(sprintf(__('Stand: %s. Aktualisierung beim Neuladen; Messfenster: letzte 60 Minuten.', WordPressCacheSettings::TEXT_DOMAIN), wp_date('H:i:s', (int) ($metrics['measured_at'] ?? time())))); ?></p>
+                                </details>
                             </div>
 
                             <div class="sympress-quick-actions">
@@ -512,6 +525,19 @@ final readonly class SettingsPage
                                 <div>
                                     <h2><?php echo esc_html__('Cache', WordPressCacheSettings::TEXT_DOMAIN); ?></h2>
                                     <p><?php echo esc_html__('Configure the cache zone, generated Nginx profile and WordPress-triggered invalidation behavior.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+                                </div>
+                            </div>
+                            <div class="sympress-card sympress-form-card">
+                                <h3><?php echo esc_html__('Nginx-Cache-Grenzen', WordPressCacheSettings::TEXT_DOMAIN); ?></h3>
+                                <p><?php echo esc_html__('Diese Werte gelten nach Übernahme der generierten HTTP-/FastCGI-Konfiguration und geprüftem Nginx-Neuladen. Alle Profile haben dieselben Standardwerte. Gültigkeit nur bei zuverlässigem automatischem Purge erhöhen; Cache-Header der Anwendung können sie überschreiben.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+                                <div class="sympress-two-column">
+                                <?php foreach (['valid_seconds' => __('Gültigkeit (Sekunden)', WordPressCacheSettings::TEXT_DOMAIN), 'inactive_seconds' => __('Entfernen bei Inaktivität (Sekunden)', WordPressCacheSettings::TEXT_DOMAIN), 'max_size_mb' => __('Maximaler Plattenspeicher (MiB)', WordPressCacheSettings::TEXT_DOMAIN), 'keys_zone_mb' => __('Speicher für Cache-Schlüssel (MiB)', WordPressCacheSettings::TEXT_DOMAIN)] as $name => $label) : ?>
+                                    <label class="sympress-field">
+                                        <span class="sympress-field__label"><?php echo esc_html($label); ?></span>
+                                        <input type="number" class="small-text sympress-input" name="<?php echo esc_attr('sympress_nginx_cache_' . $name); ?>" value="<?php echo esc_attr((string) CachePolicy::values()[$name]); ?>" min="<?php echo esc_attr((string) CachePolicy::LIMITS[$name]['min']); ?>" max="<?php echo esc_attr((string) CachePolicy::LIMITS[$name]['max']); ?>" <?php disabled(defined('SYMPRESS_NGINX_CACHE_' . strtoupper($name))); ?> />
+                                        <small><?php echo esc_html(sprintf(__('Standard: %d. Konfigurierte Konstanten haben Vorrang.', WordPressCacheSettings::TEXT_DOMAIN), CachePolicy::LIMITS[$name]['default'])); ?></small>
+                                    </label>
+                                <?php endforeach; ?>
                                 </div>
                             </div>
 

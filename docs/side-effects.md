@@ -155,6 +155,15 @@ Retry preserves the request payload and successful side-effect checkpoints.
 Successful cache layers and individual remote endpoints are checkpointed before
 processing later providers. Successful prewarm and Cloudflare work are also
 checkpointed. A failing provider therefore does not replay acknowledged actions.
+The worker processes at most one due task per tick and five prewarm URLs per
+batch. Its `prewarm-plan:` checkpoint retains a bounded JSON target list, and
+`prewarm-url:` checkpoints retain hashes of successful URLs. Ordinary successful
+continuations undo their reservation and resume after at least one second without
+resetting previous failures. Failed batches keep their reserved backoff and retry
+only unacknowledged URLs. The five-attempt budget still bounds actual failures and
+crashes. New tasks and overflow generations cannot inherit another task's progress.
+Sitemap discovery occurs once before the first batch and retains its existing
+20-map / five-second-per-map limits. Explicit CLI prewarm is synchronous.
 Delivery remains at least once: a crash or storage failure between the external
 action and its durable checkpoint can cause a repeat, so receivers and adapters
 must accept repeated invalidation calls. Queue lock contention prevents

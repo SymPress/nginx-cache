@@ -8,6 +8,11 @@ where applicable.
 
 ## Unreleased
 
+- Explain cache hit rates with per-status counts, measurement time, eligibility and small-sample notices; reuse one dashboard diagnostic snapshot.
+- Add validated cache validity, inactivity, disk and key-zone limits to generated Nginx configuration without changing profile defaults.
+- Process deferred prewarm in durable five-URL batches, checkpoint each successful URL and retain the failure budget across ordinary continuations.
+- Treat prewarm HTTP errors and redirects as failures instead of reporting them as successful cache fills.
+
 - Allow dry-run previews of expired caches with empty hexadecimal Nginx levels; create no cache root, sentinel or lock during a preview and preserve lock contention checks.
 - Explain missing/unreadable metrics logs and empty measurement windows, show unavailable filesystem KPIs honestly, and report the installed plugin version and actual purge failure details.
 - Match an empty query string with an exact Nginx map entry; the old `~^$` regex left ordinary anonymous page requests in `BYPASS`.

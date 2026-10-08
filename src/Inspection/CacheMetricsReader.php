@@ -25,10 +25,10 @@ final readonly class CacheMetricsReader
         return is_string($path) && trim($path) !== '' ? trim($path) : '/var/log/nginx/sympress-cache-metrics.jsonl';
     }
 
-    /** @return array{hits: int, requests: int, hit_rate: ?float, sampled: bool, window_seconds: int, log_state: string} */
+    /** @return array{hits: int, requests: int, hit_rate: ?float, sampled: bool, window_seconds: int, log_state: string, states: array<string, int>, small_sample: bool, measured_at: int} */
     public function read(string $path, string $host): array
     {
-        $result = ['hits' => 0, 'requests' => 0, 'hit_rate' => null, 'sampled' => false, 'window_seconds' => self::WINDOW_SECONDS, 'log_state' => 'unavailable'];
+        $result = ['hits' => 0, 'requests' => 0, 'hit_rate' => null, 'sampled' => false, 'window_seconds' => self::WINDOW_SECONDS, 'log_state' => 'unavailable', 'states' => array_fill_keys(self::CACHE_STATES, 0), 'small_sample' => true, 'measured_at' => $this->clock->timestamp()];
         if ($host === '' || !is_file($path) || !is_readable($path)) {
             if ($host !== '') {
                 $result['log_state'] = !is_file($path) ? 'missing' : 'unreadable';
@@ -86,12 +86,14 @@ final readonly class CacheMetricsReader
                 continue;
             }
             ++$result['requests'];
+            ++$result['states'][$state];
             if (!in_array($state, self::HIT_STATES, true)) {
                 continue;
             }
             ++$result['hits'];
         }
         if ($result['requests'] > 0) {
+            $result['small_sample'] = $result['requests'] < 100;
             $result['hit_rate'] = 100.0 * $result['hits'] / $result['requests'];
             $result['log_state'] = 'ok';
         }
