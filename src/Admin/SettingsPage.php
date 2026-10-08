@@ -295,7 +295,7 @@ final readonly class SettingsPage
                 <header class="sympress-product-bar">
                     <div class="sympress-product-brand">
                         <span class="sympress-product-logo" aria-hidden="true">N</span>
-                        <strong><?php echo esc_html__('Nginx Cache', WordPressCacheSettings::TEXT_DOMAIN); ?></strong>
+                        <h1><?php echo esc_html__('Nginx Cache', WordPressCacheSettings::TEXT_DOMAIN); ?></h1>
                         <span class="sympress-version">v1.0.0</span>
                     </div>
                     <div class="sympress-product-status">
@@ -317,6 +317,7 @@ final readonly class SettingsPage
                     </div>
                 </header>
 
+                <hr class="wp-header-end" />
                 <?php settings_errors('sympress_nginx_cache'); ?>
 
                 <div class="sympress-cache-shell">
@@ -1014,9 +1015,12 @@ final readonly class SettingsPage
                 padding-right: 18px;
                 border-right: 1px solid var(--sympress-border);
             }
-            .sympress-product-brand strong {
+            .sympress-product-brand h1 {
+                margin: 0;
+                padding: 0;
                 color: var(--sympress-text);
                 font-size: 23px;
+                font-weight: 700;
                 line-height: 1;
                 white-space: nowrap;
             }
