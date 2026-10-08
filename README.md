@@ -53,6 +53,11 @@ batches of at most 68 after processing or an explicit retry resumes.
 
 ## Features
 
+WordPress admin notices appear below the plugin header, outside the onboarding
+banner and settings cards. A missing cache-directory warning means the configured
+local cache path is unavailable; installing the plugin does not enable Nginx
+FastCGI caching or create that directory.
+
 - Select Redis page-cache or Nginx `GET /purge/<path>` backends instead of local files.
 - Configure separate homepage, singular-page and archive rules for edits, deletes
   and comment approval/removal.

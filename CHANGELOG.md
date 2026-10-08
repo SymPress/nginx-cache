@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## Unreleased
+
+- Keep WordPress admin notices below the Nginx Cache header instead of moving them into the onboarding banner or other settings cards.
+
 ## 0.2.0 — 2026-10-07
 
 - Add Redis full-page cache purging, separate from WordPress object cache, with bounded prefix scans and selective Nginx Helper/SymPress key support.
