@@ -12,6 +12,7 @@ use SymPress\NginxCache\Support\MutationLockUnavailable;
 use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
+use SymPress\NginxCache\Value\SideEffectOutcome;
 
 /** @phpstan-import-type QueueTask from PurgeSideEffectQueueRepository */
 final readonly class PurgeSideEffectProcessor
@@ -64,7 +65,7 @@ final readonly class PurgeSideEffectProcessor
     public function process(): void
     {
         try {
-            $this->queue->process($this->executeTask(...));
+            $this->queue->process($this->executeTask(...), limit: 1);
         } catch (MutationLockUnavailable) {
             // Another connection owns normal queue work; retain its scope and retry.
             $this->schedule(60);
@@ -87,7 +88,7 @@ final readonly class PurgeSideEffectProcessor
             }
         }
 
-        $this->schedule(60);
+        $this->schedule();
     }
 
     public function schedule(int $minimumDelay = 1): void
@@ -145,7 +146,7 @@ final readonly class PurgeSideEffectProcessor
     }
 
     /** @param QueueTask $task */
-    private function executeTask(array $task): bool
+    private function executeTask(array $task): bool|SideEffectOutcome
     {
         $result = PurgeResult::fromArray($task['result']);
         $request = PurgeRequest::fromArray($task['request']);
@@ -153,14 +154,38 @@ final readonly class PurgeSideEffectProcessor
             return true;
         }
         $sideEffects = [];
+        $prewarmPending = false;
         if ($this->shouldPrewarm($result, $request) && !in_array('prewarm', $task['completed'], true)) {
-            $prewarm = $this->prewarmer->prewarm($result->requestedUrls !== [] ? $result->requestedUrls : []);
+            $plans = $this->completed($task, 'prewarm-plan:');
+            if ($plans === []) {
+                $plan = $this->prewarmer->plan($result->requestedUrls);
+                if ($plan->errors !== []) {
+                    return false;
+                }
+                // Snapshot discovery once; later batches retain the same targets.
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Private queue payload, not an HTTP response.
+                $this->queue->checkpoint($task['id'], 'prewarm-plan:' . json_encode($plan->urls, JSON_THROW_ON_ERROR));
+                $urls = $plan->urls;
+            } else {
+                $urls = json_decode($plans[0], true, flags: JSON_THROW_ON_ERROR);
+                if (!is_array($urls) || count($urls) > 200 || count(array_filter($urls, is_string(...))) !== count($urls)) {
+                    return false;
+                }
+                $urls = array_values($urls);
+            }
+            $completed = $this->completed($task, 'prewarm-url:');
+            $pending = array_values(array_filter($urls, static fn (string $url): bool => !in_array(hash('sha256', $url), $completed, true)));
+            $prewarm = $this->prewarmer->warmUrls(array_slice($pending, 0, Prewarmer::BATCH_SIZE));
+            foreach (array_keys($prewarm->responses) as $url) {
+                $this->queue->checkpoint($task['id'], 'prewarm-url:' . hash('sha256', $url));
+            }
+            $prewarmPending = count($pending) > $prewarm->successful();
             $sideEffects['prewarm'] = [
                 'attempted' => $prewarm->attempted(),
             'successful'    => $prewarm->successful(),
             'failed'        => $prewarm->failed(),
             ];
-            if ($prewarm->failed() === 0) {
+            if (!$prewarmPending && $prewarm->failed() === 0) {
                 $this->queue->checkpoint($task['id'], 'prewarm');
             }
         }
@@ -184,10 +209,11 @@ final readonly class PurgeSideEffectProcessor
         if (function_exists('do_action')) {
             do_action('sympress_nginx_cache_side_effects_processed', $result, $request, $sideEffects);
         }
-        return ($sideEffects['prewarm']['failed'] ?? 0) === 0
+        $successful = ($sideEffects['prewarm']['failed'] ?? 0) === 0
             && $this->successfulResponses($sideEffects['layers'])
             && $this->successfulResponses($sideEffects['remote'])
             && $this->successfulResponses($sideEffects['cloudflare'] ?? []);
+        return $successful && $prewarmPending ? SideEffectOutcome::Continue : $successful;
     }
 
     /**

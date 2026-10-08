@@ -94,6 +94,9 @@ try {
     $effects->enqueue($result, PurgeRequest::urls(['https://example.test/three/']));
     $verify(array_diff($identities, array_column($side->all(), 'id')) === [], 'inbox ingestion preserves task identities');
     $effects->process();
+    $verify(count($payloads) === 1 && $side->count() === 2, 'one tick handles only one retained provider task');
+    $effects->process();
+    $effects->process();
     $verify(count($payloads) === 3 && $side->count() === 0, 'all selective provider tasks execute after lock release');
     $verify(!array_filter($payloads, static fn (array $payload): bool => isset($payload['purge_everything'])), 'normal contention never invalidates the Cloudflare zone');
     $files = array_merge(...array_map(static fn (array $payload): array => $payload['files'] ?? [], $payloads));

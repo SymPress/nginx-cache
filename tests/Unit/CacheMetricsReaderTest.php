@@ -48,6 +48,9 @@ final class CacheMetricsReaderTest extends TestCase
 
         self::assertSame(7, $result['requests']);
         self::assertSame(5, $result['hits']);
+        self::assertSame(['HIT' => 2, 'MISS' => 1, 'EXPIRED' => 1, 'STALE' => 1, 'UPDATING' => 1, 'REVALIDATED' => 1], $result['states']);
+        self::assertTrue($result['small_sample']);
+        self::assertSame($this->now, $result['measured_at']);
         self::assertEqualsWithDelta(71.428571, $result['hit_rate'], 0.00001);
         self::assertFalse($result['sampled']);
         self::assertSame('ok', $result['log_state']);
@@ -82,6 +85,7 @@ final class CacheMetricsReaderTest extends TestCase
         self::assertSame(5000, $result['requests']);
         self::assertSame(100.0, $result['hit_rate']);
         self::assertTrue($result['sampled']);
+        self::assertFalse($result['small_sample']);
     }
 
     public function testByteBudgetIgnoresThePartialFirstLine(): void

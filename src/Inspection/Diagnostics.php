@@ -10,6 +10,7 @@ use SymPress\NginxCache\Purge\PurgeHistoryRepository;
 use SymPress\NginxCache\Purge\PurgeQueueProcessor;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Surrogate\TagIndexRepository;
+use SymPress\NginxCache\Value\CacheStatus;
 
 final readonly class Diagnostics
 {
@@ -27,9 +28,9 @@ final readonly class Diagnostics
     }
 
     /** @return array<string, mixed> */
-    public function report(): array
+    public function report(?CacheStatus $status = null, ?string $generatedConfig = null): array
     {
-        $status = $this->inspector->inspect($this->settings->cachePath());
+        $status ??= $this->inspector->inspect($this->settings->cachePath());
         $host = function_exists('home_url') ? wp_parse_url(home_url(), PHP_URL_HOST) : null;
 
         return [
@@ -73,7 +74,7 @@ final readonly class Diagnostics
             ],
             'nginx_config' => [
                 'profile'            => $this->settings->profile()->value,
-                'missing_directives' => $this->config->validate($this->config->generate()),
+                'missing_directives' => $this->config->validate($generatedConfig ?? $this->config->generate()),
             ],
             'last_purge'   => $this->history->last(),
             'environment'  => $this->environment->detect(),

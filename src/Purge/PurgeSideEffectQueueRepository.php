@@ -11,6 +11,7 @@ use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
 use SymPress\NginxCache\Value\QueueRetryState;
+use SymPress\NginxCache\Value\SideEffectOutcome;
 
 /** @phpstan-type QueueTask array{result: array<string, mixed>, request: array<string, mixed>, queued_at: int, id: string, completed: list<string>, retry: array{attempts: int, retry_at: int}} */
 final readonly class PurgeSideEffectQueueRepository
@@ -128,18 +129,22 @@ final readonly class PurgeSideEffectQueueRepository
         );
     }
 
-    /** @param callable(QueueTask): bool $execute */
-    public function process(callable $execute): bool
+    /** @param callable(QueueTask): (bool|SideEffectOutcome) $execute */
+    public function process(callable $execute, int $limit = self::MAX_TASKS): bool
     {
-        return $this->mutex->synchronized(self::OPTION_QUEUE . '.process', function () use ($execute): bool {
+        return $this->mutex->synchronized(self::OPTION_QUEUE . '.process', function () use ($execute, $limit): bool {
             $snapshot = $this->mutex->synchronized(self::OPTION_QUEUE, function (): array {
                 $this->ingestInbox();
                 return $this->readQueue();
             });
+            $processed = 0;
             foreach ($snapshot as $task) {
                 $retry = QueueRetryState::fromArray($task['retry']);
                 if (!$retry->ready($this->clock->timestamp())) {
                     continue;
+                }
+                if ($processed >= max(1, $limit)) {
+                    break;
                 }
                 // A persisted reservation bounds retries even if execution crashes.
                 $task['retry'] = $retry->reserve($this->clock->timestamp())->toArray();
@@ -149,6 +154,7 @@ final readonly class PurgeSideEffectQueueRepository
                     continue;
                 }
                 $task = $reserved;
+                ++$processed;
                 try {
                     $successful = $execute($task);
                 } catch (MutationLockUnavailable $error) {
@@ -157,6 +163,12 @@ final readonly class PurgeSideEffectQueueRepository
                     throw $error;
                 } catch (\Throwable) {
                     $successful = false;
+                }
+                if ($successful === SideEffectOutcome::Continue) {
+                    // Successful batches do not consume the failure/crash retry budget.
+                    $task['retry'] = (new QueueRetryState($retry->attempts, $this->clock->timestamp() + 1))->toArray();
+                    $this->replace($task);
+                    continue;
                 }
                 if (!$successful) {
                     continue;

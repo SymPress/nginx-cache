@@ -64,6 +64,6 @@ final class PrewarmCommand extends AbstractCacheCommand
             $this->warning($error, $output);
         }
 
-        return Command::SUCCESS;
+        return $result->failed() === 0 ? Command::SUCCESS : Command::FAILURE;
     }
 }

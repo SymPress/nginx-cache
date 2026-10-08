@@ -68,6 +68,7 @@ final readonly class WordPressCacheSettings
         $this->registerSetting(self::OPTION_DEBOUNCE_SECONDS, 'integer', $this->sanitizeInteger(...), 10);
         $this->registerSetting(self::OPTION_PREWARM_ENABLED, 'boolean', $boolean, 0);
         $this->registerSetting(self::OPTION_PREWARM_URLS, 'string', $this->sanitizeTextarea(...), '');
+        CachePolicy::register();
         $this->registerSetting(self::OPTION_REST_ENABLED, 'boolean', $boolean, 1);
         $this->registerSetting(self::OPTION_TAG_INDEX_ENABLED, 'boolean', $boolean, 1);
         $this->registerSetting(self::OPTION_DEBUG_HEADERS_ENABLED, 'boolean', $boolean, 0);
@@ -596,8 +597,7 @@ final readonly class WordPressCacheSettings
             self::OPTION_HEARTBEAT_MODE         => 'default',
             self::OPTION_HEARTBEAT_INTERVAL     => 120,
         ];
-
-        foreach ($defaults as $option => $default) {
+        foreach ($defaults + CachePolicy::defaults() as $option => $default) {
             $value = get_option($option, $default);
 
             if (is_int($default)) {
@@ -619,12 +619,11 @@ final readonly class WordPressCacheSettings
     public function cacheLevels(): string
     {
         $levels = $this->constantValue('SYMPRESS_NGINX_CACHE_LEVELS') ?? '1:2';
-
         if (function_exists('apply_filters')) {
             $levels = (string) apply_filters('sympress_nginx_cache_levels', $levels);
         }
 
-        return preg_match('/^\d+(?::\d+)*$/', $levels) === 1 ? $levels : '1:2';
+        return preg_match('/^[12](?::[12]){0,2}$/D', $levels) === 1 ? $levels : '1:2';
     }
 
     public function maxPrewarmUrls(): int
@@ -690,6 +689,7 @@ final readonly class WordPressCacheSettings
             'debounce_seconds' => $this->debounceSeconds(),
             'prewarm'          => $this->prewarmEnabled(),
             'prewarm_limit'    => $this->maxPrewarmUrls(),
+            'cache_policy'     => CachePolicy::values(),
             'rest'             => $this->restEnabled(),
             'levels'           => $this->cacheLevels(),
             'tag_index'        => $this->tagIndexEnabled(),

@@ -12,6 +12,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 final readonly class Prewarmer
 {
+    public const int BATCH_SIZE = 5;
+
     public function __construct(
         private HttpClientInterface $http,
         private WordPressCacheSettings $settings,
@@ -23,6 +25,14 @@ final readonly class Prewarmer
 
     /** @param list<string> $urls */
     public function prewarm(array $urls = []): PrewarmResult
+    {
+        $plan = $this->plan($urls);
+        $result = $this->warmUrls($plan->urls);
+        return new PrewarmResult($result->urls, $result->responses, [...$plan->errors, ...$result->errors]);
+    }
+
+    /** @param list<string> $urls */
+    public function plan(array $urls = []): PrewarmResult
     {
         $discover = $urls === [] && ($this->sitemaps?->enabled() ?? false);
         $urls = $urls !== [] ? $urls : $this->settings->prewarmUrls();
@@ -44,6 +54,15 @@ final readonly class Prewarmer
                 $this->settings->maxPrewarmUrls(),
             ),
         );
+        return new PrewarmResult($urls, [], $errors);
+    }
+
+    /** @param list<string> $urls */
+    public function warmUrls(array $urls): PrewarmResult
+    {
+        $normalized = array_map($this->urls->normalizeSameOriginHttpUrl(...), $urls);
+        $errors = in_array('', $normalized, true) ? ['A prewarm target no longer uses this site origin.'] : [];
+        $urls = array_values(array_unique(array_filter($normalized, static fn (string $url): bool => $url !== '')));
         $responses = [];
 
         foreach ($urls as $url) {
@@ -56,9 +75,14 @@ final readonly class Prewarmer
                     'timeout'       => 5,
                     'max_duration'  => 5,
                 ]);
-                $responses[$url] = $response->getStatusCode();
-            } catch (\Throwable $exception) {
-                $errors[] = sprintf('%s: %s', $url, $exception->getMessage());
+                $status = $response->getStatusCode();
+                if ($status < 200 || $status >= 300) {
+                    $errors[] = sprintf('%s: HTTP %d.', $url, $status);
+                } else {
+                    $responses[$url] = $status;
+                }
+            } catch (\Throwable) {
+                $errors[] = sprintf('%s: Prewarm request failed.', $url);
             }
 
             $delay = $this->settings->prewarmDelayMilliseconds();
