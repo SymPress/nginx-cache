@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Config;
 
+use SymPress\NginxCache\Inspection\CacheMetricsReader;
 use SymPress\NginxCache\Key\CacheKeyStrategy;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Value\CacheProfile;
+use Symfony\Component\Filesystem\Path;
 
 final readonly class NginxConfigGenerator
 {
@@ -116,8 +118,34 @@ final readonly class NginxConfigGenerator
             '    "000000" 0;',
             '}',
             '',
+            '# Private KPI log: no URLs, IP addresses, cookies or authorization headers.',
+            'log_format sympress_cache_metrics escape=json \'{"time":"$msec","host":"$host","cache":"$upstream_cache_status"}\';',
+            'map $upstream_cache_status $sympress_cache_metric_loggable {',
+            '    default 0;',
+            '    HIT 1;',
+            '    MISS 1;',
+            '    EXPIRED 1;',
+            '    STALE 1;',
+            '    UPDATING 1;',
+            '    REVALIDATED 1;',
+            '}',
+            '',
+        ];
+        $metricsPath = CacheMetricsReader::logPath();
+        if (preg_match('~^/[a-zA-Z0-9_./-]+$~D', $metricsPath) !== 1) {
+            throw new \InvalidArgumentException('Metrics log must be an absolute filesystem path without special characters.');
+        }
+        if (Path::isBasePath($this->settings->cachePath(), $metricsPath)) {
+            throw new \InvalidArgumentException('Metrics log must be outside the cache root.');
+        }
+        $logging = [
+            '# Add alongside existing access_log directives in the server block.',
+            '# Keep this log outside the cache root; grant PHP read access and configure log rotation.',
+            sprintf('access_log %s sympress_cache_metrics if=$sympress_cache_metric_loggable;', $metricsPath),
+            '',
         ];
         $server = [
+            ...$logging,
             '# Add inside the server block before the PHP/FastCGI location:',
             'location ~* \.(?:avif|css|eot|gif|ico|jpe?g|js|json|mjs|mp4|ogg|otf|png|svg|ttf|webm|webp|woff2?)$ {',
             '    expires 1y;',
@@ -170,8 +198,9 @@ final readonly class NginxConfigGenerator
             'all'     => [...$http, ...$server, ...$fastcgi],
             'http'    => $http,
             'server'  => $server,
+            'logging' => $logging,
             'fastcgi' => $fastcgi,
-            default   => throw new \InvalidArgumentException('Config context must be all, http, server or fastcgi.'),
+            default   => throw new \InvalidArgumentException('Config context must be all, http, server, logging or fastcgi.'),
         });
     }
 
@@ -183,8 +212,9 @@ final readonly class NginxConfigGenerator
             'all'     => ['fastcgi_cache_path', ...$fastcgi],
             'http'    => ['fastcgi_cache_path'],
             'server'  => ['expires', 'try_files'],
+            'logging' => ['access_log'],
             'fastcgi' => $fastcgi,
-            default   => throw new \InvalidArgumentException('Config context must be all, http, server or fastcgi.'),
+            default   => throw new \InvalidArgumentException('Config context must be all, http, server, logging or fastcgi.'),
         };
         $missing = [];
 

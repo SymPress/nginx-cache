@@ -43,6 +43,14 @@ final class ConfigCommandTest extends TestCase
         self::assertStringNotContainsString('fastcgi_cache_path', $command->getDisplay());
     }
 
+    public function testItExportsLoggingSeparatelyFromStaticAssetLocations(): void
+    {
+        $command = $this->command();
+        self::assertSame(Command::SUCCESS, $command->execute(['--section' => 'logging']));
+        self::assertStringContainsString('access_log /var/log/nginx/sympress-cache-metrics.jsonl', $command->getDisplay());
+        self::assertStringNotContainsString('location ', $command->getDisplay());
+    }
+
     private function command(): CommandTester
     {
         $settings = new WordPressCacheSettings('/var/cache/nginx/wordpress');

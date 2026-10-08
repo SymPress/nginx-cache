@@ -26,7 +26,7 @@ final class ConfigCommand extends AbstractCacheCommand
     protected function configure(): void
     {
         $this
-            ->addOption('section', null, InputOption::VALUE_REQUIRED, 'Nginx include context: all, http, server or fastcgi.', 'all')
+            ->addOption('section', null, InputOption::VALUE_REQUIRED, 'Nginx include context: all, http, server, logging or fastcgi.', 'all')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Print config diagnostics as JSON.')
             ->addOption('format', null, InputOption::VALUE_REQUIRED, 'Output format. Use json for machine output.');
     }
@@ -52,8 +52,8 @@ final class ConfigCommand extends AbstractCacheCommand
     private function runCommand(array $args, array $assocArgs, ?OutputInterface $output = null): int
     {
         $context = $assocArgs['section'] ?? 'all';
-        if (!is_string($context) || !in_array($context, ['all', 'http', 'server', 'fastcgi'], true)) {
-            return $this->error('Config context must be all, http, server or fastcgi.', $output);
+        if (!is_string($context) || !in_array($context, ['all', 'http', 'server', 'logging', 'fastcgi'], true)) {
+            return $this->error('Config context must be all, http, server, logging or fastcgi.', $output);
         }
         $config = $this->config->generate(context: $context);
         $missing = $this->config->validate($config, $context);

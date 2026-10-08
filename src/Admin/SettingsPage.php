@@ -358,13 +358,10 @@ final readonly class SettingsPage
                                 <?php $this->renderMetricCard(__('Cache-Größe', WordPressCacheSettings::TEXT_DOMAIN), $status->formattedSize(), __('Belegter Speicher', WordPressCacheSettings::TEXT_DOMAIN), 'neutral', 'database'); ?>
                                 <?php $this->renderMetricCard(__('Angefragt (Queue)', WordPressCacheSettings::TEXT_DOMAIN), (string) $queueCount, $queueCount > 0 ? __('Wartend', WordPressCacheSettings::TEXT_DOMAIN) : __('Leer', WordPressCacheSettings::TEXT_DOMAIN), $queueCount > 0 ? 'warning' : 'good', 'clock'); ?>
                                 <?php $this->renderMetricCard(__('Tag-Index', WordPressCacheSettings::TEXT_DOMAIN), sprintf('%d', (int) ($tagStats['tags'] ?? 0)), sprintf(__('%d URLs', WordPressCacheSettings::TEXT_DOMAIN), (int) ($tagStats['urls'] ?? 0)), 'neutral', 'tag'); ?>
-                                <div class="sympress-metric sympress-metric--chart">
+                                <div class="sympress-metric">
                                     <span><?php echo esc_html__('Cache-Trefferquote', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                    <strong><?php echo esc_html($status->available() ? '100 %' : 'n/a'); ?></strong>
-                                    <small><?php echo esc_html__('Letzte Probe', WordPressCacheSettings::TEXT_DOMAIN); ?></small>
-                                    <svg viewBox="0 0 120 42" aria-hidden="true" focusable="false">
-                                        <polyline points="0,33 12,28 24,31 36,17 48,24 60,13 72,26 84,20 96,9 108,14 120,6" />
-                                    </svg>
+                                    <strong><?php echo esc_html(isset($diagnostics['metrics']['hit_rate']) ? number_format_i18n((float) $diagnostics['metrics']['hit_rate'], 1) . ' %' : '—'); ?></strong>
+                                    <small><?php echo esc_html(isset($diagnostics['metrics']['hit_rate']) ? sprintf(__('%1$d Anfragen · letzte 60 Min.%2$s', WordPressCacheSettings::TEXT_DOMAIN), (int) $diagnostics['metrics']['requests'], !empty($diagnostics['metrics']['sampled']) ? __(' · Stichprobe', WordPressCacheSettings::TEXT_DOMAIN) : '') : __('Keine Messdaten', WordPressCacheSettings::TEXT_DOMAIN)); ?></small>
                                 </div>
                             </div>
 
@@ -1238,24 +1235,9 @@ final readonly class SettingsPage
             .sympress-metric .sympress-metric__icon { color: var(--sympress-blue); }
             .sympress-metric strong { display: block; margin: 9px 0 4px; color: var(--sympress-text); font-size: 26px; line-height: 1.1; }
             .sympress-metric small { display: block; line-height: 1.45; }
-            .sympress-metric--chart { padding-right: 16px; }
-            .sympress-metric--chart small { max-width: calc(100% - 72px); }
-            .sympress-metric--chart svg {
-                position: absolute;
-                right: 14px;
-                bottom: 12px;
-                width: 82px;
-                height: 32px;
-            }
-            .sympress-metric--chart polyline {
-                fill: none;
-                stroke: var(--sympress-blue);
-                stroke-width: 4;
-                stroke-linecap: round;
-                stroke-linejoin: round;
-            }
             .sympress-welcome-panel {
                 display: grid;
+                margin-top: 16px;
                 grid-template-columns: 56px minmax(0, 1fr) auto;
                 align-items: center;
                 gap: 16px;

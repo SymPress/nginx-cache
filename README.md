@@ -63,7 +63,8 @@ Generate separate includes with `wp nginx-cache config --section=http` and
 `wp nginx-cache config --section=fastcgi`. The default `--section=all` output
 remains a reference containing sections for multiple contexts; it cannot be
 included as a single Nginx configuration file. `--section=server` exports the
-optional static-asset location. These same options work through
+static-asset location and metrics logging directive. `--section=logging`
+exports only the metrics logging directive. These same options work through
 `wp console nginx-cache:config`.
 
 For a project-owned DDEV Nginx configuration:
@@ -97,6 +98,34 @@ Regenerate older configurations: the empty-query allowlist must use the exact
 `"" 0;` map entry because Nginx skips regex matching for empty map inputs.
 Run `composer tests:nginx` with a real `nginx` binary to verify directory creation
 and query/authentication bypass maps against an isolated local Nginx instance.
+
+### Dashboard metrics
+
+Cache file count and size inspect the configured cache root (excluding the
+plugin lock and sentinel); queue count and tag/URL counts query their persistent
+stores. Counts can be zero when no anonymous page is cached. A bounded filesystem
+scan displays a `+` after the file count when it is incomplete.
+
+The hit rate reads real Nginx requests, including hits that never execute PHP.
+Apply the HTTP include (which defines the JSON log format) and export
+`wp nginx-cache config --section=logging` into a separate include. Add that
+include **alongside existing `access_log` directives in the server block**;
+location-specific `access_log` overrides must also include it to count those
+requests. Existing access logging must be preserved.
+
+The default log is `/var/log/nginx/sympress-cache-metrics.jsonl`. Override it with
+the private `SYMPRESS_NGINX_CACHE_METRICS_LOG` PHP constant and regenerate the
+includes. Keep the absolute path outside the cache root and document root, grant
+PHP read access, and configure normal log rotation. Nginx writes only timestamp,
+host and cache status, without IPs, URLs, cookies or authorization headers.
+See the [NGINX access log directives](https://nginx.org/en/docs/http/ngx_http_log_module.html#access_log).
+
+The card covers this site's host over the last 60 minutes. HIT, STALE, UPDATING
+and REVALIDATED count as cache-served responses; MISS and EXPIRED count as
+misses. BYPASS and non-cache requests are excluded. Reads are limited to the last
+1 MiB and 5,000 records and labelled as a sample when capped. Missing/unreadable
+logs or no eligible samples show **no measurement**, never an invented 100%.
+The dashboard performs no HTTP probes, log writes or purge operations.
 
 ## Features
 
