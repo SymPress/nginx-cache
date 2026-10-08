@@ -66,8 +66,11 @@ files. Redis/HTTP modes do not require access to the local Nginx cache directory
   destinations. Remote requests have no redirects and finite timeouts.
 - Full endpoint and remote payloads are signed when their configured contract
   requires a secret.
-- A dry run resolves the purge but skips deletion, tag-index mutation and the
-  side-effect queue. History/events may still record the probe.
+- A dry run resolves the purge but skips deletion, directory/sentinel/lock creation,
+  tag-index mutation and the side-effect queue. It checks an existing lock without
+  writing it; without a lock, the preview is a best-effort filesystem snapshot.
+  A missing root is reported without creating it. Empty hexadecimal Nginx levels
+  remain a recognized cache layout after expiry. History/events may still record the probe.
 - Side effects run only after a successful non-dry purge and are inspectable via
   `nginx-cache:side-effects` before flushing.
 

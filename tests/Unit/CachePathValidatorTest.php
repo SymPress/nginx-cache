@@ -82,4 +82,34 @@ final class CachePathValidatorTest extends TestCase
             $filesystem->remove($path);
         }
     }
+
+    public function testEmptyHexadecimalLevelsAreRecognizedAfterNginxExpiry(): void
+    {
+        $filesystem = new Filesystem();
+        $path = sys_get_temp_dir() . '/sympress-nginx-cache-levels-' . bin2hex(random_bytes(8));
+        $filesystem->mkdir([$path . '/7/81', $path . '/e/9b']);
+        try {
+            self::assertTrue((new CachePathValidator($filesystem))->validate($path, false, true)->isValid());
+            $filesystem->dumpFile($path . '/7/81/customer.csv', 'private data');
+            self::assertFalse((new CachePathValidator($filesystem))->validate($path, false, true)->isValid());
+        } finally {
+            $filesystem->remove($path);
+        }
+    }
+
+    public function testEmptyArbitraryDirectoriesAndSymlinkLevelsAreRejected(): void
+    {
+        $filesystem = new Filesystem();
+        $path = sys_get_temp_dir() . '/sympress-nginx-cache-unknown-levels-' . bin2hex(random_bytes(8));
+        $filesystem->mkdir([$path . '/uploads', $path . '-target']);
+        try {
+            $validator = new CachePathValidator($filesystem);
+            self::assertFalse($validator->validate($path, false, true)->isValid());
+            $filesystem->remove($path . '/uploads');
+            $filesystem->symlink($path . '-target', $path . '/a');
+            self::assertFalse($validator->validate($path, false, true)->isValid());
+        } finally {
+            $filesystem->remove([$path, $path . '-target']);
+        }
+    }
 }

@@ -50,16 +50,20 @@ final class CacheMetricsReaderTest extends TestCase
         self::assertSame(5, $result['hits']);
         self::assertEqualsWithDelta(71.428571, $result['hit_rate'], 0.00001);
         self::assertFalse($result['sampled']);
+        self::assertSame('ok', $result['log_state']);
         self::assertSame($before, hash_file('sha256', $this->path));
     }
 
     public function testMissingEmptyOrNonEligibleLogsDoNotReportZeroOrPerfectHits(): void
     {
         self::assertNull($this->reader->read($this->path, 'example.test')['hit_rate']);
+        self::assertSame('missing', $this->reader->read($this->path, 'example.test')['log_state']);
         $this->filesystem->dumpFile($this->path, '');
         self::assertNull($this->reader->read($this->path, 'example.test')['hit_rate']);
+        self::assertSame('no_requests', $this->reader->read($this->path, 'example.test')['log_state']);
         $this->filesystem->dumpFile($this->path, $this->record('BYPASS'));
         self::assertNull($this->reader->read($this->path, 'example.test')['hit_rate']);
+        self::assertSame('no_requests', $this->reader->read($this->path, 'example.test')['log_state']);
         self::assertNull($this->reader->read($this->path, '')['hit_rate']);
     }
 
@@ -96,6 +100,7 @@ final class CacheMetricsReaderTest extends TestCase
         self::assertFalse(is_readable($this->path), 'Run this test as an unprivileged user.');
         $error = error_get_last();
         self::assertNull($this->reader->read($this->path, 'example.test')['hit_rate']);
+        self::assertSame('unreadable', $this->reader->read($this->path, 'example.test')['log_state']);
         self::assertSame($error, error_get_last());
     }
 

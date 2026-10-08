@@ -104,7 +104,9 @@ and query/authentication bypass maps against an isolated local Nginx instance.
 Cache file count and size inspect the configured cache root (excluding the
 plugin lock and sentinel); queue count and tag/URL counts query their persistent
 stores. Counts can be zero when no anonymous page is cached. A bounded filesystem
-scan displays a `+` after the file count when it is incomplete.
+scan displays a `+` after both file count and size when it is incomplete.
+Unavailable roots show an unavailable value instead of a misleading zero. The
+header confirms the cache directory's readiness, not that Nginx served a HIT.
 
 The hit rate reads real Nginx requests, including hits that never execute PHP.
 Apply the HTTP include (which defines the JSON log format) and export
@@ -125,7 +127,17 @@ and REVALIDATED count as cache-served responses; MISS and EXPIRED count as
 misses. BYPASS and non-cache requests are excluded. Reads are limited to the last
 1 MiB and 5,000 records and labelled as a sample when capped. Missing/unreadable
 logs or no eligible samples show **no measurement**, never an invented 100%.
+The card distinguishes missing/unreadable logs from a readable log with no
+eligible requests in the current window. Dashboard values are a snapshot taken
+when the page loads; reload after generating anonymous traffic.
 The dashboard performs no HTTP probes, log writes or purge operations.
+
+Dry runs also work when Nginx has expired every cache file and retained only its
+empty hexadecimal directories. A dry run creates no cache directory, sentinel or
+lock file and deletes nothing. It respects an existing purge lock and previews a
+snapshot when no lock exists. The notice reports the number of top-level entries
+that a full purge would remove; cache-file KPIs count files inside those entries.
+Failure notices include the actual cause rather than only a generic purge error.
 
 ## Features
 

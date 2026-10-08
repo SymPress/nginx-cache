@@ -39,7 +39,7 @@ final readonly class CachePurger
             return $this->fullPurgeEndpoint->purge($request, $startedAt, $createdAt);
         }
 
-        $validation = $this->validator->validate($path, true, true);
+        $validation = $this->validator->validate($path, !$request->dryRun, true);
 
         if (!$validation->isValid()) {
             return PurgeResult::failure(
@@ -54,7 +54,11 @@ final readonly class CachePurger
             );
         }
 
-        $lock = $this->openLock($validation->path);
+        if ($request->dryRun && !file_exists($validation->path . '/' . self::LOCK_FILE)) {
+            return $this->purgeValidatedPath($validation->path, $request, $startedAt, $createdAt);
+        }
+
+        $lock = $this->openLock($validation->path, $request->dryRun);
 
         if (!is_resource($lock)) {
             return PurgeResult::failure(
@@ -83,46 +87,50 @@ final readonly class CachePurger
                 );
             }
 
-            if (!$request->requiresFullPurge()) {
-                return $this->purgeUrls($validation->path, $request, $startedAt, $createdAt);
-            }
-
-            $entries = $this->purgeableEntries($validation->path);
-            $removed = count($entries);
-
-            try {
-                if (!$request->dryRun) {
-                    $this->filesystem->remove($entries);
-                    $this->filesystem->mkdir($validation->path, 0775);
-                }
-            } catch (IOExceptionInterface $exception) {
-                return PurgeResult::failure(
-                    $validation->path,
-                    sprintf('Cache entries could not be removed: %s', $exception->getMessage()),
-                    $this->clock->elapsedSince($startedAt),
-                    $request->mode,
-                    $request->reason,
-                    $request->source,
-                    $request->dryRun,
-                    createdAt: $createdAt,
-                );
-            }
-
-            return PurgeResult::success(
-                $validation->path,
-                $removed,
-                $this->clock->elapsedSince($startedAt),
-                PurgeMode::Full,
-                $request->reason,
-                $request->source,
-                $request->dryRun,
-                createdAt: $createdAt,
-            );
+            return $this->purgeValidatedPath($validation->path, $request, $startedAt, $createdAt);
         } finally {
             flock($lock, LOCK_UN);
             // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Close the connection-local POSIX flock resource after releasing ownership.
             fclose($lock);
         }
+    }
+
+    private function purgeValidatedPath(string $path, PurgeRequest $request, float $startedAt, int $createdAt): PurgeResult
+    {
+        if (!$request->requiresFullPurge()) {
+            return $this->purgeUrls($path, $request, $startedAt, $createdAt);
+        }
+
+        $entries = $this->purgeableEntries($path);
+
+        try {
+            if (!$request->dryRun) {
+                $this->filesystem->remove($entries);
+                $this->filesystem->mkdir($path, 0775);
+            }
+        } catch (IOExceptionInterface $exception) {
+            return PurgeResult::failure(
+                $path,
+                sprintf('Cache entries could not be removed: %s', $exception->getMessage()),
+                $this->clock->elapsedSince($startedAt),
+                $request->mode,
+                $request->reason,
+                $request->source,
+                $request->dryRun,
+                createdAt: $createdAt,
+            );
+        }
+
+        return PurgeResult::success(
+            $path,
+            count($entries),
+            $this->clock->elapsedSince($startedAt),
+            PurgeMode::Full,
+            $request->reason,
+            $request->source,
+            $request->dryRun,
+            createdAt: $createdAt,
+        );
     }
 
     private function purgeUrls(string $path, PurgeRequest $request, float $startedAt, int $createdAt): PurgeResult
@@ -212,10 +220,10 @@ final readonly class CachePurger
     }
 
     /** @return resource|null */
-    private function openLock(string $path): mixed
+    private function openLock(string $path, bool $dryRun): mixed
     {
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Atomic local flock needs a native descriptor inside the validated managed cache root.
-        $lock = @fopen(sprintf('%s/%s', rtrim($path, '/'), self::LOCK_FILE), 'c');
+        $lock = @fopen(sprintf('%s/%s', rtrim($path, '/'), self::LOCK_FILE), $dryRun ? 'rb' : 'c');
 
         return is_resource($lock) ? $lock : null;
     }

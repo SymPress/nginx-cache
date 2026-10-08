@@ -149,7 +149,7 @@ final readonly class SettingsPage
         }
 
         $result = $this->cache->purgeConfiguredPath($this->manualRequest('admin-settings'));
-        $this->flashNotice($this->noticeMessage($result->successful, $result->dryRun, $this->prewarmRequested()));
+        $this->flashNotice($this->noticeMessage($result->successful, $result->dryRun, $this->prewarmRequested()), $result->message, $result->removedEntries);
 
         wp_safe_redirect($this->cleanNoticeUrl($this->pageUrl()));
         exit;
@@ -164,7 +164,7 @@ final readonly class SettingsPage
         }
 
         $result = $this->cache->purgeConfiguredPath($this->manualRequest('admin-bar'));
-        $this->flashNotice($this->noticeMessage($result->successful, $result->dryRun, $this->prewarmRequested()));
+        $this->flashNotice($this->noticeMessage($result->successful, $result->dryRun, $this->prewarmRequested()), $result->message, $result->removedEntries);
 
         wp_safe_redirect($this->cleanNoticeUrl($this->redirectUrl()));
         exit;
@@ -197,7 +197,8 @@ final readonly class SettingsPage
                 break;
             }
         }
-        $message = $this->pullNotice();
+        $notice = $this->pullNotice();
+        $message = $notice['message'];
 
         // phpcs:enable WordPress.Security.NonceVerification.Recommended
         if ($message === 'purged') {
@@ -207,13 +208,16 @@ final readonly class SettingsPage
         }
 
         if ($message === 'failed') {
-            $this->renderNotice(__('Cache could not be purged.', WordPressCacheSettings::TEXT_DOMAIN), 'error');
+            $error = $notice['detail'] !== ''
+                ? sprintf(__('Cache could not be purged: %s', WordPressCacheSettings::TEXT_DOMAIN), $notice['detail'])
+                : __('Cache could not be purged.', WordPressCacheSettings::TEXT_DOMAIN);
+            $this->renderNotice($error, 'error');
 
             return;
         }
 
         if ($message === 'dry-run') {
-            $this->renderNotice(__('Cache purge dry run completed.', WordPressCacheSettings::TEXT_DOMAIN), 'success');
+            $this->renderNotice(sprintf(__('Dry run completed: %d entries would be removed. No cache files were changed.', WordPressCacheSettings::TEXT_DOMAIN), $notice['entries']), 'success');
 
             return;
         }
@@ -244,11 +248,20 @@ final readonly class SettingsPage
         }
 
         $path = $this->settings->cachePath();
-        $validation = $this->validator->validate($path);
+        $validation = $this->validator->validate($path, false, true);
         $status = $this->inspector->inspect($path);
         $pathReadOnly = $this->settings->pathManagedByConstant();
         $lastPurge = $this->history->last();
         $diagnostics = $this->diagnostics->report();
+        $metrics = is_array($diagnostics['metrics'] ?? null) ? $diagnostics['metrics'] : [];
+        $metricsDescription = match ($metrics['log_state'] ?? 'unavailable') {
+            'missing' => __('Nginx-Messprotokoll fehlt', WordPressCacheSettings::TEXT_DOMAIN),
+            'unreadable' => __('Nginx-Messprotokoll nicht lesbar', WordPressCacheSettings::TEXT_DOMAIN),
+            'no_requests' => __('Keine Cache-Anfragen in den letzten 60 Min.', WordPressCacheSettings::TEXT_DOMAIN),
+            default => __('Keine Messdaten verfügbar', WordPressCacheSettings::TEXT_DOMAIN),
+        };
+        $scanUsable = $status->exists && $status->directory && $status->error === null;
+        $pluginData = get_file_data(__DIR__ . '/../../nginx-cache.php', ['version' => 'Version']);
         $generatedConfig = $this->config->generate();
         $configMissing = $this->config->validate($generatedConfig);
         $environment = $this->environment->detect();
@@ -261,10 +274,10 @@ final readonly class SettingsPage
         $showOnboarding = !$this->settings->onboardingCompleted() && !$this->settings->hasCustomizedOptions();
         $healthOk = $validation->isValid() && $status->available();
         $healthLabel = $healthOk
-            ? __('Cache ist aktiv und gesund', WordPressCacheSettings::TEXT_DOMAIN)
+            ? __('Cache-Verzeichnis bereit', WordPressCacheSettings::TEXT_DOMAIN)
             : __('Cache braucht Aufmerksamkeit', WordPressCacheSettings::TEXT_DOMAIN);
         $healthDescription = $healthOk
-            ? __('Alle Systeme betriebsbereit', WordPressCacheSettings::TEXT_DOMAIN)
+            ? __('Nginx-Nutzung siehe Cache-Trefferquote', WordPressCacheSettings::TEXT_DOMAIN)
             : __('Bitte Cache-Pfad und Nginx-Probe prüfen', WordPressCacheSettings::TEXT_DOMAIN);
         $localBackend = ($this->backendSettings?->string('purge_backend') ?? 'local_files') === 'local_files';
         if (!$localBackend) {
@@ -296,7 +309,7 @@ final readonly class SettingsPage
                     <div class="sympress-product-brand">
                         <span class="sympress-product-logo" aria-hidden="true">N</span>
                         <h1><?php echo esc_html__('Nginx Cache', WordPressCacheSettings::TEXT_DOMAIN); ?></h1>
-                        <span class="sympress-version">v1.0.0</span>
+                        <span class="sympress-version"><?php echo esc_html('v' . $pluginData['version']); ?></span>
                     </div>
                     <div class="sympress-product-status">
                         <span class="sympress-cache-status is-<?php echo esc_attr($healthOk ? 'good' : 'warning'); ?>">
@@ -354,14 +367,14 @@ final readonly class SettingsPage
                             <?php endif; ?>
 
                             <div class="sympress-metrics-grid">
-                                <?php $this->renderMetricCard(__('Cache-Dateien', WordPressCacheSettings::TEXT_DOMAIN), (string) $status->files . ($status->scanComplete ? '' : '+'), __('Dateien', WordPressCacheSettings::TEXT_DOMAIN), 'neutral', 'media-default'); ?>
-                                <?php $this->renderMetricCard(__('Cache-Größe', WordPressCacheSettings::TEXT_DOMAIN), $status->formattedSize(), __('Belegter Speicher', WordPressCacheSettings::TEXT_DOMAIN), 'neutral', 'database'); ?>
+                                <?php $this->renderMetricCard(__('Cache-Dateien', WordPressCacheSettings::TEXT_DOMAIN), $scanUsable ? (string) $status->files . ($status->scanComplete ? '' : '+') : '—', $scanUsable ? __('Dateien', WordPressCacheSettings::TEXT_DOMAIN) : __('Nicht verfügbar', WordPressCacheSettings::TEXT_DOMAIN), 'neutral', 'media-default'); ?>
+                                <?php $this->renderMetricCard(__('Cache-Größe', WordPressCacheSettings::TEXT_DOMAIN), $scanUsable ? $status->formattedSize() . ($status->scanComplete ? '' : '+') : '—', $scanUsable ? __('Belegter Speicher', WordPressCacheSettings::TEXT_DOMAIN) : __('Nicht verfügbar', WordPressCacheSettings::TEXT_DOMAIN), 'neutral', 'database'); ?>
                                 <?php $this->renderMetricCard(__('Angefragt (Queue)', WordPressCacheSettings::TEXT_DOMAIN), (string) $queueCount, $queueCount > 0 ? __('Wartend', WordPressCacheSettings::TEXT_DOMAIN) : __('Leer', WordPressCacheSettings::TEXT_DOMAIN), $queueCount > 0 ? 'warning' : 'good', 'clock'); ?>
                                 <?php $this->renderMetricCard(__('Tag-Index', WordPressCacheSettings::TEXT_DOMAIN), sprintf('%d', (int) ($tagStats['tags'] ?? 0)), sprintf(__('%d URLs', WordPressCacheSettings::TEXT_DOMAIN), (int) ($tagStats['urls'] ?? 0)), 'neutral', 'tag'); ?>
                                 <div class="sympress-metric">
                                     <span><?php echo esc_html__('Cache-Trefferquote', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                     <strong><?php echo esc_html(isset($diagnostics['metrics']['hit_rate']) ? number_format_i18n((float) $diagnostics['metrics']['hit_rate'], 1) . ' %' : '—'); ?></strong>
-                                    <small><?php echo esc_html(isset($diagnostics['metrics']['hit_rate']) ? sprintf(__('%1$d Anfragen · letzte 60 Min.%2$s', WordPressCacheSettings::TEXT_DOMAIN), (int) $diagnostics['metrics']['requests'], !empty($diagnostics['metrics']['sampled']) ? __(' · Stichprobe', WordPressCacheSettings::TEXT_DOMAIN) : '') : __('Keine Messdaten', WordPressCacheSettings::TEXT_DOMAIN)); ?></small>
+                                    <small><?php echo esc_html(isset($metrics['hit_rate']) ? sprintf(__('%1$d Anfragen · letzte 60 Min.%2$s', WordPressCacheSettings::TEXT_DOMAIN), (int) $metrics['requests'], !empty($metrics['sampled']) ? __(' · Stichprobe', WordPressCacheSettings::TEXT_DOMAIN) : '') : $metricsDescription); ?></small>
                                 </div>
                             </div>
 
@@ -2017,12 +2030,13 @@ final readonly class SettingsPage
         );
     }
 
-    private function flashNotice(string $message): void
+    private function flashNotice(string $message, string $detail = '', int $entries = 0): void
     {
-        set_transient($this->noticeTransientKey(), $message, MINUTE_IN_SECONDS);
+        set_transient($this->noticeTransientKey(), ['message' => $message, 'detail' => $detail, 'entries' => $entries], MINUTE_IN_SECONDS);
     }
 
-    private function pullNotice(): string
+    /** @return array{message: string, detail: string, entries: int} */
+    private function pullNotice(): array
     {
         $key = $this->noticeTransientKey();
         $message = get_transient($key);
@@ -2030,10 +2044,20 @@ final readonly class SettingsPage
         if (is_string($message)) {
             delete_transient($key);
 
-            return $message;
+            return ['message' => $message, 'detail' => '', 'entries' => 0];
         }
 
-        return '';
+        if (is_array($message)) {
+            delete_transient($key);
+
+            return [
+                'message' => is_string($message['message'] ?? null) ? $message['message'] : '',
+                'detail'  => is_string($message['detail'] ?? null) ? $message['detail'] : '',
+                'entries' => is_int($message['entries'] ?? null) ? $message['entries'] : 0,
+            ];
+        }
+
+        return ['message' => '', 'detail' => '', 'entries' => 0];
     }
 
     private function noticeTransientKey(): string
