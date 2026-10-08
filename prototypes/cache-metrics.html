@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Nginx Cache – Dashboard-Prototyp</title>
+    <link rel="stylesheet" href="../Resources/assets/cache-metrics.css">
+    <style>
+        :root { --sympress-blue: #3d50ed; --sympress-blue-dark: #283bc9; --sympress-text: #1d2327; --sympress-muted: #646970; --sympress-border: #dcdcde; --sympress-surface: #fff; --sympress-bg: #f0f0f1; --sympress-warning: #b26200; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--sympress-bg); color: var(--sympress-text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        button, select { font: inherit; }
+        button { cursor: pointer; }
+        :focus-visible { outline: 2px solid var(--sympress-blue); outline-offset: 3px; }
+        .admin-bar { min-height: 32px; padding: 5px 22px; background: #232323; color: #fff; font-size: 12px; }
+        .preview { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 22px; background: #fff; border-bottom: 1px solid var(--sympress-border); font-size: 12px; }
+        .preview strong { margin-right: 8px; }
+        .preview select { margin-left: 6px; max-width: 100%; padding: 4px; }
+        .app { margin: 18px 22px; }
+        .product-bar { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; background: #fff; border: 1px solid var(--sympress-border); border-radius: 8px 8px 0 0; padding: 14px 18px; }
+        .brand { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+        .logo { display: grid; place-items: center; width: 34px; height: 40px; background: var(--sympress-blue); color: #fff; font-size: 22px; font-weight: 700; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+        h1 { margin: 0; font-size: 24px; }
+        .version { color: var(--sympress-blue-dark); background: #e9edff; padding: 2px 6px; border-radius: 3px; font-size: 12px; font-weight: 600; }
+        .health { padding-left: 18px; border-left: 1px solid var(--sympress-border); font-size: 12px; }
+        .health strong { display: block; color: #007a1c; }
+        .health span { color: var(--sympress-muted); }
+        .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+        .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 8px 12px; border: 1px solid var(--sympress-blue); border-radius: 4px; background: transparent; color: var(--sympress-blue-dark); font-size: 13px; font-weight: 600; }
+        .button.primary { background: var(--sympress-blue); color: #fff; }
+        .shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); }
+        nav { padding: 14px 10px; background: #fff; border-right: 1px solid var(--sympress-border); }
+        nav button { display: block; width: 100%; padding: 13px; text-align: left; border: 0; border-radius: 5px; background: transparent; font-weight: 600; color: var(--sympress-text); }
+        nav button.active { background: #e9edff; color: var(--sympress-blue-dark); box-shadow: inset 3px 0 0 var(--sympress-blue); }
+        main { min-width: 0; padding: 16px; }
+        .sympress-metrics-grid { display: grid; }
+        .sympress-metric { position: relative; padding: 16px 50px 14px 16px; min-height: 110px; background: #fff; border: 1px solid var(--sympress-border); border-radius: 8px; }
+        .sympress-metric > span { display: block; font-size: 13px; }
+        .sympress-metric strong { display: block; margin: 9px 0 4px; font-size: 26px; line-height: 1.1; }
+        .sympress-metric small { color: var(--sympress-muted); font-size: 12px; }
+        .sympress-metric i { position: absolute; top: 18px; right: 16px; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #e9edff; color: var(--sympress-blue); font-style: normal; }
+        .quick-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+        .below { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; }
+        .card { padding: 18px; background: #fff; border: 1px solid var(--sympress-border); border-radius: 8px; }
+        .card h2 { font-size: 16px; margin: 0 0 18px; }
+        .row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--sympress-border); font-size: 13px; }
+        .row code { font-size: 12px; overflow-wrap: anywhere; }
+        .row span:last-child { color: var(--sympress-muted); }
+        .toggle { width: 32px; height: 18px; border-radius: 9px; background: var(--sympress-blue); position: relative; }
+        .toggle::after { content: ""; position: absolute; background: #fff; width: 12px; height: 12px; border-radius: 50%; right: 3px; top: 3px; }
+        [hidden] { display: none !important; }
+        @media (max-width: 1100px) { .shell { grid-template-columns: 1fr; } nav { display: flex; overflow-x: auto; gap: 5px; border-right: 0; } nav button { width: auto; white-space: nowrap; } .product-bar { align-items: flex-start; } .actions { margin-left: 0; } .below { grid-template-columns: 1fr; } }
+        @media (max-width: 600px) { .app { margin: 12px; } main { padding: 12px 0; } .preview { padding: 12px; } .health { padding-left: 0; border-left: 0; } .actions { width: 100%; } .actions .button { width: 100%; } .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
+    </style>
+</head>
+<body>
+    <div class="admin-bar">WordPress &nbsp; / &nbsp; Nginx Cache</div>
+    <div class="preview"><div><strong>HTML-Prototyp</strong> Beispieldaten aus dem Screenshot · keine Live-Messung</div><label>Zustand <select id="preview-state"><option value="small">8 von 9 aus Cache</option><option value="full">Größere Datenbasis</option><option value="sampled">Begrenzte Stichprobe</option><option value="zero">Keine Anfragen</option><option value="missing">Messprotokoll fehlt</option><option value="unreadable">Messprotokoll nicht lesbar</option></select></label></div>
+    <div class="app">
+        <header class="product-bar"><div class="brand"><span class="logo" aria-hidden="true">N</span><h1>Nginx Cache</h1><span class="version">v0.2.0</span></div><div class="health"><strong>● Cache-Verzeichnis bereit</strong><span>Nginx-Nutzung siehe Cache-Trefferquote</span></div><div class="actions"><button class="button" type="button">Einstellungen exportieren</button><button class="button" type="button">Einstellungen importieren</button><button class="button primary" type="button">Änderungen speichern</button></div></header>
+        <div class="shell">
+            <nav aria-label="Bereiche"><button class="active" type="button" aria-current="page">Dashboard</button><button type="button">Cache</button><button type="button">Preload</button><button type="button">Advanced Rules</button><button type="button">CDN &amp; Remote</button><button type="button">Heartbeat &amp; Layers</button></nav>
+            <main>
+                <div class="sympress-cache-overview">
+                    <section class="sympress-cache-performance" aria-labelledby="cache-performance-title">
+                        <div class="sympress-performance-heading"><h2 id="cache-performance-title">Cache-Trefferquote</h2><span class="sympress-performance-window">Letzte 60 Minuten</span></div>
+                        <div class="sympress-performance-result"><strong class="sympress-performance-rate" data-rate>88,9 %</strong><p data-denominator>8 von 9 Anfragen aus Cache</p></div>
+                        <div data-distribution>
+                            <div class="sympress-performance-bar" aria-hidden="true"><span class="sympress-performance-bar__hit" style="width: 88.8889%"></span><span class="sympress-performance-bar__fresh" style="width: 11.1111%"></span></div>
+                            <div class="sympress-performance-totals"><span><i class="sympress-performance-dot" aria-hidden="true"></i><strong data-hits>8</strong> aus Cache</span><span><i class="sympress-performance-dot sympress-performance-dot--fresh" aria-hidden="true"></i><strong data-fresh>1</strong> neu angefragt</span></div>
+                        </div>
+                        <p class="sympress-performance-empty" data-empty hidden></p>
+                        <div class="sympress-performance-meta"><span class="sympress-performance-note" data-note>Kleine Datenbasis · 9 Anfragen</span><span>Stand <time datetime="2026-10-08T21:39:57+02:00">21:39</time></span></div>
+                        <details class="sympress-performance-details" data-sympress-metric-details>
+                            <summary>Messdetails &amp; Zählweise</summary>
+                            <dl class="sympress-performance-states" data-states><div><dt>HIT</dt><dd>8</dd></div><div><dt>MISS</dt><dd>1</dd></div><div><dt>EXPIRED</dt><dd>0</dd></div><div><dt>STALE</dt><dd>0</dd></div><div><dt>UPDATING</dt><dd>0</dd></div><div><dt>REVALIDATED</dt><dd>0</dd></div></dl>
+                            <p>HIT, STALE, UPDATING und REVALIDATED zählen als Cache-Treffer. MISS und EXPIRED benötigen eine neue Antwort.</p>
+                            <p>BYPASS, Admin- und angemeldete Anfragen sind ausgeschlossen. Prewarm-Abrufe zählen mit.</p>
+                            <p data-small-note>Unter 100 Anfragen: Ein einzelner MISS verändert die Quote deutlich.</p>
+                            <p>Aktualisierung beim Neuladen · Messfenster: letzte 60 Minuten.</p>
+                        </details>
+                    </section>
+                    <div class="sympress-metrics-grid" aria-label="Lokaler Cache">
+                        <div class="sympress-metric"><span>Cache-Dateien</span><i aria-hidden="true">▤</i><strong>1</strong><small>Dateien</small></div>
+                        <div class="sympress-metric"><span>Cache-Größe</span><i aria-hidden="true">▥</i><strong>38.1 KB</strong><small>Belegter Speicher</small></div>
+                        <div class="sympress-metric"><span>Angefragt (Queue)</span><i aria-hidden="true">◷</i><strong>0</strong><small>Leer</small></div>
+                        <div class="sympress-metric"><span>Tag-Index</span><i aria-hidden="true">◇</i><strong>4</strong><small>1 URL</small></div>
+                    </div>
+                </div>
+                <div class="quick-actions"><button type="button" class="button primary">Purge Cache</button><button type="button" class="button">Dry Run</button><button type="button" class="button">Prewarm</button><button type="button" class="button">Flush Queue</button></div>
+                <div class="below"><section class="card"><h2>Cache-Einstellungen</h2><div class="row"><span>Cache-Pfad</span><code>/var/cache/nginx/wordpress</code></div><div class="row"><span>Cache-Profil</span><span>Safe</span></div><div class="row"><span>Automatisches Purge</span><span class="toggle" role="img" aria-label="Aktiviert"></span></div><div class="row"><span>Selektives Purge</span><span class="toggle" role="img" aria-label="Aktiviert"></span></div><div class="row"><span>Queue Debounce</span><span>10 Sekunden</span></div></section><section class="card"><h2>Systemstatus</h2><div class="row"><span>Cache-Verzeichnis</span><span>Bereit</span></div><div class="row"><span>Profil</span><span>Safe</span></div><div class="row"><span>Messung</span><span>Nginx-Messprotokoll</span></div><div class="row"><span>Letzte Aktion</span><span>Dry Run erfolgreich</span></div></section></div>
+            </main>
+        </div>
+    </div>
+    <script>
+        const panel = document.querySelector('.sympress-cache-performance');
+        const format = new Intl.NumberFormat('de-DE');
+        document.querySelector('#preview-state').addEventListener('change', (event) => {
+            const state = event.target.value;
+            const available = ['small', 'full', 'sampled'].includes(state);
+            const requests = state === 'small' ? 9 : 1250;
+            const hits = state === 'small' ? 8 : 1200;
+            const rate = hits / requests * 100;
+            panel.querySelector('[data-rate]').textContent = available ? rate.toLocaleString('de-DE', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + ' %' : '—';
+            panel.querySelector('[data-denominator]').textContent = available ? `${format.format(hits)} von ${format.format(requests)} Anfragen aus Cache` : state === 'zero' ? 'Keine Anfragen im Messfenster' : 'Keine Messdaten verfügbar';
+            panel.querySelector('[data-distribution]').hidden = !available;
+            panel.querySelector('[data-empty]').hidden = available;
+            panel.querySelector('[data-empty]').textContent = state === 'zero' ? 'In den letzten 60 Minuten wurden keine cachefähigen Anfragen erfasst.' : state === 'missing' ? 'Das Nginx-Messprotokoll fehlt. Prüfe die Messkonfiguration unter Tools.' : 'Das Nginx-Messprotokoll ist nicht lesbar. Prüfe Pfad und Zugriffsrechte unter Tools.';
+            panel.querySelector('[data-hits]').textContent = format.format(hits);
+            panel.querySelector('[data-fresh]').textContent = format.format(requests - hits);
+            panel.querySelector('.sympress-performance-bar__hit').style.width = rate + '%';
+            panel.querySelector('.sympress-performance-bar__fresh').style.width = 100 - rate + '%';
+            panel.querySelector('[data-states]').hidden = !available;
+            panel.querySelectorAll('[data-states] dd').forEach((item, index) => { item.textContent = format.format(index === 0 ? hits : index === 1 ? requests - hits : 0); });
+            panel.querySelector('[data-small-note]').hidden = state !== 'small';
+            panel.querySelector('[data-note]').textContent = state === 'small' ? 'Kleine Datenbasis · 9 Anfragen' : state === 'sampled' ? 'Begrenzte Stichprobe · 1.250 Anfragen' : '1.250 Anfragen';
+            panel.querySelector('[data-note]').hidden = !available;
+            panel.querySelector('[data-note]').classList.toggle('sympress-performance-note', state === 'small' || state === 'sampled');
+        });
+    </script>
+</body>
+</html>
