@@ -25,11 +25,14 @@ final readonly class CacheMetricsReader
         return is_string($path) && trim($path) !== '' ? trim($path) : '/var/log/nginx/sympress-cache-metrics.jsonl';
     }
 
-    /** @return array{hits: int, requests: int, hit_rate: ?float, sampled: bool, window_seconds: int} */
+    /** @return array{hits: int, requests: int, hit_rate: ?float, sampled: bool, window_seconds: int, log_state: string} */
     public function read(string $path, string $host): array
     {
-        $result = ['hits' => 0, 'requests' => 0, 'hit_rate' => null, 'sampled' => false, 'window_seconds' => self::WINDOW_SECONDS];
+        $result = ['hits' => 0, 'requests' => 0, 'hit_rate' => null, 'sampled' => false, 'window_seconds' => self::WINDOW_SECONDS, 'log_state' => 'unavailable'];
         if ($host === '' || !is_file($path) || !is_readable($path)) {
+            if ($host !== '') {
+                $result['log_state'] = !is_file($path) ? 'missing' : 'unreadable';
+            }
             return $result;
         }
 
@@ -42,6 +45,7 @@ final readonly class CacheMetricsReader
             $file = new \SplFileObject($path, 'rb');
             $stat = $file->fstat();
             if ($stat === false || $stat['size'] === 0) {
+                $result['log_state'] = $stat === false ? 'unavailable' : 'no_requests';
                 return $result;
             }
             $offset = max(0, $stat['size'] - self::MAX_BYTES);
@@ -57,6 +61,7 @@ final readonly class CacheMetricsReader
         if (!is_string($data)) {
             return $result;
         }
+        $result['log_state'] = 'no_requests';
 
         $lines = explode("\n", $data);
         // Ignore both a truncated first record and the incomplete record of an active writer.
@@ -88,6 +93,7 @@ final readonly class CacheMetricsReader
         }
         if ($result['requests'] > 0) {
             $result['hit_rate'] = 100.0 * $result['hits'] / $result['requests'];
+            $result['log_state'] = 'ok';
         }
 
         return $result;

@@ -215,14 +215,14 @@ final readonly class CachePathValidator
     {
         try {
             $finder = (new Finder())
-                ->files()
                 ->ignoreDotFiles(false)
                 ->ignoreVCS(false)
-                ->depth('<= 4')
                 ->in($path);
 
             $checked = 0;
-            $validCacheFiles = 0;
+            $cacheEntries = 0;
+            $cacheFiles = 0;
+            $emptyLevels = true;
 
             foreach ($finder as $file) {
                 if (++$checked > 200) {
@@ -231,12 +231,27 @@ final readonly class CachePathValidator
 
                 $name = $file->getFilename();
 
-                if ($name === '.sympress-nginx-cache.lock' || $name === self::SENTINEL_FILE) {
+                if ($file->isLink()) {
+                    return false;
+                }
+
+                if (in_array($name, ['.sympress-nginx-cache.lock', self::SENTINEL_FILE], true)) {
                     continue;
                 }
 
-                if (strlen($name) === 32 && ctype_xdigit($name)) {
-                    ++$validCacheFiles;
+                if ($file->isDir()) {
+                    // Nginx retains its hexadecimal levels after expiring the last entry.
+                    if (preg_match('/^[a-f0-9]{1,3}$/iD', $name) !== 1 || substr_count($file->getRelativePathname(), '/') > 2) {
+                        $emptyLevels = false;
+                    }
+                    ++$cacheEntries;
+
+                    continue;
+                }
+
+                if ($file->isFile() && strlen($name) === 32 && ctype_xdigit($name)) {
+                    ++$cacheEntries;
+                    ++$cacheFiles;
 
                     continue;
                 }
@@ -244,7 +259,7 @@ final readonly class CachePathValidator
                 return false;
             }
 
-            return $validCacheFiles > 0;
+            return $cacheFiles > 0 || ($cacheEntries > 0 && $emptyLevels);
         } catch (\Throwable) {
             return false;
         }

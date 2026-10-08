@@ -56,6 +56,56 @@ final class CachePurgerTest extends TestCase
             self::assertTrue($result->successful);
             self::assertTrue($result->dryRun);
             self::assertDirectoryExists($path . '/a');
+            self::assertFileDoesNotExist($path . '/.sympress-nginx-cache.lock');
+            self::assertFileDoesNotExist($path . '/' . CachePathValidator::SENTINEL_FILE);
+            self::assertSame('cached', file_get_contents($path . '/a/b/' . str_repeat('a', 32)));
+        } finally {
+            $filesystem->remove($path);
+        }
+    }
+
+    public function testDryRunAcceptsExpiredCacheWithOnlyEmptyHashDirectories(): void
+    {
+        $filesystem = new Filesystem();
+        $path = sys_get_temp_dir() . '/sympress-nginx-cache-expired-' . bin2hex(random_bytes(8));
+        $filesystem->mkdir([$path . '/7/81', $path . '/e/9b']);
+        try {
+            $result = $this->purger($filesystem, $path)->purgeRequest($path, PurgeRequest::full(dryRun: true));
+            self::assertTrue($result->successful, $result->message);
+            self::assertSame(2, $result->removedEntries);
+            self::assertDirectoryExists($path . '/7/81');
+            self::assertDirectoryExists($path . '/e/9b');
+            self::assertFileDoesNotExist($path . '/.sympress-nginx-cache.lock');
+            self::assertFileDoesNotExist($path . '/' . CachePathValidator::SENTINEL_FILE);
+        } finally {
+            $filesystem->remove($path);
+        }
+    }
+
+    public function testDryRunDoesNotCreateMissingCacheRoots(): void
+    {
+        $filesystem = new Filesystem();
+        $path = sys_get_temp_dir() . '/sympress-nginx-cache-missing-' . bin2hex(random_bytes(8));
+        $result = $this->purger($filesystem, $path)->purgeRequest($path, PurgeRequest::full(dryRun: true));
+        self::assertFalse($result->successful);
+        self::assertSame('Cache directory does not exist.', $result->message);
+        self::assertDirectoryDoesNotExist($path);
+    }
+
+    public function testSelectiveDryRunDoesNotCreateLockOrRemoveMatchingFile(): void
+    {
+        $filesystem = new Filesystem();
+        $path = sys_get_temp_dir() . '/sympress-nginx-cache-url-preview-' . bin2hex(random_bytes(8));
+        $settings = new WordPressCacheSettings($path);
+        $resolver = new CacheFileResolver($settings, new CacheKeyStrategy());
+        $candidate = $resolver->candidates($path, 'https://example.test/')[0];
+        $filesystem->dumpFile($candidate, 'cached');
+        try {
+            $result = $this->purger($filesystem, $path)->purgeRequest($path, PurgeRequest::urls(['https://example.test/'], dryRun: true));
+            self::assertTrue($result->successful, $result->message);
+            self::assertSame(1, $result->removedEntries);
+            self::assertFileExists($candidate);
+            self::assertFileDoesNotExist($path . '/.sympress-nginx-cache.lock');
         } finally {
             $filesystem->remove($path);
         }

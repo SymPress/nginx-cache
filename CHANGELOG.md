@@ -8,6 +8,8 @@ where applicable.
 
 ## Unreleased
 
+- Allow dry-run previews of expired caches with empty hexadecimal Nginx levels; create no cache root, sentinel or lock during a preview and preserve lock contention checks.
+- Explain missing/unreadable metrics logs and empty measurement windows, show unavailable filesystem KPIs honestly, and report the installed plugin version and actual purge failure details.
 - Match an empty query string with an exact Nginx map entry; the old `~^$` regex left ordinary anonymous page requests in `BYPASS`.
 - Export separate HTTP, server and FastCGI include files with `wp nginx-cache config --section=...`, so the cache path and bypass rules can be applied in their required Nginx contexts.
 - Keep WordPress admin notices below the Nginx Cache header instead of moving them into the onboarding banner or other settings cards.
