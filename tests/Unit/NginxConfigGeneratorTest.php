@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use SymPress\NginxCache\Config\BypassRuleProvider;
 use SymPress\NginxCache\Config\NginxConfigGenerator;
 use SymPress\NginxCache\Key\CacheKeyStrategy;
@@ -55,9 +56,14 @@ final class NginxConfigGeneratorTest extends TestCase
         $http = $generator->generate(context: 'http');
         $server = $generator->generate(context: 'server');
         $fastcgi = $generator->generate(context: 'fastcgi');
+        $logging = $generator->generate(context: 'logging');
 
         self::assertStringContainsString('fastcgi_cache_path /var/cache/nginx/wordpress ', $http);
         self::assertStringContainsString('map $http_cookie $sympress_cache_skip_cookie', $http);
+        self::assertStringContainsString('log_format sympress_cache_metrics escape=json', $http);
+        self::assertStringNotContainsString('$remote_addr', $http);
+        self::assertStringContainsString('access_log /var/log/nginx/sympress-cache-metrics.jsonl sympress_cache_metrics if=$sympress_cache_metric_loggable;', $logging);
+        self::assertStringNotContainsString('location ', $logging);
         self::assertStringNotContainsString('location ~', $http);
         self::assertStringNotContainsString('fastcgi_cache_bypass', $http);
         self::assertStringContainsString('location ~*', $server);
@@ -69,7 +75,7 @@ final class NginxConfigGeneratorTest extends TestCase
         self::assertStringNotContainsString('map ', $fastcgi);
         self::assertStringNotContainsString('location ~', $fastcgi);
         self::assertSame($http . "\n" . $server . "\n" . $fastcgi, $generator->generate());
-        foreach (['http' => $http, 'server' => $server, 'fastcgi' => $fastcgi] as $context => $config) {
+        foreach (['http' => $http, 'server' => $server, 'logging' => $logging, 'fastcgi' => $fastcgi] as $context => $config) {
             self::assertSame([], $generator->validate($config, $context));
         }
         self::assertSame(['fastcgi_cache_path'], $generator->validate($fastcgi, 'http'));
@@ -84,6 +90,27 @@ final class NginxConfigGeneratorTest extends TestCase
         );
         $this->expectException(\InvalidArgumentException::class);
         $generator->generate(context: 'unknown');
+    }
+
+    #[RunInSeparateProcess]
+    public function testItRejectsMetricsLogsInsideThePurgeableCacheRoot(): void
+    {
+        define('SYMPRESS_NGINX_CACHE_METRICS_LOG', '/var/cache/nginx/wordpress/metrics.jsonl');
+        $settings = new WordPressCacheSettings('/var/cache/nginx/wordpress');
+        $generator = new NginxConfigGenerator($settings, new BypassRuleProvider(), new CacheKeyStrategy());
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('outside the cache root');
+        $generator->generate();
+    }
+
+    #[RunInSeparateProcess]
+    public function testItRejectsUnsafeMetricsLogDirectivePaths(): void
+    {
+        define('SYMPRESS_NGINX_CACHE_METRICS_LOG', '/var/log/nginx/metrics;$host');
+        $settings = new WordPressCacheSettings('/var/cache/nginx/wordpress');
+        $generator = new NginxConfigGenerator($settings, new BypassRuleProvider(), new CacheKeyStrategy());
+        $this->expectException(\InvalidArgumentException::class);
+        $generator->generate();
     }
 
     public function testOnlyTrackingQueriesUseCanonicalCacheKeys(): void

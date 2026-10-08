@@ -9,7 +9,8 @@ request to local deletion and follow-up work.
 | Admin purge action | `SettingsPage` → `CacheManager` | Capability/nonce-gated local or endpoint purge | Same side-effect queue |
 | REST `/purge` | `CacheRestController` → queue or `CacheManager` | `manage_options`-gated purge; URLs must be same-origin | Same side-effect queue |
 | CLI `nginx-cache:purge` | `PurgeCommand` → queue or `CacheManager` | Explicit local, endpoint, or dry-run purge | Same side-effect queue |
-| CLI `nginx-cache:config --section=...` | `ConfigCommand` → `NginxConfigGenerator` | Prints HTTP/server/FastCGI include text; no directory creation, file deletion, server reload or remote request | None |
+| CLI `nginx-cache:config --section=...` | `ConfigCommand` → `NginxConfigGenerator` | Prints HTTP/server/logging/FastCGI include text; no directory creation, file deletion, server reload or remote request | None |
+| Dashboard / diagnostics KPIs | `CacheStatusInspector`, queue/tag stores, `CacheMetricsReader` | Read-only cache scan, database counts and bounded private log read | None; Nginx writes metric records only after an operator applies the logging include |
 | Purge queue hook | `PurgeQueueProcessor` → `CacheManager` | Drains merged purge requests | Successful requests may create side-effect tasks |
 | Side-effect hook/CLI | `PurgeSideEffectProcessor` | No cache-file deletion | Prewarm, cache-layer sync, signed remote dispatch, Cloudflare dispatch |
 

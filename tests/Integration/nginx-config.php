@@ -31,6 +31,7 @@ $root = sys_get_temp_dir() . '/sympress-nginx-config-' . bin2hex(random_bytes(8)
 $process = null;
 try {
     $filesystem->mkdir($root);
+    define('SYMPRESS_NGINX_CACHE_METRICS_LOG', $root . '/metrics.jsonl');
     $generator = new NginxConfigGenerator(
         new WordPressCacheSettings($root . '/cache'),
         new BypassRuleProvider(),
@@ -38,6 +39,7 @@ try {
     );
     $filesystem->dumpFile($root . '/http.conf', $generator->generate(context: 'http'));
     $filesystem->dumpFile($root . '/fastcgi.conf', $generator->generate(context: 'fastcgi'));
+    $filesystem->dumpFile($root . '/logging.conf', $generator->generate(context: 'logging'));
     $filesystem->dumpFile($root . '/nginx.conf', <<<NGINX
 pid $root/nginx.pid;
 error_log $root/error.log;
@@ -47,6 +49,8 @@ http {
     include $root/http.conf;
     server {
         listen $address;
+        access_log $root/format.jsonl sympress_cache_metrics;
+        include $root/logging.conf;
         location / {
             include $root/fastcgi.conf;
             return 200 "\$sympress_cache_skip|\$sympress_cache_request_uri|\$sympress_cache_query_string";
@@ -92,7 +96,24 @@ NGINX);
             throw new RuntimeException(sprintf('Nginx map regression for %s %s: expected %s, got %s.', $method, $path, $expected, $actual));
         }
     }
-    echo 'PASS: Nginx created the cache root; 9 real HTTP cases verify empty queries, tracking canonicalization and private-request bypass.' . PHP_EOL;
+    $records = [];
+    for ($attempt = 0; $attempt < 20; ++$attempt) {
+        $records = array_filter(explode("\n", $filesystem->readFile($root . '/format.jsonl')));
+        if (count($records) >= count($cases) + 1) {
+            break;
+        }
+        usleep(10_000);
+    }
+    if (count($records) < count($cases) + 1 || $filesystem->readFile($root . '/metrics.jsonl') !== '') {
+        throw new RuntimeException('Metrics logging must preserve other logs and exclude non-cache requests.');
+    }
+    foreach ($records as $record) {
+        $fields = json_decode($record, true, flags: JSON_THROW_ON_ERROR);
+        if (array_keys($fields) !== ['time', 'host', 'cache'] || !is_numeric($fields['time']) || $fields['host'] !== '127.0.0.1' || !in_array($fields['cache'], ['', '-'], true)) {
+            throw new RuntimeException('The real Nginx metrics log contains unexpected fields: ' . json_encode($fields, JSON_THROW_ON_ERROR));
+        }
+    }
+    echo 'PASS: Nginx created the cache root; 9 real HTTP cases verify maps; JSON metrics preserve access logs and exclude non-cache requests.' . PHP_EOL;
 } finally {
     if ($process instanceof Process) {
         $process->stop(2);

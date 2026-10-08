@@ -22,6 +22,7 @@ final readonly class Diagnostics
         private NginxConfigGenerator $config,
         private TagIndexRepository $tags,
         private CacheLayerCoordinator $layers,
+        private CacheMetricsReader $metrics,
     ) {
     }
 
@@ -29,6 +30,7 @@ final readonly class Diagnostics
     public function report(): array
     {
         $status = $this->inspector->inspect($this->settings->cachePath());
+        $host = function_exists('home_url') ? wp_parse_url(home_url(), PHP_URL_HOST) : null;
 
         return [
             'settings'     => $this->settings->config(),
@@ -49,6 +51,7 @@ final readonly class Diagnostics
                 'pending' => $this->queue->count(),
             ],
             'tag_index'    => $this->tags->stats(),
+            'metrics'      => $this->metrics->read(CacheMetricsReader::logPath(), is_string($host) ? $host : ''),
             'layers'       => [
                 'sync_enabled' => $this->settings->layerSyncEnabled(),
                 'available'    => $this->layers->available(),
