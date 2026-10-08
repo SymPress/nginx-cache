@@ -77,6 +77,28 @@ jobs:
           php tests/Integration/run.php
           php tests/Integration/query-contention.php
 
+  nginx-config:
+    name: Native Nginx config integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          extensions: dom, sodium
+          tools: composer:2.10.3
+          coverage: none
+      - name: Install dependencies and Nginx
+        run: |
+          composer install --no-interaction --no-progress --no-scripts
+          sudo apt-get update --quiet
+          sudo apt-get install --yes --no-install-recommends nginx
+      - name: Verify cache root creation and bypass maps in real Nginx
+        run: composer tests:nginx
+
   redis-integration:
     name: Redis page-cache integration
     runs-on: ubuntu-latest

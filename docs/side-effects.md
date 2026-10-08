@@ -9,10 +9,19 @@ request to local deletion and follow-up work.
 | Admin purge action | `SettingsPage` → `CacheManager` | Capability/nonce-gated local or endpoint purge | Same side-effect queue |
 | REST `/purge` | `CacheRestController` → queue or `CacheManager` | `manage_options`-gated purge; URLs must be same-origin | Same side-effect queue |
 | CLI `nginx-cache:purge` | `PurgeCommand` → queue or `CacheManager` | Explicit local, endpoint, or dry-run purge | Same side-effect queue |
+| CLI `nginx-cache:config --section=...` | `ConfigCommand` → `NginxConfigGenerator` | Prints HTTP/server/FastCGI include text; no directory creation, file deletion, server reload or remote request | None |
 | Purge queue hook | `PurgeQueueProcessor` → `CacheManager` | Drains merged purge requests | Successful requests may create side-effect tasks |
 | Side-effect hook/CLI | `PurgeSideEffectProcessor` | No cache-file deletion | Prewarm, cache-layer sync, signed remote dispatch, Cloudflare dispatch |
 
 ## Safety gates
+
+Configuration export is read-only. Applying its HTTP include and restarting or
+reloading Nginx is an explicit operator action; Nginx then creates the configured
+cache root. Keep the plugin path and `fastcgi_cache_path` identical, and grant
+the PHP and Nginx process users access to that dedicated root. Existing path
+validation, purge locks and private-request bypass rules remain in force.
+`composer tests:nginx` uses a temporary cache root and a loopback-only Nginx
+instance, stops its own process and removes only that fixture on completion.
 
 Sitemap prewarming is opt-in and runs inside the existing deferred prewarm task
 after full purges or explicit prewarm requests with no URL list. It does not run

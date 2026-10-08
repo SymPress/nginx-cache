@@ -25,6 +25,8 @@ final class NginxConfigGeneratorTest extends TestCase
         self::assertStringContainsString('map $http_authorization $sympress_cache_skip_authorization', $config);
         self::assertStringContainsString('fastcgi_cache_key "$scheme|$request_method|$host|$sympress_cache_request_uri";', $config);
         self::assertStringContainsString('map $query_string $sympress_cache_tracking_query', $config);
+        self::assertStringContainsString("map \$query_string \$sympress_cache_skip_query {\n    default 1;\n    \"\" 0;", $config);
+        self::assertStringNotContainsString('    ~^$ 0;', $config);
         self::assertStringContainsString('    1 $sympress_cache_original_path;', $config);
         self::assertStringContainsString('fastcgi_param QUERY_STRING $sympress_cache_query_string;', $config);
         self::assertStringContainsString('fastcgi_param REQUEST_URI $sympress_cache_request_uri;', $config);
@@ -41,6 +43,47 @@ final class NginxConfigGeneratorTest extends TestCase
         foreach (CacheProfile::cases() as $profile) {
             self::assertNotContains('sympress_consent', (new BypassRuleProvider())->rules($profile)['cookies']);
         }
+    }
+
+    public function testIncludesKeepDirectivesInTheirNginxContexts(): void
+    {
+        $generator = new NginxConfigGenerator(
+            new WordPressCacheSettings('/var/cache/nginx/wordpress'),
+            new BypassRuleProvider(),
+            new CacheKeyStrategy(),
+        );
+        $http = $generator->generate(context: 'http');
+        $server = $generator->generate(context: 'server');
+        $fastcgi = $generator->generate(context: 'fastcgi');
+
+        self::assertStringContainsString('fastcgi_cache_path /var/cache/nginx/wordpress ', $http);
+        self::assertStringContainsString('map $http_cookie $sympress_cache_skip_cookie', $http);
+        self::assertStringNotContainsString('location ~', $http);
+        self::assertStringNotContainsString('fastcgi_cache_bypass', $http);
+        self::assertStringContainsString('location ~*', $server);
+        self::assertStringNotContainsString('fastcgi_cache_path', $server);
+        self::assertStringNotContainsString('fastcgi_cache WORDPRESS', $server);
+        self::assertStringContainsString('fastcgi_cache WORDPRESS;', $fastcgi);
+        self::assertStringContainsString('fastcgi_no_cache $sympress_cache_skip $upstream_http_set_cookie', $fastcgi);
+        self::assertStringNotContainsString('fastcgi_cache_path', $fastcgi);
+        self::assertStringNotContainsString('map ', $fastcgi);
+        self::assertStringNotContainsString('location ~', $fastcgi);
+        self::assertSame($http . "\n" . $server . "\n" . $fastcgi, $generator->generate());
+        foreach (['http' => $http, 'server' => $server, 'fastcgi' => $fastcgi] as $context => $config) {
+            self::assertSame([], $generator->validate($config, $context));
+        }
+        self::assertSame(['fastcgi_cache_path'], $generator->validate($fastcgi, 'http'));
+    }
+
+    public function testItRejectsUnknownIncludeContexts(): void
+    {
+        $generator = new NginxConfigGenerator(
+            new WordPressCacheSettings('/var/cache/nginx/wordpress'),
+            new BypassRuleProvider(),
+            new CacheKeyStrategy(),
+        );
+        $this->expectException(\InvalidArgumentException::class);
+        $generator->generate(context: 'unknown');
     }
 
     public function testOnlyTrackingQueriesUseCanonicalCacheKeys(): void

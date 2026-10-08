@@ -17,7 +17,7 @@ final readonly class NginxConfigGenerator
     ) {
     }
 
-    public function generate(?CacheProfile $profile = null): string
+    public function generate(?CacheProfile $profile = null, string $context = 'all'): string
     {
         $profile ??= $this->settings->profile();
         $rules = $this->rules->rules($profile);
@@ -74,7 +74,8 @@ final readonly class NginxConfigGenerator
         ];
 
         foreach ($this->safePatterns($rules['query_allowlist']) as $pattern) {
-            $lines[] = sprintf('    ~%s 0;', $pattern);
+            // Nginx does not evaluate map regexes for empty input values.
+            $lines[] = $pattern === '^$' ? '    "" 0;' : sprintf('    ~%s 0;', $pattern);
         }
 
         $lines = [
@@ -101,7 +102,7 @@ final readonly class NginxConfigGenerator
             $lines[] = sprintf('    ~*%s 1;', $pattern);
         }
 
-        return implode("\n", [
+        $http = [
             ...$lines,
             '}',
             '',
@@ -115,6 +116,8 @@ final readonly class NginxConfigGenerator
             '    "000000" 0;',
             '}',
             '',
+        ];
+        $server = [
             '# Add inside the server block before the PHP/FastCGI location:',
             'location ~* \.(?:avif|css|eot|gif|ico|jpe?g|js|json|mjs|mp4|ogg|otf|png|svg|ttf|webm|webp|woff2?)$ {',
             '    expires 1y;',
@@ -123,6 +126,8 @@ final readonly class NginxConfigGenerator
             '    try_files $uri =404;',
             '}',
             '',
+        ];
+        $fastcgi = [
             '# Add inside the PHP/FastCGI location:',
             '# Place after include fastcgi_params so PHP receives the same canonical request as the cache key.',
             'fastcgi_param QUERY_STRING $sympress_cache_query_string;',
@@ -140,6 +145,7 @@ final readonly class NginxConfigGenerator
             'fastcgi_cache_lock_age 10s;',
             'fastcgi_cache_background_update on;',
             'fastcgi_cache_use_stale error timeout invalid_header updating http_500 http_503;',
+            '# Repeat existing server-level add_header directives here; location headers replace their inheritance.',
             'add_header X-Nginx-Cache $upstream_cache_status always;',
             'add_header X-SymPress-Cache-Skip $sympress_cache_skip always;',
             '# Optional diagnostics only: add_header X-SymPress-Cache-Key "$scheme|$request_method|$host|$request_uri" always;',
@@ -158,19 +164,28 @@ final readonly class NginxConfigGenerator
             '#     # ngx_cache_purge-compatible modules may use their own wildcard syntax.',
             '# }',
             '',
-        ]);
+        ];
+
+        return implode("\n", match ($context) {
+            'all'     => [...$http, ...$server, ...$fastcgi],
+            'http'    => $http,
+            'server'  => $server,
+            'fastcgi' => $fastcgi,
+            default   => throw new \InvalidArgumentException('Config context must be all, http, server or fastcgi.'),
+        });
     }
 
     /** @return list<string> */
-    public function validate(string $config): array
+    public function validate(string $config, string $context = 'all'): array
     {
-        $required = [
-            'fastcgi_cache_path',
-            'fastcgi_cache_key',
-            'fastcgi_cache_bypass',
-            'fastcgi_no_cache',
-            'fastcgi_cache_valid',
-        ];
+        $fastcgi = ['fastcgi_cache_key', 'fastcgi_cache_bypass', 'fastcgi_no_cache', 'fastcgi_cache_valid'];
+        $required = match ($context) {
+            'all'     => ['fastcgi_cache_path', ...$fastcgi],
+            'http'    => ['fastcgi_cache_path'],
+            'server'  => ['expires', 'try_files'],
+            'fastcgi' => $fastcgi,
+            default   => throw new \InvalidArgumentException('Config context must be all, http, server or fastcgi.'),
+        };
         $missing = [];
 
         foreach ($required as $directive) {

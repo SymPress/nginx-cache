@@ -69,6 +69,10 @@
             "Composer\\Config::disableProcessTimeout",
             "php tests/Integration/run.php",
             "php tests/Integration/query-contention.php"
+        ],
+        "tests:nginx": [
+            "Composer\\Config::disableProcessTimeout",
+            "php tests/Integration/nginx-config.php"
         ]
     },
     "config": {

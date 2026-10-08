@@ -26,6 +26,7 @@ final class ConfigCommand extends AbstractCacheCommand
     protected function configure(): void
     {
         $this
+            ->addOption('section', null, InputOption::VALUE_REQUIRED, 'Nginx include context: all, http, server or fastcgi.', 'all')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Print config diagnostics as JSON.')
             ->addOption('format', null, InputOption::VALUE_REQUIRED, 'Output format. Use json for machine output.');
     }
@@ -33,8 +34,9 @@ final class ConfigCommand extends AbstractCacheCommand
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         return $this->runCommand([], [
-            'json'   => $input->getOption('json'),
-            'format' => $input->getOption('format'),
+            'section' => $input->getOption('section'),
+            'json'    => $input->getOption('json'),
+            'format'  => $input->getOption('format'),
         ], $output);
     }
 
@@ -49,11 +51,16 @@ final class ConfigCommand extends AbstractCacheCommand
      */
     private function runCommand(array $args, array $assocArgs, ?OutputInterface $output = null): int
     {
-        $config = $this->config->generate();
-        $missing = $this->config->validate($config);
+        $context = $assocArgs['section'] ?? 'all';
+        if (!is_string($context) || !in_array($context, ['all', 'http', 'server', 'fastcgi'], true)) {
+            return $this->error('Config context must be all, http, server or fastcgi.', $output);
+        }
+        $config = $this->config->generate(context: $context);
+        $missing = $this->config->validate($config, $context);
 
         if ($this->flag($assocArgs, 'json') || ($assocArgs['format'] ?? null) === 'json') {
             $this->line($this->json([
+                'context'            => $context,
                 'profile'            => $this->settings->profile()->value,
                 'config'             => $config,
                 'missing_directives' => $missing,

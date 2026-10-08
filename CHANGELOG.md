@@ -8,6 +8,8 @@ where applicable.
 
 ## Unreleased
 
+- Match an empty query string with an exact Nginx map entry; the old `~^$` regex left ordinary anonymous page requests in `BYPASS`.
+- Export separate HTTP, server and FastCGI include files with `wp nginx-cache config --section=...`, so the cache path and bypass rules can be applied in their required Nginx contexts.
 - Keep WordPress admin notices below the Nginx Cache header instead of moving them into the onboarding banner or other settings cards.
 
 ## 0.2.0 — 2026-10-07
