@@ -105,7 +105,7 @@ final readonly class CacheKeyStrategy
 
     public function formatKey(string $scheme, string $method, string $host, string $uri): string
     {
-        return sprintf('%s|%s|%s|%s', strtolower($scheme), strtoupper($method), strtolower($host), $uri);
+        return strtr($this->template(), ['$scheme' => strtolower($scheme), '$request_method' => strtoupper($method), '$host' => strtolower($host), '$request_uri' => $uri]);
     }
 
     /** @return list<array{scheme: string, forwarded_protocol: string, method: string, host: string, uri: string}> */

@@ -29,7 +29,7 @@ final readonly class EditorActions
         if ($url === '') {
             return;
         }
-        if ($bar->get_node(WordPressCacheSettings::TEXT_DOMAIN) === null) {
+        if (!$bar->get_node(WordPressCacheSettings::TEXT_DOMAIN)) {
             $bar->add_node(['id' => WordPressCacheSettings::TEXT_DOMAIN, 'title' => __('Nginx Cache', WordPressCacheSettings::TEXT_DOMAIN)]);
         }
         $bar->add_node(['id' => 'sympress-nginx-cache-current', 'parent' => WordPressCacheSettings::TEXT_DOMAIN, 'title' => __('Purge this page', WordPressCacheSettings::TEXT_DOMAIN), 'href' => $this->actionUrl('url', $url, $url)]);
@@ -156,10 +156,14 @@ final readonly class EditorActions
         $count = count($urls);
         $successful = false;
         if ($urls !== []) {
-            $request = PurgeRequest::urls($urls, 'editor', 'admin-object', prewarm: $this->settings->prewarmEnabled());
+            $request = PurgeRequest::urls($urls, 'editor', 'admin-object', prewarm: $this->settings->prewarmEnabled(), allowFullPurge: false);
             if ($queued) {
-                $this->queue->enqueue($request);
-                $successful = true;
+                try {
+                    $this->queue->enqueue($request);
+                    $successful = true;
+                } catch (\Throwable) {
+                    $successful = false;
+                }
             } else {
                 $successful = $this->cache->purgeConfiguredPath($request)->successful;
             }

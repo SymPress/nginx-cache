@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Inspection;
 
 use SymPress\NginxCache\Config\NginxConfigGenerator;
+use SymPress\NginxCache\Integration\Polylang\PolylangIntegration;
 use SymPress\NginxCache\Layer\CacheLayerCoordinator;
+use SymPress\NginxCache\Purge\CacheWorker;
 use SymPress\NginxCache\Purge\PurgeHistoryRepository;
 use SymPress\NginxCache\Purge\PurgeQueueProcessor;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
@@ -24,6 +26,7 @@ final readonly class Diagnostics
         private TagIndexRepository $tags,
         private CacheLayerCoordinator $layers,
         private CacheMetricsReader $metrics,
+        private ?PolylangIntegration $polylang = null,
     ) {
     }
 
@@ -32,9 +35,12 @@ final readonly class Diagnostics
     {
         $status ??= $this->inspector->inspect($this->settings->cachePath());
         $host = function_exists('home_url') ? wp_parse_url(home_url(), PHP_URL_HOST) : null;
+        $heartbeat = max((int) get_option(CacheWorker::HEARTBEAT, 0), function_exists('is_multisite') && is_multisite() ? (int) get_site_option(CacheWorker::HEARTBEAT, 0) : 0);
 
         return [
             'settings'     => $this->settings->config(),
+            'worker'       => ['heartbeat' => $heartbeat, 'warning' => defined('DISABLE_WP_CRON') && DISABLE_WP_CRON && $heartbeat < time() - 300],
+            'integrations' => ['polylang' => $this->polylang?->diagnostic()],
             'status'       => [
                 'path'          => $status->path,
                 'available'     => $status->available(),

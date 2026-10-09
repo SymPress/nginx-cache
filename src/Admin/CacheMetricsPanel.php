@@ -10,6 +10,7 @@ final readonly class CacheMetricsPanel
 {
     public function enqueueStyles(): void
     {
+        wp_enqueue_style('sympress-nginx-cache-simple', plugins_url('Resources/assets/cache-simple.css', __DIR__ . '/../../nginx-cache.php'), [], (string) filemtime(__DIR__ . '/../../Resources/assets/cache-simple.css'));
         wp_enqueue_style(
             'sympress-nginx-cache-metrics',
             plugins_url('Resources/assets/cache-metrics.css', __DIR__ . '/../../nginx-cache.php'),

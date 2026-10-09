@@ -9,10 +9,12 @@ use SymPress\NginxCache\Remote\CloudflarePurgeDispatcher;
 use SymPress\NginxCache\Remote\RemotePurgeDispatcher;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Support\MutationLockUnavailable;
+use SymPress\NginxCache\Surrogate\TagIndexMaintenance;
 use SymPress\NginxCache\Surrogate\TagIndexRepository;
 use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
+use SymPress\NginxCache\Value\PurgeScope;
 use SymPress\NginxCache\Value\SideEffectOutcome;
 
 /** @phpstan-import-type QueueTask from PurgeSideEffectQueueRepository */
@@ -20,6 +22,7 @@ final readonly class PurgeSideEffectProcessor
 {
     public const string HOOK = 'sympress_nginx_cache_process_side_effects';
     public const string HEALTH_OPTION = 'sympress_nginx_cache_side_effect_health';
+    public const string SCAN_RECOVERY_PREFIX = 'sympress_nginx_cache_scan_recovery_';
 
     public function __construct(
         private WordPressCacheSettings $settings,
@@ -34,6 +37,7 @@ final readonly class PurgeSideEffectProcessor
         private ?TagIndexRepository $tagIndex = null,
         private ?PurgeHistoryRepository $history = null,
         private ?PurgeEventEmitter $events = null,
+        private ?TagIndexMaintenance $maintenance = null,
     ) {
     }
 
@@ -47,19 +51,26 @@ final readonly class PurgeSideEffectProcessor
         }
 
         try {
+            $scanRecovery = (bool) get_option(self::SCAN_RECOVERY_PREFIX . $request->scope->value, false);
             if ($this->attentionReason() === 'storage-error') {
                 // A full invalidation covers work that could not previously be enqueued.
                 $request = PurgeRequest::full('side-effect-recovery', 'queue', prewarm: $request->prewarm, scope: $request->scope);
-                $result = PurgeResult::success($result->path, 0, 0.0, reason: 'side-effect-recovery', source: 'queue')->withScope($request->scope)->withScan($result->partial, $result->unmatched, $result->cursor);
+                $result = PurgeResult::success($result->path, 0, 0.0, reason: 'side-effect-recovery', source: 'queue')->withScope($request->scope)->withScan($result->partial || $scanRecovery, $result->unmatched, $scanRecovery ? '' : $result->cursor);
             }
             if ($this->queue->push($result, $request)) {
                 $this->signal('coalesced');
             } elseif ($request->reason === 'side-effect-recovery') {
                 $this->signal('recovering');
             }
+            if ($scanRecovery) {
+                delete_option(self::SCAN_RECOVERY_PREFIX . $request->scope->value);
+            }
         } catch (\Throwable) {
             // A successful local purge must not become a failed local retry because
             // an optional external queue cannot accept follow-up work.
+            if ($result->partial) {
+                update_option(self::SCAN_RECOVERY_PREFIX . $request->scope->value, ['prewarm' => $request->prewarm], false);
+            }
             $this->signal('storage-error');
             return [];
         }
@@ -72,6 +83,7 @@ final readonly class PurgeSideEffectProcessor
     {
         $attempted = 0;
         try {
+            $this->maintenance?->prune();
             $this->queue->process(function (array $task) use (&$attempted): bool|SideEffectOutcome {
                 ++$attempted;
                 return $this->executeTask($task);
@@ -134,7 +146,21 @@ final readonly class PurgeSideEffectProcessor
 
     public function retry(): void
     {
-        if ($this->attentionReason() === 'storage-error') {
+        $scanRecovered = false;
+        foreach (PurgeScope::cases() as $scope) {
+            $recovery = get_option(self::SCAN_RECOVERY_PREFIX . $scope->value, false);
+            if (!is_array($recovery)) {
+                continue;
+            }
+            $request = PurgeRequest::full('scan-recovery', 'queue', prewarm: !empty($recovery['prewarm']), scope: $scope);
+            $result = PurgeResult::success($this->settings->cachePath(), 0, 0.0)->withScope($scope)->withScan(true, 0, '');
+            $this->queue->push($result, $request);
+            delete_option(self::SCAN_RECOVERY_PREFIX . $scope->value);
+            $scanRecovered = true;
+        }
+        if ($scanRecovered) {
+            $this->signal('recovering');
+        } elseif ($this->attentionReason() === 'storage-error') {
             $request = PurgeRequest::full('side-effect-recovery', 'queue');
             $this->queue->push(PurgeResult::success($this->settings->cachePath(), 0, 0.0), $request);
             $this->signal('recovering');
@@ -182,7 +208,9 @@ final readonly class PurgeSideEffectProcessor
                 if ($this->purger === null || $this->scope === null) {
                     return false;
                 }
-                $next = $this->purger->purgeSite($result->path, $request, $this->scope->matcher(), $result->cursor);
+                $next = $request->scope === PurgeScope::Network
+                    ? $this->purger->purgeRequest($result->path, $request)
+                    : $this->purger->purgeSite($result->path, $request, $this->scope->matcher(), $result->cursor);
                 if (!$next->successful) {
                     return false;
                 }
@@ -208,7 +236,7 @@ final readonly class PurgeSideEffectProcessor
         if ($this->shouldPrewarm($result, $request) && !in_array('prewarm', $task['completed'], true)) {
             $plans = $this->completed($task, 'prewarm-plan:');
             if ($plans === []) {
-                $plan = $this->prewarmer->plan($result->requestedUrls);
+                $plan = $this->prewarmer->plan($result->requestedUrls, withRelated: true, affectedUrls: $request->affectedUrls);
                 if ($plan->errors !== []) {
                     return false;
                 }

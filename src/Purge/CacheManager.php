@@ -9,6 +9,7 @@ use SymPress\NginxCache\Surrogate\TagIndexRepository;
 use SymPress\NginxCache\Value\PurgeMode;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
+use SymPress\NginxCache\Value\PurgeScope;
 
 final readonly class CacheManager
 {
@@ -20,12 +21,22 @@ final readonly class CacheManager
         private TagIndexRepository $tagIndex,
         private PurgeSideEffectProcessor $sideEffects,
         private ?AlternativeCachePurger $alternative = null,
+        private SiteScopeResolver $scope = new SiteScopeResolver(),
     ) {
     }
 
     public function purgeConfiguredPath(?PurgeRequest $request = null): PurgeResult
     {
         $request ??= PurgeRequest::full(prewarm: $this->settings->prewarmEnabled());
+        if ($request->scope === PurgeScope::Site && !$request->requiresFullPurge() && $this->scope->isMultisite()) {
+            $matcher = $this->scope->matcher();
+            foreach ($request->urls as $url) {
+                $parts = wp_parse_url($url);
+                if (!is_array($parts) || !$matcher->matches((string) ($parts['host'] ?? ''), (string) ($parts['path'] ?? '/'))) {
+                    return PurgeResult::failure($this->settings->cachePath(), 'The URL belongs to another site.')->withScope(PurgeScope::Site);
+                }
+            }
+        }
         $result = $this->alternative?->purge($request)
             ?? $this->purger->purgeRequest($this->settings->cachePath(), $request);
         $result = $result->withScope($request->scope);
@@ -50,12 +61,16 @@ final readonly class CacheManager
 
     private function syncTagIndex(PurgeResult $result): void
     {
-        if (!$this->settings->tagIndexEnabled()) {
+        if (!$this->settings->tagIndexEnabled() && !($result->mode === PurgeMode::Full && $result->scope === PurgeScope::Network)) {
             return;
         }
 
         if ($result->mode === PurgeMode::Full) {
-            $this->tagIndex->clear();
+            if ($result->scope === PurgeScope::Network) {
+                $this->tagIndex->clearNetwork();
+            } else {
+                $this->tagIndex->clear();
+            }
 
             return;
         }

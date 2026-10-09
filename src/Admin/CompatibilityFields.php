@@ -7,6 +7,7 @@ namespace SymPress\NginxCache\Admin;
 use SymPress\NginxCache\Config\MultisiteMapGenerator;
 use SymPress\NginxCache\Security\Capabilities;
 use SymPress\NginxCache\Settings\CompatibilitySettings;
+use SymPress\NginxCache\Settings\TagIndexSettings;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 
 final readonly class CompatibilityFields
@@ -24,7 +25,7 @@ final readonly class CompatibilityFields
             <h3><?php echo esc_html__('Purge backend', WordPressCacheSettings::TEXT_DOMAIN); ?></h3>
             <label class="sympress-field">
                 <span class="sympress-field__label"><?php echo esc_html__('Cache storage', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                <select name="<?php echo esc_attr(CompatibilitySettings::PREFIX . 'purge_backend'); ?>">
+                <select name="<?php echo esc_attr(CompatibilitySettings::PREFIX . 'purge_backend'); ?>" <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . 'purge_backend'); ?>>
                     <?php foreach (['local_files' => __('Local cache files', WordPressCacheSettings::TEXT_DOMAIN), 'redis' => __('Redis page cache', WordPressCacheSettings::TEXT_DOMAIN), 'http' => __('Nginx GET purge location', WordPressCacheSettings::TEXT_DOMAIN)] as $value => $label) : ?>
                         <option value="<?php echo esc_attr($value); ?>" <?php selected($this->settings->string('purge_backend'), $value); ?>><?php echo esc_html($label); ?></option>
                     <?php endforeach; ?>
@@ -47,7 +48,7 @@ final readonly class CompatibilityFields
                 ?>
                 <label class="sympress-field">
                     <span class="sympress-field__label"><?php echo esc_html($label); ?></span>
-                    <input type="<?php echo $numeric ? 'number' : 'text'; ?>" class="regular-text code sympress-input" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="<?php echo esc_attr($numeric ? (string) $this->settings->integer($name) : $this->settings->string($name)); ?>" />
+                    <input type="<?php echo $numeric ? 'number' : 'text'; ?>" class="regular-text code sympress-input" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="<?php echo esc_attr($numeric ? (string) $this->settings->integer($name) : $this->settings->string($name)); ?>"  <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . $name); ?>/>
                 </label>
             <?php endforeach; ?>
             <div class="sympress-field">
@@ -56,8 +57,21 @@ final readonly class CompatibilityFields
             </div>
             <?php $this->renderRules(); ?>
             <?php $this->renderTools(); ?>
+            <?php $this->renderIndexLimits(); ?>
         </div>
         <?php
+    }
+
+    private function renderIndexLimits(): void
+    {
+        $limits = new TagIndexSettings();
+        echo '<h3>' . esc_html__('Tag index limits', WordPressCacheSettings::TEXT_DOMAIN) . '</h3>';
+        foreach (['tag_urls_per_tag' => [__('URLs per tag', WordPressCacheSettings::TEXT_DOMAIN), $limits->urlsPerTag(), 5000], 'tag_max_tags' => [__('Maximum tags', WordPressCacheSettings::TEXT_DOMAIN), $limits->maxTags(), 200000], 'tag_ttl_seconds' => [__('Retention (seconds)', WordPressCacheSettings::TEXT_DOMAIN), $limits->ttl(), 604800]] as $name => [$label, $value, $maximum]) {
+            $option = CompatibilitySettings::PREFIX . $name;
+            echo '<label class="sympress-field"><span class="sympress-field__label">' . esc_html($label) . '</span><input type="number" min="1" max="' . esc_attr((string) $maximum) . '" name="' . esc_attr($option) . '" value="' . esc_attr((string) $value) . '" ';
+            FieldOwnership::attributes($option);
+            echo ' /></label>';
+        }
     }
 
     private function renderRules(): void
@@ -84,7 +98,7 @@ final readonly class CompatibilityFields
                             <tr><th scope="row"><?php echo esc_html($scopeLabel); ?></th>
                                 <?php foreach ($events as $event => $label) :
                                     $name = 'purge_' . $scope . '_' . $event; ?>
-                                    <td><label><input type="hidden" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="0" /><input type="checkbox" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="1" <?php checked($this->settings->integer($name) !== 0); ?> /><span class="screen-reader-text"><?php echo esc_html($scopeLabel . ': ' . $label); ?></span></label></td>
+                                    <td><label><input type="hidden" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="0"  <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . $name); ?>/><input type="checkbox" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="1" <?php checked($this->settings->integer($name) !== 0); ?>  <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . $name); ?>/><span class="screen-reader-text"><?php echo esc_html($scopeLabel . ': ' . $label); ?></span></label></td>
                                 <?php endforeach; ?>
                             </tr>
                         <?php endforeach; ?>
@@ -102,15 +116,15 @@ final readonly class CompatibilityFields
             <legend><h3><?php echo esc_html__('Preload and diagnostics', WordPressCacheSettings::TEXT_DOMAIN); ?></h3></legend>
             <label class="sympress-field">
                 <span class="sympress-field__label"><?php echo esc_html__('Additional purge URLs', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                <textarea class="large-text code sympress-input" rows="3" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . 'additional_purge_urls'); ?>"><?php echo esc_textarea($this->settings->string('additional_purge_urls')); ?></textarea>
+                <textarea class="large-text code sympress-input" rows="3" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . 'additional_purge_urls'); ?>" <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . 'additional_purge_urls'); ?>><?php echo esc_textarea($this->settings->string('additional_purge_urls')); ?></textarea>
                 <span><?php echo esc_html__('One same-origin URL or site path per line.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
             </label>
             <?php foreach (['prewarm_sitemap' => __('Discover preload URLs from a sitemap after full purges', WordPressCacheSettings::TEXT_DOMAIN), 'html_stamp' => __('Add a rendering timestamp, query count and duration to public HTML', WordPressCacheSettings::TEXT_DOMAIN)] as $name => $label) : ?>
-                <label class="sympress-field"><input type="hidden" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="0" /><span><input type="checkbox" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="1" <?php checked($this->settings->integer($name) !== 0); ?> /> <?php echo esc_html($label); ?></span></label>
+                <label class="sympress-field"><input type="hidden" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="0"  <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . $name); ?>/><span><input type="checkbox" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="1" <?php checked($this->settings->integer($name) !== 0); ?>  <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . $name); ?>/> <?php echo esc_html($label); ?></span></label>
             <?php endforeach; ?>
             <label class="sympress-field">
                 <span class="sympress-field__label"><?php echo esc_html__('Sitemap URL (empty uses the WordPress sitemap)', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                <input type="url" class="regular-text code sympress-input" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . 'prewarm_sitemap_url'); ?>" value="<?php echo esc_attr($this->settings->string('prewarm_sitemap_url')); ?>" placeholder="<?php echo esc_attr(home_url('/wp-sitemap.xml')); ?>" />
+                <input type="url" class="regular-text code sympress-input" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . 'prewarm_sitemap_url'); ?>" value="<?php echo esc_attr($this->settings->string('prewarm_sitemap_url')); ?>" placeholder="<?php echo esc_attr(home_url('/wp-sitemap.xml')); ?>"  <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . 'prewarm_sitemap_url'); ?>/>
             </label>
             <p><?php echo esc_html__('Enable prewarm in the Preload tab as well. Discovery accepts only this site, rejects external XML entities and redirects, and shares the existing preload URL limit.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
         </fieldset>

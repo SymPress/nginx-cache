@@ -21,11 +21,14 @@ final readonly class MigrationNotice
         }
         $plugins = (array) get_option('active_plugins', []);
         $plugins = [...$plugins, ...array_keys((array) get_site_option('active_sitewide_plugins', []))];
-        if (!in_array('nginx-helper/nginx-helper.php', $plugins, true)) {
+        $helper = in_array('nginx-helper/nginx-helper.php', $plugins, true);
+        $legacy = class_exists('NginxCache', false);
+        if (!$helper && !$legacy) {
             return;
         }
-        $url = wp_nonce_url(add_query_arg(['action' => 'sympress_nginx_cache_migrate', 'preview' => '1'], admin_url('admin-post.php')), 'sympress_nginx_cache_migrate');
-        echo '<div class="notice notice-info"><p>' . esc_html__('Nginx Helper is active. Preview its settings before importing, then deactivate the previous plugin to avoid duplicate purges.', WordPressCacheSettings::TEXT_DOMAIN) . ' <a href="' . esc_url($url) . '">' . esc_html__('Preview migration', WordPressCacheSettings::TEXT_DOMAIN) . '</a></p></div>';
+        $source = $helper ? 'nginx-helper' : 'nginx-cache';
+        $url = wp_nonce_url(add_query_arg(['action' => 'sympress_nginx_cache_migrate', 'preview' => '1', 'source' => $source], admin_url('admin-post.php')), 'sympress_nginx_cache_migrate');
+        echo '<div class="notice notice-info"><p>' . esc_html__('A previous Nginx cache plugin is active. Preview its settings before importing, then deactivate it to avoid duplicate purges.', WordPressCacheSettings::TEXT_DOMAIN) . ' <a href="' . esc_url($url) . '">' . esc_html__('Preview migration', WordPressCacheSettings::TEXT_DOMAIN) . '</a></p></div>';
     }
 
     public function handle(): void
@@ -36,8 +39,10 @@ final readonly class MigrationNotice
         check_admin_referer('sympress_nginx_cache_migrate');
         // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Exact literal comparison after nonce/capability checks.
         $preview = ($_REQUEST['preview'] ?? '') === '1';
+        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Exact literal comparison after nonce/capability checks.
+        $source = ($_REQUEST['source'] ?? '') === 'nginx-cache' ? 'nginx-cache' : 'nginx-helper';
         try {
-            $report = $this->importer->import('nginx-helper', $preview);
+            $report = $this->importer->import($source, $preview);
         } catch (\Throwable) {
             wp_die(esc_html__('Migration failed. Check the source and encryption configuration.', WordPressCacheSettings::TEXT_DOMAIN));
         }
@@ -47,7 +52,7 @@ final readonly class MigrationNotice
         }
         $body .= '</table><p>' . esc_html__('Verify the cache key and protected HTTP endpoint. Existing Nginx configuration is not modified. Deactivate Nginx Helper after verification. WooCommerce hooks are built in; Multisite map generation is in Network Admin.', WordPressCacheSettings::TEXT_DOMAIN) . '</p>';
         if ($preview) {
-            $url = wp_nonce_url(add_query_arg('action', 'sympress_nginx_cache_migrate', admin_url('admin-post.php')), 'sympress_nginx_cache_migrate');
+            $url = wp_nonce_url(add_query_arg(['action' => 'sympress_nginx_cache_migrate', 'source' => $source], admin_url('admin-post.php')), 'sympress_nginx_cache_migrate');
             $body .= '<form method="post" action="' . esc_url($url) . '"><button type="submit">' . esc_html__('Apply import', WordPressCacheSettings::TEXT_DOMAIN) . '</button></form>';
         }
         $body .= '<p><a href="' . esc_url(admin_url('tools.php?page=sympress-nginx-cache')) . '">' . esc_html__('Back to Nginx Cache', WordPressCacheSettings::TEXT_DOMAIN) . '</a></p>';

@@ -32,7 +32,15 @@ final readonly class CacheWorker
         do {
             $progress = 0;
             $nextAttempts = [];
-            $ids = $network ? $this->pending->all() : [(function_exists('get_current_blog_id') ? get_current_blog_id() : 1) => ''];
+            try {
+                $ids = $network ? $this->pending->all() : [(function_exists('get_current_blog_id') ? get_current_blog_id() : 1) => ''];
+            } catch (MutationLockUnavailable) {
+                if ($once) {
+                    break;
+                }
+                $this->clock->sleepMicroseconds((int) min(50000, max(0.0, $maxRuntime - $this->clock->elapsedSince($started)) * 1000000));
+                continue;
+            }
             foreach ($ids as $id => $generation) {
                 if ($tasks >= $maxTasks || $this->clock->elapsedSince($started) >= $maxRuntime) {
                     break;

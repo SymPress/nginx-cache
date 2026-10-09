@@ -96,12 +96,38 @@ try {
         check($dry->successful && $dry->removedEntries === 2 && $dry->unmatched === 1, 'site dry run reports only owned entries and unreadable keys');
         foreach ($before as $name => $snapshot) { $file = $root . '/a/' . str_repeat($name, 32); check($snapshot === [hash_file('sha256', $file), filemtime($file)], 'dry run preserves file ' . $name); }
         check(!file_exists($root . '/.sympress-nginx-cache.lock'), 'dry run creates no lock');
+        $endpointCalls = 0;
+        $endpointClient = new MockHttpClient(static function (string $method, string $url, array $options) use (&$endpointCalls): \Symfony\Component\HttpClient\Response\MockResponse {
+            ++$endpointCalls;
+            $headers = [];
+            foreach ($options['normalized_headers'] as $name => $values) { $headers[$name] = explode(': ', $values[0], 2)[1]; }
+            $signed = $headers['x-sympress-timestamp'] . '.full-purge.' . $headers['x-sympress-purge-scope'];
+            if ($headers['x-sympress-purge-scope'] === 'site') {
+                $signed .= '.' . $headers['x-sympress-purge-host'] . '.' . $headers['x-sympress-purge-path'] . '.' . $headers['x-sympress-site-boundaries'];
+                $metadata = json_decode(base64_decode($headers['x-sympress-site-boundaries'], true), true, flags: JSON_THROW_ON_ERROR);
+                check(in_array('/shop/child/', $metadata['paths']['example.test'], true), 'signed endpoint metadata includes nested ownership boundaries');
+            }
+            check(hash_equals('sha256=' . hash_hmac('sha256', $signed, 'fixture-endpoint-secret'), $headers['x-sympress-signature']), 'endpoint signature authenticates the complete purge scope');
+            return new \Symfony\Component\HttpClient\Response\MockResponse('', ['http_code' => 204]);
+        });
+        $network->save($settings::OPTION_FULL_PURGE_ENDPOINT, 'https://1.1.1.1/fixture-full');
+        $network->save($settings::OPTION_REMOTE_SECRET, $settings->sanitizeStoredSecret('fixture-endpoint-secret', $settings::OPTION_REMOTE_SECRET));
+        $endpoint = new FullPurgeEndpointDispatcher($endpointClient, $settings, $policy, $clock, $scope);
+        check(!$endpoint->purge(PurgeRequest::full(), $clock->highResolutionTimestamp(), $clock->timestamp())->successful && $endpointCalls === 0, 'shared full endpoint requires explicit site-scope support before any HTTP');
+        define('SYMPRESS_NGINX_CACHE_ENDPOINT_SUPPORTS_SITE_SCOPE', true);
+        check($endpoint->purge(PurgeRequest::full(dryRun: true), $clock->highResolutionTimestamp(), $clock->timestamp())->successful && $endpointCalls === 0, 'scoped endpoint dry run performs no HTTP');
+        check($endpoint->purge(PurgeRequest::full(), $clock->highResolutionTimestamp(), $clock->timestamp())->successful, 'site endpoint transmits the signed boundary contract');
+        check($endpoint->purge(PurgeRequest::full(scope: PurgeScope::Network), $clock->highResolutionTimestamp(), $clock->timestamp())->successful && $endpointCalls === 2, 'network endpoint uses a separately authenticated explicit scope');
+        $network->save($settings::OPTION_FULL_PURGE_ENDPOINT, '');
+        $network->save($settings::OPTION_REMOTE_SECRET, '');
         define('SYMPRESS_NGINX_CACHE_SCAN_FILE_BUDGET', 1);
         $index = testIndex();
         $index->install();
         $sideQueue = new PurgeSideEffectQueueRepository(testMutex(), $clock);
         $effects = new PurgeSideEffectProcessor($settings, $sideQueue, new Prewarmer($http, $settings, $policy, $clock), new CacheLayerCoordinator($settings), new RemotePurgeDispatcher($http, $settings, $policy, $clock), new CloudflarePurgeDispatcher($http, $settings, new CacheTagResolver(), $policy), $clock, $purger, $scope, $index, $history, $events);
         $manager = new CacheManager($settings, $purger, $history, $events, $index, $effects);
+        $foreign = $manager->purgeConfiguredPath(PurgeRequest::urls(['https://example.test/shop/child/page/']));
+        check(!$foreign->successful && $sideQueue->count() === 0 && is_file($root . '/a/' . str_repeat('c', 32)), 'selective site purge refuses nested-site URLs before local or remote effects');
         $result = $manager->purgeConfiguredPath(PurgeRequest::full());
         check($result->partial && $sideQueue->count() === 1, 'budget limit persists continuation without any optional provider');
         for ($i = 0; $i < 10 && $sideQueue->count() > 0; ++$i) { $clock->sleepMicroseconds(2000000); $effects->process(); }
@@ -109,6 +135,18 @@ try {
         check(!file_exists($root . '/a/' . str_repeat('b', 32)) && !file_exists($root . '/a/' . str_repeat('f', 32)), 'both owned hosts have been purged');
         foreach (['a', 'c', 'd', 'e'] as $name) { $file = $root . '/a/' . str_repeat($name, 32); check($before[$name] === [hash_file('sha256', $file), filemtime($file)], 'other sites and unknown key remain byte-identical: ' . $name); }
         check(($history->last()['partial'] ?? true) === false && ($history->last()['removed_entries'] ?? 0) === 2, 'history reports the completed cumulative site result');
+        foreach (['b', 'f'] as $name) { $fs->dumpFile($root . '/a/' . str_repeat($name, 32), "\0binary\nKEY: " . $keys[$name] . "\n"); }
+        $failQueueWrite = static function (string $sql): string {
+            if (str_contains($sql, 'sympress_nginx_cache_side_effect_queue') && preg_match('/^\s*(INSERT|UPDATE)/i', $sql)) { throw new RuntimeException('Fixture queue write failure'); }
+            return $sql;
+        };
+        add_filter('query', $failQueueWrite);
+        try { $lost = $manager->purgeConfiguredPath(PurgeRequest::full()); }
+        finally { remove_filter('query', $failQueueWrite); }
+        check($lost->partial && $effects->attentionReason() === 'storage-error' && is_array(get_option($effects::SCAN_RECOVERY_PREFIX . 'site')), 'failed continuation storage records a scoped rescan marker');
+        $effects->retry();
+        for ($i = 0; $i < 10 && $sideQueue->count() > 0; ++$i) { $clock->sleepMicroseconds(2000000); $effects->process(); }
+        check($sideQueue->count() === 0 && !is_file($root . '/a/' . str_repeat('b', 32)) && !is_file($root . '/a/' . str_repeat('f', 32)) && get_option($effects::SCAN_RECOVERY_PREFIX . 'site', false) === false, 'operator retry rescans from the beginning after continuation storage recovers');
         $pending = new NetworkPendingRepository(testMutex());
         $queue = new PurgeQueueProcessor($settings, testQueue($clock), $manager, $clock);
         $queue->enqueue(PurgeRequest::urls(['https://mapped.test/product/']));
@@ -131,6 +169,9 @@ try {
         require __DIR__ . '/v1-admin-checks.php';
         $networkResult = $manager->purgeConfiguredPath(PurgeRequest::full(scope: PurgeScope::Network));
         check($networkResult->successful && $networkResult->scope === PurgeScope::Network && !is_dir($root . '/a'), 'explicit network full purge removes the shared root entries');
+        $withoutPolylang = $config->generate();
+        require __DIR__ . '/network-worker-checks.php';
+        require __DIR__ . '/polylang-checks.php';
     } finally { restore_current_blog(); }
     echo 'Multisite integration complete: ' . $checks . ' assertions; WordPress ' . $GLOBALS['wp_version'] . '; zero external HTTP.' . PHP_EOL;
 } finally { $fs->remove($root); }

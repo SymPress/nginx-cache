@@ -48,6 +48,7 @@ final readonly class CompatibilitySettings
             'http_purge_prefix'            => '/purge',
             'additional_purge_urls'        => '',
             'prewarm_sitemap'              => 0,
+            'prewarm_affected_only'        => 0,
             'prewarm_sitemap_url'          => '',
             'html_stamp'                   => 0,
             'purge_home_edit'              => 1,

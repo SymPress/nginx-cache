@@ -1,0 +1,51 @@
+<?php
+
+declare(strict_types=1);
+
+use SymPress\NginxCache\Filesystem\CachePathValidator;
+use SymPress\NginxCache\Hook\AutomaticPurgeSubscriber;
+use SymPress\NginxCache\Key\CacheKeyStrategy;
+use SymPress\NginxCache\Layer\CacheLayerCoordinator;
+use SymPress\NginxCache\Purge\CacheFileResolver;
+use SymPress\NginxCache\Purge\CacheManager;
+use SymPress\NginxCache\Purge\CachePurger;
+use SymPress\NginxCache\Purge\CacheWorker;
+use SymPress\NginxCache\Purge\FullPurgeEndpointDispatcher;
+use SymPress\NginxCache\Purge\NetworkPendingRepository;
+use SymPress\NginxCache\Purge\Prewarmer;
+use SymPress\NginxCache\Purge\PurgeEventEmitter;
+use SymPress\NginxCache\Purge\PurgeHistoryRepository;
+use SymPress\NginxCache\Purge\PurgeQueueProcessor;
+use SymPress\NginxCache\Purge\PurgeRequestMerger;
+use SymPress\NginxCache\Purge\PurgeSideEffectProcessor;
+use SymPress\NginxCache\Purge\PurgeSideEffectQueueRepository;
+use SymPress\NginxCache\Purge\PurgeUrlCollector;
+use SymPress\NginxCache\Purge\SiteScopeResolver;
+use SymPress\NginxCache\Remote\CloudflarePurgeDispatcher;
+use SymPress\NginxCache\Remote\RemotePurgeDispatcher;
+use SymPress\NginxCache\Security\UrlPolicy;
+use SymPress\NginxCache\Settings\WordPressCacheSettings;
+use SymPress\NginxCache\Surrogate\CacheTagResolver;
+use SymPress\NginxCache\Time\CacheClock;
+use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\HttpClient\MockHttpClient;
+
+$clock = new CacheClock(new NativeClock());
+$fs = new Filesystem();
+$settings = new WordPressCacheSettings($root);
+$settings->register();
+$http = new MockHttpClient(static fn () => throw new RuntimeException('Scale tests must perform no external HTTP.'));
+$policy = new UrlPolicy();
+$tags = new CacheTagResolver();
+$scope = new SiteScopeResolver();
+$index = testIndex();
+$history = new PurgeHistoryRepository($clock);
+$events = new PurgeEventEmitter();
+$purger = new CachePurger($fs, new CachePathValidator($fs), new CacheFileResolver($settings, new CacheKeyStrategy()), new FullPurgeEndpointDispatcher($http, $settings, $policy, $clock, $scope), $clock, $scope);
+$effects = new PurgeSideEffectProcessor($settings, new PurgeSideEffectQueueRepository(testMutex(), $clock), new Prewarmer($http, $settings, $policy, $clock), new CacheLayerCoordinator($settings), new RemotePurgeDispatcher($http, $settings, $policy, $clock), new CloudflarePurgeDispatcher($http, $settings, $tags, $policy), $clock, $purger, $scope, $index, $history, $events);
+$manager = new CacheManager($settings, $purger, $history, $events, $index, $effects);
+$queue = new PurgeQueueProcessor($settings, testQueue($clock), $manager, $clock);
+$worker = new CacheWorker($queue, $effects, new NetworkPendingRepository(testMutex()), $clock);
+$collector = new PurgeUrlCollector($tags, $index, $policy, $settings);
+$subscriber = static fn (): AutomaticPurgeSubscriber => new AutomaticPurgeSubscriber($settings, $manager, $queue, $collector, new PurgeRequestMerger());

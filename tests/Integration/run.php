@@ -47,6 +47,7 @@ try {
     wp_installing(false);
     update_option('permalink_structure', '/%postname%/');
     $GLOBALS['wp_rewrite']->init();
+    require __DIR__ . '/simple-checks.php';
     $index = testIndex();
     $scope = $wpdb->get_var('SELECT DATABASE()') . ':' . $wpdb->prefix . ':' . $index::LEGACY_OPTION;
     $indexLock = 'sympress-cache:' . substr(hash('sha256', $scope), 0, 40);
@@ -68,6 +69,10 @@ try {
     $index->install();
     check($index->urlsForTags(['legacy']) === ['https://example.test/legacy/'], 'legacy index migration');
     check(get_option($index::LEGACY_OPTION, null) === null, 'legacy large option removed after successful migration');
+    $wpdb->query("ALTER TABLE {$wpdb->prefix}sympress_cache_tags DROP PRIMARY KEY, DROP COLUMN id, DROP INDEX tag_url, ADD PRIMARY KEY (tag,url_hash)");
+    update_option($index::OPTION_VERSION, '1', false);
+    $index->install();
+    check(get_option($index::OPTION_VERSION) === '3' && $index->urlsForTags(['legacy']) === ['https://example.test/legacy/'], 'legacy composite-key SQL index upgrades without losing URL mappings');
     $workers = [];
     for ($i = 0; $i < 20; ++$i) {
         $workers[] = startWorker('index', $i);
@@ -97,7 +102,16 @@ try {
         for ($j = 0; $j < 64; ++$j) { $tags[] = 'bounded-tag:' . $i . ':' . $j; }
         $index->remember('https://example.test/bounded-tags/' . $i . '/', $tags);
     }
-    check($index->stats()['tags'] <= 1000, 'global tag retention remains bounded');
+    $maintenance = new \SymPress\NginxCache\Surrogate\TagIndexMaintenance(new \SymPress\NginxCache\Settings\TagIndexSettings(), new \SymPress\NginxCache\Time\CacheClock(new \Symfony\Component\Clock\NativeClock()), testMutex());
+    check($index->stats()['tags'] > 1000, 'inserts defer global index pruning to maintenance');
+    for ($tick = 0; $tick < 200 && $index->stats()['tags'] > 1000; ++$tick) {
+        check($maintenance->prune() <= 500, 'maintenance tick deletes at most 500 rows');
+    }
+    check($index->stats()['tags'] <= 1000, 'deferred global tag retention remains bounded');
+    $index->remember('https://example.test/ttl-fixture/', ['ttl-fixture']);
+    $wpdb->query($wpdb->prepare("UPDATE {$wpdb->prefix}sympress_cache_tags SET touched=%d WHERE tag='ttl-fixture'", time() - 604801));
+    $maintenance->prune();
+    check($index->urlsForTags(['ttl-fixture']) === [], 'TTL maintenance removes expired URL mappings');
 
     $queueClock = new \Symfony\Component\Clock\MockClock('2026-10-02');
     $queue = testQueue(new \SymPress\NginxCache\Time\CacheClock($queueClock));

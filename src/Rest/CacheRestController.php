@@ -126,7 +126,11 @@ final readonly class CacheRestController
         $queued = (bool) $request->get_param('queue');
 
         if ($queued && !$purgeRequest->dryRun) {
-            $this->queue->enqueue($purgeRequest);
+            try {
+                $this->queue->enqueue($purgeRequest);
+            } catch (\Throwable) {
+                return new WP_REST_Response(['error' => 'The purge queue is unavailable. Retry later.'], 503);
+            }
 
             return new WP_REST_Response([
                 'queued'  => true,
@@ -215,7 +219,7 @@ final readonly class CacheRestController
         }
 
         if ($mode === 'urls' && $urls !== []) {
-            return PurgeRequest::urls($urls, $reason, 'rest', $dryRun, $prewarm, scope: $scope);
+            return PurgeRequest::urls($urls, $reason, 'rest', $dryRun, $prewarm, scope: $scope, allowFullPurge: current_user_can(Capabilities::PURGE_SITE));
         }
 
         return PurgeRequest::full($reason, 'rest', $dryRun, $prewarm, $scope);

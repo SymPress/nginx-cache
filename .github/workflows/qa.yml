@@ -6,6 +6,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      scale:
+        description: Run opt-in 100000-URL and 500-site benchmarks on both database engines.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -130,3 +135,70 @@ jobs:
           php tests/Integration/redis.php
           docker exec "${{ job.services.redis.id }}" redis-cli CONFIG SET requirepass sympress-redis-test-only
           NGINX_TEST_REDIS_PASSWORD=sympress-redis-test-only php tests/Integration/redis.php
+
+  scale:
+    name: Scale ${{ matrix.engine }}
+    if: github.event_name == 'workflow_dispatch' && inputs.scale
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: MariaDB
+            image: mariadb:11.8@sha256:79d59758afc91b89b120b0a8904d637f5a3b3e1c4900f29b740d6d46c72fef68
+            health: healthcheck.sh --connect --innodb_initialized
+          - engine: MySQL
+            image: mysql:8.4@sha256:80f4933e3835f9dc4d35a28ec500d7986cb4414e6c6821c5461239cb7beb8995
+            health: mysqladmin ping -h 127.0.0.1 --silent
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      database:
+        image: ${{ matrix.image }}
+        env:
+          MARIADB_ROOT_PASSWORD: sympress-db-test-only
+          MYSQL_ROOT_PASSWORD: sympress-db-test-only
+          MYSQL_ROOT_HOST: '%'
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="${{ matrix.health }}"
+          --health-interval=5s --health-timeout=3s --health-retries=20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          extensions: dom, mysqli, pdo_mysql, sodium
+          tools: composer:2.10.3
+          coverage: none
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --no-scripts
+      - name: Prepare pinned WordPress core
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location https://wordpress.org/wordpress-7.1.2.tar.gz --output "$RUNNER_TEMP/wordpress.tar.gz"
+          echo "c0c666689d66b870d8825500bb8e402ed04de52602c61a6f516c6236b8c9ac67  $RUNNER_TEMP/wordpress.tar.gz" | sha256sum --check
+          mkdir "$RUNNER_TEMP/nginx-wordpress"
+          tar -xzf "$RUNNER_TEMP/wordpress.tar.gz" --directory "$RUNNER_TEMP/nginx-wordpress" --strip-components=1
+      - name: Measure large site, tag index and network worker
+        env:
+          NGINX_TEST_DB_NAME: sympress_review_nginx_scale_ci
+          NGINX_TEST_DB_HOST: 127.0.0.1:3306
+          NGINX_TEST_DB_PASSWORD: sympress-db-test-only
+          NGINX_TEST_WORDPRESS_DIR: ${{ runner.temp }}/nginx-wordpress
+        run: |
+          composer tests:scale
+
+      - name: Print measured report
+        if: always()
+        run: cat build/scale-report.json
+      - name: Upload measured report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scale-${{ matrix.engine }}
+          path: build/scale-report.json
+          if-no-files-found: warn

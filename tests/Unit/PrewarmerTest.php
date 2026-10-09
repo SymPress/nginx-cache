@@ -18,6 +18,21 @@ use Symfony\Component\HttpClient\Response\MockResponse;
 
 final class PrewarmerTest extends TestCase
 {
+    public function testAffectedOnlyPreservesEveryChangedObjectAndExcludesRelatedArchives(): void
+    {
+        $GLOBALS['sympress_nginx_cache_test_options']['sympress_nginx_cache_prewarm_affected_only'] = 1;
+        try {
+            $prewarmer = new Prewarmer(new MockHttpClient(), new WordPressCacheSettings('/fixture'), new UrlPolicy(), new CacheClock(new MockClock()));
+            $affected = ['https://example.test/changed-a/', 'https://example.test/changed-b/'];
+            $urls = [$affected[0], 'https://example.test/archive/', 'https://example.test/', $affected[1]];
+            self::assertSame($affected, $prewarmer->plan($urls, true, $affected)->urls);
+            self::assertSame($affected, $prewarmer->plan([], true, $affected)->urls);
+            self::assertSame([], $prewarmer->plan([], true)->urls);
+        } finally {
+            unset($GLOBALS['sympress_nginx_cache_test_options']['sympress_nginx_cache_prewarm_affected_only']);
+        }
+    }
+
     public function testHttpErrorsAndRedirectsAreFailuresAndEmptyBatchesDoNotWarmHome(): void
     {
         $calls = [];
@@ -47,5 +62,21 @@ final class PrewarmerTest extends TestCase
         $command = new CommandTester(new PrewarmCommand($prewarmer, new UrlInputNormalizer($policy)));
         self::assertSame(1, $command->execute(['urls' => ['https://example.test/error/']]));
         self::assertStringContainsString('HTTP 500', $command->getDisplay());
+    }
+
+    public function testAffectedPageHomeAndArchivesArePrioritizedAndRateLimited(): void
+    {
+        $clock = new CacheClock(new MockClock('2026-10-09'));
+        $settings = new WordPressCacheSettings('/fixture');
+        $prewarmer = new Prewarmer(new MockHttpClient(new MockResponse('', ['http_code' => 200])), $settings, new UrlPolicy(), $clock);
+        $plan = $prewarmer->plan(['https://example.test/changed/', 'https://example.test/category/news/', 'https://foreign.test/'], withRelated: true);
+        self::assertSame(['https://example.test/changed/', 'https://example.test/', 'https://example.test/category/news/'], $plan->urls);
+        self::assertSame(0, $plan->priorities['https://example.test/changed/']);
+        self::assertSame(1, $plan->priorities['https://example.test/']);
+        self::assertSame(2, $plan->priorities['https://example.test/category/news/']);
+        $started = $clock->highResolutionTimestamp();
+        $prewarmer->warmUrls($plan->urls);
+        self::assertGreaterThanOrEqual(0.599, $clock->elapsedSince($started));
+        self::assertSame(5, $settings->prewarmRequestsPerSecond());
     }
 }

@@ -16,6 +16,7 @@ final readonly class NetworkConfiguration
     {
         $this->settings->register(migrateSecrets: false);
         $this->compatibility->register();
+        (new TagIndexSettings())->register();
     }
 
     public function sanitize(string $option, mixed $value): mixed

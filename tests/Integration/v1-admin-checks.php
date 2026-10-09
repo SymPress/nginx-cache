@@ -86,12 +86,27 @@ $privateId = wp_insert_post(['post_title' => 'Private fixture', 'post_status' =>
 wp_set_current_user($editor);
 check(count($editorActions->postActions([], get_post($publicId))) === 1 && $editorActions->postActions([], get_post($privateId)) === [], 'editor row actions only appear for public posts');
 check($editorActions->objectUrls('post', (string) $privateId) === [] && $editorActions->objectUrls('url', 'https://foreign.test/') === [], 'object purge refuses private posts and foreign origins');
+require_once ABSPATH . WPINC . '/class-wp-admin-bar.php';
+$originalQuery = $GLOBALS['wp_query'];
+try {
+    $GLOBALS['wp_query'] = new WP_Query(['p' => $publicId]);
+    $bar = new WP_Admin_Bar();
+    $editorActions->adminBar($bar);
+    $node = $bar->get_node('sympress-nginx-cache-current');
+    $query = [];
+    if ($node) { parse_str(wp_parse_url(html_entity_decode($node->href), PHP_URL_QUERY), $query); }
+    check($node && ($query['value'] ?? '') === wp_get_canonical_url($publicId) && wp_verify_nonce($query['_wpnonce'] ?? '', 'sympress_nginx_cache_purge_object'), 'frontend editor action uses the canonical public URL and a valid nonce');
+    $GLOBALS['wp_query'] = new WP_Query(['p' => $privateId]);
+    check($editorActions->currentUrl() === '', 'frontend action refuses private or unavailable pages');
+} finally { $GLOBALS['wp_query'] = $originalQuery; }
 wp_set_current_user(0);
 check($editorActions->postActions([], get_post($publicId)) === [] && $editorActions->bulkActions([]) === [], 'guests receive no editor purge actions');
 wp_set_current_user($admin);
 update_option(CompatibilitySettings::REDIS_PASSWORD, (new SecretCipher())->encrypt('fixture-debug-redis', CompatibilitySettings::REDIS_PASSWORD));
+update_option($settings::OPTION_CLOUDFLARE_API_TOKEN, (new SecretCipher())->encrypt('fixture-debug-cloudflare', $settings::OPTION_CLOUDFLARE_API_TOKEN));
 $health = new SiteHealth($settings, new CompatibilitySettings($settings), new \SymPress\NginxCache\Filesystem\CachePathValidator($fs), $queue, $effects, $scope, $clock, $index);
 $debug = serialize($health->debug([]));
-check(!str_contains($debug, 'fixture-debug-redis') && !str_contains($debug, SecretCipher::PREFIX) && !str_contains($debug, 'redis_password'), 'Site Health export whitelists fields and omits credentials');
+check(!str_contains($debug, 'fixture-debug-redis') && !str_contains($debug, 'fixture-debug-cloudflare') && !str_contains($debug, SecretCipher::PREFIX) && !str_contains($debug, 'redis_password'), 'Site Health export whitelists fields and omits credentials');
 check(count($health->tests([])['direct']) === 6 && $health->check('worker')['status'] === 'good', 'direct Site Health checks recognize the recent worker heartbeat');
 delete_option(CompatibilitySettings::REDIS_PASSWORD);
+delete_option($settings::OPTION_CLOUDFLARE_API_TOKEN);

@@ -29,12 +29,12 @@ final readonly class PermissionFields
         <fieldset class="sympress-form-field">
             <legend><strong><?php echo esc_html__('Purge permissions', WordPressCacheSettings::TEXT_DOMAIN); ?></strong></legend>
             <p><?php echo esc_html__('Selected roles may purge public URLs. Full purges and settings remain restricted to administrators.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
-            <input type="hidden" name="<?php echo esc_attr(Capabilities::ROLES_OPTION); ?>[]" value="" />
+            <input type="hidden" name="<?php echo esc_attr(Capabilities::ROLES_OPTION); ?>[]" value=""  <?php FieldOwnership::attributes(Capabilities::ROLES_OPTION); ?>/>
             <?php foreach (wp_roles()->get_names() as $role => $name) : ?>
                 <?php if ($role === 'administrator') {
                     continue;
                 } ?>
-                <label><input type="checkbox" name="<?php echo esc_attr(Capabilities::ROLES_OPTION); ?>[]" value="<?php echo esc_attr($role); ?>" <?php checked(in_array($role, $selected, true)); ?> /> <?php echo esc_html(translate_user_role($name)); ?></label><br />
+                <label><input type="checkbox" name="<?php echo esc_attr(Capabilities::ROLES_OPTION); ?>[]" value="<?php echo esc_attr($role); ?>" <?php checked(in_array($role, $selected, true)); ?>  <?php FieldOwnership::attributes(Capabilities::ROLES_OPTION); ?>/> <?php echo esc_html(translate_user_role($name)); ?></label><br />
             <?php endforeach; ?>
         </fieldset>
         <?php
@@ -43,7 +43,7 @@ final readonly class PermissionFields
     public function managedFields(): void
     {
         $screen = get_current_screen();
-        if ($screen === null || $screen->id !== 'settings_page_sympress-nginx-cache' || !$this->network->active()) {
+        if ($screen === null || !in_array($screen->id, ['settings_page_sympress-nginx-cache', 'tools_page_sympress-nginx-cache'], true) || !$this->network->active()) {
             return;
         }
         $managed = array_values(array_filter(array_keys(ConfigurationCatalog::defaults()), $this->network->managed(...)));

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## 1.0.0 — 2026-10-09
+
+- Default every purge to the current site, preserving nested and mapped-site cache entries on shared Multisite roots. Continue budgeted scans durably and recover interrupted continuation storage without widening scope.
+- Add separate URL, site, settings and network capabilities, delegated editor roles, nonce-protected frontend/list/bulk actions and explicit network purge confirmation.
+- Provide Network Admin settings with constant/network/site precedence, locked fields, paginated site queues, retry actions and explicit settings adoption.
+- Add a bounded site/network CLI worker with pending-site generations, concurrent-worker locks, retry visibility and heartbeat diagnostics.
+- Preview/import Nginx Helper settings, encrypt credentials, retain existing Nginx Cache options and support opt-in legacy hooks without deactivating other plugins.
+- Add six direct Site Health checks and a credential-free debug export.
+- Give fresh installations a compact settings view and previewable small/standard/large presets; preserve the advanced view on existing installations.
+- Make tag retention configurable, migrate to a compact indexed SQL schema without losing mappings and prune in 500-row maintenance batches with TTL expiry.
+- Prioritize affected URLs during prewarm, retain priorities across queue merging and enforce a configurable request rate; large-site prewarm excludes unrelated archives and sitemap discovery.
+- Integrate Polylang through guarded public APIs, translated URL/group tags, language-aware bypass rules and diagnostic guidance for query-language mode.
+- Document extension hook contracts and add automated coverage for public hooks, schema upgrades, real Nginx cache files, concurrent network workers and opt-in large-site benchmarks on MariaDB/MySQL.
+
 ## 0.3.0 — 2026-10-09
 
 - Use NGINX green accents and black action buttons, align card headings and separate section subtitles without changing the surrounding WordPress theme; constrain the purge-rule matrix on narrow screens and expose section-button state with valid ARIA.

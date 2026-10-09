@@ -61,7 +61,9 @@ final readonly class NetworkPendingRepository
             }
             $this->persist($pending);
             foreach ($rows ?? [] as $row) {
-                $db->query($db->prepare('DELETE FROM %i WHERE meta_id = %d AND meta_value = %s', $db->sitemeta, $row['meta_id'], $row['meta_value']));
+                if ($db->query($db->prepare('DELETE FROM %i WHERE meta_id = %d AND meta_value = %s', $db->sitemeta, $row['meta_id'], $row['meta_value'])) === false) {
+                    throw new \RuntimeException('Unable to acknowledge network pending markers.');
+                }
                 wp_cache_delete(get_current_network_id() . ':' . $row['meta_key'], 'site-options');
             }
             return $pending;
@@ -73,6 +75,8 @@ final readonly class NetworkPendingRepository
     {
         $this->mutex->synchronized(self::OPTION, function () use ($id, $generation, $empty): void {
             $pending = $this->read();
+            wp_cache_delete(get_current_network_id() . ':' . self::INBOX . $id, 'site-options');
+            wp_cache_delete(get_current_network_id() . ':notoptions', 'site-options');
             if (($pending[$id] ?? null) !== $generation || get_site_option(self::INBOX . $id, null) !== null || !$empty()) {
                 return;
             }
@@ -84,6 +88,10 @@ final readonly class NetworkPendingRepository
     /** @return array<int, string> */
     private function read(): array
     {
+        // Another worker/producer can update the network option in the same
+        // long-running process lifetime. Re-read it after acquiring the mutex.
+        wp_cache_delete(get_current_network_id() . ':' . self::OPTION, 'site-options');
+        wp_cache_delete(get_current_network_id() . ':notoptions', 'site-options');
         $value = get_site_option(self::OPTION, []);
         $pending = [];
         foreach (is_array($value) ? $value : [] as $id => $generation) {

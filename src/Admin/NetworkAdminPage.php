@@ -27,7 +27,12 @@ final readonly class NetworkAdminPage
 
     public function menu(): void
     {
-        add_submenu_page('settings.php', __('Nginx Cache', WordPressCacheSettings::TEXT_DOMAIN), __('Nginx Cache', WordPressCacheSettings::TEXT_DOMAIN), Capabilities::PURGE_NETWORK, 'sympress-nginx-cache', $this->render(...));
+        $hook = add_submenu_page('settings.php', __('Nginx Cache', WordPressCacheSettings::TEXT_DOMAIN), __('Nginx Cache', WordPressCacheSettings::TEXT_DOMAIN), Capabilities::PURGE_NETWORK, 'sympress-nginx-cache', $this->render(...));
+        if (!is_string($hook)) {
+            return;
+        }
+
+        add_action('load-' . $hook, (new CacheMetricsPanel())->enqueueStyles(...));
     }
 
     public function handle(): void

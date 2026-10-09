@@ -11,6 +11,17 @@ use SymPress\NginxCache\Value\PurgeRequest;
 
 final class PurgeRequestMergerTest extends TestCase
 {
+    public function testDelegatedUrlRequestsNeverBecomeFullPurgesThroughCoalescing(): void
+    {
+        $urls = array_map(static fn (int $id): string => 'https://example.test/' . $id, range(1, 1000));
+        $request = PurgeRequest::urls($urls, allowFullPurge: false);
+        $restored = PurgeRequest::fromArray($request->withPrewarm()->asDryRun()->toArray());
+        $merged = (new PurgeRequestMerger())->merge([$restored, PurgeRequest::urls(['https://example.test/extra'])]);
+        self::assertFalse($merged[0]->requiresFullPurge());
+        self::assertFalse($merged[0]->allowFullPurge);
+        self::assertCount(1001, $merged[0]->urls);
+    }
+
     public function testItMergesUrlRequestsWithoutDroppingDryRun(): void
     {
         $merged = (new PurgeRequestMerger())->merge([

@@ -48,6 +48,16 @@ services:
         tags:
             - { name: kernel.hook, hook: 'pre_update_option', method: protectUpdate, type: filter, accepted_args: 3 }
 
+    SymPress\NginxCache\Settings\UiMode:
+        tags:
+            - { name: kernel.hook, hook: 'init', method: initialize, priority: 0 }
+            - { name: kernel.hook, hook: 'admin_post_sympress_nginx_cache_ui_mode', method: handle }
+            - { name: kernel.hook, hook: 'option_page_capability_sympress_nginx_cache', method: optionsCapability, type: filter }
+
+    SymPress\NginxCache\Admin\SimpleSettingsActions:
+        tags:
+            - { name: kernel.hook, hook: 'admin_post_sympress_nginx_cache_simple', method: handle }
+
     SymPress\NginxCache\Purge\RedisPageCacheStore:
         alias: SymPress\NginxCache\Purge\PredisPageCacheStore
 
@@ -128,10 +138,32 @@ services:
         tags:
             - { name: kernel.hook, hook: 'init', method: install, priority: 5 }
 
+    SymPress\NginxCache\Settings\TagIndexSettings:
+        tags:
+            - { name: kernel.hook, hook: 'admin_init', method: register }
+
+    SymPress\NginxCache\Surrogate\TagIndexMaintenance:
+        tags:
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_prune_tags', method: prune }
+
     SymPress\NginxCache\Hook\AutomaticPurgeSubscriber:
         tags:
             - { name: kernel.hook, hook: 'init', method: register, priority: 20 }
             - { name: kernel.hook, hook: 'shutdown', method: flushPending, priority: 899000 }
+
+    SymPress\NginxCache\Integration\Polylang\PolylangIntegration:
+        tags:
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_affected_urls', method: affectedUrls, type: filter, accepted_args: 3 }
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_purge_urls', method: purgeUrls, type: filter, accepted_args: 3 }
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_post_tags', method: postTags, type: filter, accepted_args: 2 }
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_term_tags', method: termTags, type: filter, accepted_args: 2 }
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_purge_tags', method: purgeTags, type: filter, accepted_args: 3 }
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_purge_actions', method: actions, type: filter }
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_full_purge_hooks', method: fullHooks, type: filter, accepted_args: 3 }
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_bypass_cookies', method: cookies, type: filter }
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_bypass_uris', method: uris, type: filter }
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_query_allowlist', method: queryAllowlist, type: filter }
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_prewarm_urls', method: prewarmUrls, type: filter }
 
     SymPress\NginxCache\Hook\SurrogateTagSubscriber:
         tags:

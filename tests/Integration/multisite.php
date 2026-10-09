@@ -5,7 +5,8 @@ declare(strict_types=1);
 if (($argv[1] ?? '') === '--worker') {
     require __DIR__ . '/bootstrap.php';
     wp_installing(false);
-    require __DIR__ . '/multisite-checks.php';
+    try { require __DIR__ . '/multisite-checks.php'; }
+    catch (Throwable $error) { fwrite(STDERR, get_class($error) . ': ' . $error->getMessage() . PHP_EOL); exit(1); }
     exit;
 }
 
