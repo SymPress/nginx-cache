@@ -1,4 +1,6 @@
 .sympress-simple-content { padding: 24px 0; display: grid; gap: 20px; min-width: 0; }
+.sympress-simple-admin .sympress-product-logo { flex-shrink: 0; }
+.sympress-simple-admin .sympress-version { flex-shrink: 0; }
 .sympress-simple-content > * { min-width: 0; }
 .sympress-simple-content input[type="checkbox"] { accent-color: var(--sympress-brand-strong); }
 .sympress-simple-content > .sympress-card { margin: 0; }
@@ -28,4 +30,14 @@
     .sympress-simple-stats { gap: 20px; padding: 20px; }
     .sympress-simple-stats dd { font-size: 20px; }
     .sympress-simple-content { padding-top: 16px; gap: 16px; }
+}
+@media (max-width: 600px) {
+    .sympress-simple-admin .sympress-product-brand { gap: 8px; }
+    .sympress-simple-admin .sympress-product-brand h1 { font-size: 20px; }
+    .sympress-preset-preview table { min-width: 0; }
+    .sympress-preset-preview thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .sympress-preset-preview tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 8px 0; }
+    .sympress-preset-preview tbody th { grid-column: 1 / -1; }
+    .sympress-preset-preview td { min-width: 0; overflow-wrap: anywhere; }
+    .sympress-preset-preview td::before { content: attr(data-label); display: block; color: var(--sympress-muted); font-size: 12px; margin-bottom: 4px; }
 }

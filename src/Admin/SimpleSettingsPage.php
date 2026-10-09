@@ -125,7 +125,7 @@ final readonly class SimpleSettingsPage
         <div class="sympress-preset-preview" id="sympress-preset-preview"><h3><?php echo esc_html__('Änderungsvorschau', WordPressCacheSettings::TEXT_DOMAIN); ?></h3><div class="sympress-table-scroll"><table class="widefat striped"><thead><tr><th><?php echo esc_html__('Einstellung', WordPressCacheSettings::TEXT_DOMAIN); ?></th><th><?php echo esc_html__('Aktuell', WordPressCacheSettings::TEXT_DOMAIN); ?></th><th><?php echo esc_html__('Nach Anwendung', WordPressCacheSettings::TEXT_DOMAIN); ?></th></tr></thead><tbody>
             
         <?php foreach ($this->presets->preview($preset) as $row) : ?>
-<tr><th scope="row"><?php echo esc_html($labels[str_replace('sympress_nginx_cache_', '', $row['option'])] ?? $row['option']); ?></th><td><?php echo esc_html($this->displayValue($row['option'], $row['current'])); ?></td><td><?php echo esc_html($row['managed'] ? __('Vorgegeben · bleibt unverändert', WordPressCacheSettings::TEXT_DOMAIN) : $this->displayValue($row['option'], $row['value'])); ?></td></tr>
+<tr><th scope="row"><?php echo esc_html($labels[str_replace('sympress_nginx_cache_', '', $row['option'])] ?? $row['option']); ?></th><td data-label="<?php echo esc_attr__('Aktuell', WordPressCacheSettings::TEXT_DOMAIN); ?>"><?php echo esc_html($this->displayValue($row['option'], $row['current'])); ?></td><td data-label="<?php echo esc_attr__('Nach Anwendung', WordPressCacheSettings::TEXT_DOMAIN); ?>"><?php echo esc_html($row['managed'] ? __('Vorgegeben · bleibt unverändert', WordPressCacheSettings::TEXT_DOMAIN) : $this->displayValue($row['option'], $row['value'])); ?></td></tr>
         <?php endforeach; ?>
 
         </tbody></table></div>
