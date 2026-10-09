@@ -46,6 +46,7 @@ final readonly class CompatibilitySettings
             'redis_socket'                 => '',
             'redis_username'               => '',
             'http_purge_prefix'            => '/purge',
+            'additional_purge_urls'        => '',
             'prewarm_sitemap'              => 0,
             'prewarm_sitemap_url'          => '',
             'html_stamp'                   => 0,
@@ -78,14 +79,14 @@ final readonly class CompatibilitySettings
     public function string(string $name): string
     {
         $constant = 'SYMPRESS_NGINX_CACHE_' . strtoupper($name);
-        $value = defined($constant) ? constant($constant) : $this->value($name);
+        $value = LegacyConstants::value($constant) ?? $this->value($name);
         return is_string($value) ? trim($value) : '';
     }
 
     public function integer(string $name): int
     {
         $constant = 'SYMPRESS_NGINX_CACHE_' . strtoupper($name);
-        return (int) (defined($constant) ? constant($constant) : $this->value($name));
+        return (int) (LegacyConstants::value($constant) ?? $this->value($name));
     }
 
     private function value(string $name): mixed
@@ -98,8 +99,9 @@ final readonly class CompatibilitySettings
     public function redisConnection(): array
     {
         $stored = $this->options->value(self::REDIS_PASSWORD, '');
-        $password = defined('SYMPRESS_NGINX_CACHE_REDIS_PASSWORD')
-            ? (string) constant('SYMPRESS_NGINX_CACHE_REDIS_PASSWORD')
+        $constant = LegacyConstants::value('SYMPRESS_NGINX_CACHE_REDIS_PASSWORD');
+        $password = is_scalar($constant)
+            ? (string) $constant
             : $this->secrets->decrypt(is_string($stored) ? $stored : null, self::REDIS_PASSWORD);
         if ($stored !== '' && $password === null) {
             throw new \RuntimeException('Redis credentials are unavailable.');

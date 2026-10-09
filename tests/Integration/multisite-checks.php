@@ -128,6 +128,7 @@ try {
         check($drained['tasks'] === 1 && $pending->all() === [], 'network worker drains only pending site queues');
         check(!isset($drained['sites'][1]) && !isset($drained['sites'][$child]), 'idle main and child sites are never visited by the network worker');
         check(get_current_blog_id() === $shop, 'network worker restores the calling blog');
+        require __DIR__ . '/v1-admin-checks.php';
         $networkResult = $manager->purgeConfiguredPath(PurgeRequest::full(scope: PurgeScope::Network));
         check($networkResult->successful && $networkResult->scope === PurgeScope::Network && !is_dir($root . '/a'), 'explicit network full purge removes the shared root entries');
     } finally { restore_current_blog(); }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Settings;
 
+use SymPress\NginxCache\Security\SecretCipher;
+
 final readonly class NetworkConfiguration
 {
     public function __construct(private NetworkSettings $network, private WordPressCacheSettings $settings, private CompatibilitySettings $compatibility)
@@ -12,7 +14,7 @@ final readonly class NetworkConfiguration
 
     public function register(): void
     {
-        $this->settings->register();
+        $this->settings->register(migrateSecrets: false);
         $this->compatibility->register();
     }
 
@@ -22,7 +24,18 @@ final readonly class NetworkConfiguration
             throw new \InvalidArgumentException('Unknown cache setting.');
         }
         if (ConfigurationCatalog::secret($option)) {
-            return $this->settings->sanitizeStoredSecret($value, $option);
+            $value = is_string($value) ? trim($value) : '';
+            $cipher = new SecretCipher();
+            if ($value === '') {
+                return '';
+            }
+            if (str_starts_with($value, SecretCipher::PREFIX)) {
+                if ($cipher->decrypt($value, $option) === null) {
+                    throw new \RuntimeException('The stored credential cannot be decrypted.');
+                }
+                return $value;
+            }
+            return $cipher->encrypt($value, $option);
         }
         if ($option === 'sympress_nginx_cache_purge_roles') {
             $roles = array_keys(wp_roles()->get_names());

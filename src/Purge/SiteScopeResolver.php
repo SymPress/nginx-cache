@@ -11,6 +11,11 @@ final class SiteScopeResolver
     /** @var array<string, list<string>> */
     private array $pathCache = [];
 
+    public function reset(): void
+    {
+        $this->pathCache = [];
+    }
+
     public function isMultisite(): bool
     {
         return function_exists('is_multisite') && is_multisite();

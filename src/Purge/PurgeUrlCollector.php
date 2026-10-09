@@ -223,6 +223,31 @@ final readonly class PurgeUrlCollector
         return is_numeric($id) && (int) $id > 0 ? (int) $id : null;
     }
 
+    /**
+     * Collect an object's related public URLs without invoking purge filters.
+     *
+     * @return list<string>
+     */
+    public function urlsForPost(int $postId): array
+    {
+        return $this->normalizeUrls($this->postUrls($postId));
+    }
+
+    /** @return list<string> */
+    public function urlsForTerm(int $termId): array
+    {
+        return $this->normalizeUrls($this->termUrls($termId));
+    }
+
+    /**
+     * @param list<string> $urls
+     * @return list<string>
+     */
+    private function normalizeUrls(array $urls): array
+    {
+        return array_values(array_unique(array_filter(array_map($this->urls->normalizeSameOriginHttpUrl(...), $urls), static fn (string $url): bool => $url !== '')));
+    }
+
     /** @return list<string> */
     private function postUrls(int $postId): array
     {

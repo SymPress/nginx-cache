@@ -190,7 +190,7 @@ try {
     $effects->enqueue($result, $second);
     $verify(PurgeRequest::fromArray($side->all()[0]['request'])->requiresFullPurge(), 'genuine loss of an invalidation still requires full recovery');
     $effects->process();
-    $verify(($payloads[3]['purge_everything'] ?? false) === true && $side->count() === 0, 'genuine storage recovery retains its full provider purge');
+    $verify(($payloads[3]['tags'] ?? []) === ['site:1'] && $side->count() === 0, 'genuine storage recovery retains its full site provider purge');
 } finally {
     $pdo->exec('DROP DATABASE `' . $schema . '`');
 }

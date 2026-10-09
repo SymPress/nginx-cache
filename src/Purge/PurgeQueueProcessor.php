@@ -22,6 +22,9 @@ final readonly class PurgeQueueProcessor
 
     public function enqueue(PurgeRequest $request): void
     {
+        if ($request->dryRun) {
+            return;
+        }
         $this->queue->push($request);
         $this->schedule();
     }

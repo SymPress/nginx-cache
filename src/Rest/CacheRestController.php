@@ -125,7 +125,7 @@ final readonly class CacheRestController
 
         $queued = (bool) $request->get_param('queue');
 
-        if ($queued) {
+        if ($queued && !$purgeRequest->dryRun) {
             $this->queue->enqueue($purgeRequest);
 
             return new WP_REST_Response([

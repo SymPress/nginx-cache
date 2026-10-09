@@ -100,6 +100,11 @@ final readonly class CompatibilityFields
         ?>
         <fieldset>
             <legend><h3><?php echo esc_html__('Preload and diagnostics', WordPressCacheSettings::TEXT_DOMAIN); ?></h3></legend>
+            <label class="sympress-field">
+                <span class="sympress-field__label"><?php echo esc_html__('Additional purge URLs', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                <textarea class="large-text code sympress-input" rows="3" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . 'additional_purge_urls'); ?>"><?php echo esc_textarea($this->settings->string('additional_purge_urls')); ?></textarea>
+                <span><?php echo esc_html__('One same-origin URL or site path per line.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+            </label>
             <?php foreach (['prewarm_sitemap' => __('Discover preload URLs from a sitemap after full purges', WordPressCacheSettings::TEXT_DOMAIN), 'html_stamp' => __('Add a rendering timestamp, query count and duration to public HTML', WordPressCacheSettings::TEXT_DOMAIN)] as $name => $label) : ?>
                 <label class="sympress-field"><input type="hidden" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="0" /><span><input type="checkbox" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="1" <?php checked($this->settings->integer($name) !== 0); ?> /> <?php echo esc_html($label); ?></span></label>
             <?php endforeach; ?>

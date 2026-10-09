@@ -85,7 +85,7 @@ final class PurgeCommand extends AbstractCacheCommand
             return Command::FAILURE;
         }
 
-        if ($this->flag($assocArgs, 'queue')) {
+        if ($this->flag($assocArgs, 'queue') && !$request->dryRun) {
             $this->queue->enqueue($request);
             $this->success(sprintf('Queued purge request. Pending requests: %d.', $this->queue->count()), $output);
 
@@ -145,7 +145,7 @@ final class PurgeCommand extends AbstractCacheCommand
                     return Command::FAILURE;
                 }
 
-                if ($this->flag($assocArgs, 'queue')) {
+                if ($this->flag($assocArgs, 'queue') && !$request->dryRun) {
                     $this->queue->enqueue($request);
                     $this->log(sprintf('Site %d queued.', (int) $siteId), $output);
                     continue;
