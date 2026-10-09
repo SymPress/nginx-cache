@@ -231,6 +231,31 @@ FastCGI caching or create that directory.
 - Prewarm selected URLs after purge operations.
 - Expose admin dashboard actions and REST endpoints for integrations.
 
+## Tested scale
+
+Reproduce with `composer tests:scale` and the same disposable database/core
+environment variables as the integration harness. The opt-in QA dispatch input
+`scale=true` runs both MariaDB and MySQL and uploads `build/scale-report.json`.
+
+Measured locally on 2026-10-09: native Linux, PHP 8.5.4, WordPress 7.1.2,
+MariaDB 11.8.6 with a 64 MiB buffer pool; warm filesystem cache, zero external HTTP.
+Fixture seeding is excluded. Nginx entries use synthetic lightweight bodies;
+network fixtures have real site records and only the options tables used by the
+worker. Separate native Nginx tests verify real binary KEY parsing and MISS/HITs.
+
+| Workload | Measurement |
+| --- | --- |
+| 50,000 posts, 200 categories; 200 content-hook samples | 9.1 ms `save_post` p95 |
+| 10,000 cache files | 36,346 files/s site scan |
+| 200 queued edits coalesced to one purge | 136.6 coalesced tasks/min (one measured task, not a capacity bound) |
+| 100,000 indexed URLs / 200,000 rows | 158.8 ms maximum query; limits reached in 398 batches of at most 500 rows |
+| Shared root, 500 sites × 200 files | 4.0 s full site purge, retaining all other sites |
+| 500 pending site URL tasks | 11.8 s network worker |
+| 5,000 registered sites | 25.3 ms for the current 20-row Network Admin page |
+
+These measurements describe this fixture/environment, not production latency
+guarantees. Provider requests and real page rendering add their own cost.
+
 ## Nginx Helper compatibility
 
 The Cache settings tab contains backend connection settings and the purge-rule
