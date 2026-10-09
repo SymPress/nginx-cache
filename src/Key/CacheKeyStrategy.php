@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Key;
 
+use SymPress\NginxCache\Settings\OptionSource;
+
 final readonly class CacheKeyStrategy
 {
     public const string TEMPLATE = '$scheme|$request_method|$host|$request_uri';
@@ -11,13 +13,34 @@ final readonly class CacheKeyStrategy
 
     public function template(): string
     {
-        $template = self::TEMPLATE;
+        $stored = (new OptionSource())->value('sympress_nginx_cache_key_template', self::TEMPLATE);
+        $template = defined('SYMPRESS_NGINX_CACHE_KEY_TEMPLATE') ? (string) SYMPRESS_NGINX_CACHE_KEY_TEMPLATE : (is_string($stored) ? $stored : self::TEMPLATE);
 
         if (function_exists('apply_filters')) {
             $template = (string) apply_filters('sympress_nginx_cache_key_template', $template);
         }
 
         return trim($template) !== '' ? trim($template) : self::TEMPLATE;
+    }
+
+    /** @return array{scheme: string, method: string, host: string, uri: string}|null */
+    public function parseKey(string $key): ?array
+    {
+        $template = $this->template();
+        foreach (['$scheme', '$request_method', '$host', '$request_uri'] as $token) {
+            if (substr_count($template, $token) !== 1) {
+                return null;
+            }
+        }
+        $pattern = str_replace(
+            array_map(static fn (string $token): string => preg_quote($token, '~'), ['$scheme', '$request_method', '$host', '$request_uri']),
+            ['(?P<scheme>https?)', '(?P<method>GET|HEAD)', '(?P<host>[a-zA-Z0-9.-]+(?::[0-9]+)?)', '(?P<uri>/[^\\r\\n]*)'],
+            preg_quote($template, '~'),
+        );
+        if (preg_match('~\\A' . $pattern . '\\z~D', $key, $match) !== 1) {
+            return null;
+        }
+        return ['scheme' => $match['scheme'], 'method' => $match['method'], 'host' => strtolower($match['host']), 'uri' => $match['uri']];
     }
 
     /** @return list<array{scheme: string, forwarded_protocol: string, method: string, host: string, uri: string, key: string}> */

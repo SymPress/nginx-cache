@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Admin;
 
 use SymPress\NginxCache\Config\MultisiteMapGenerator;
+use SymPress\NginxCache\Security\Capabilities;
 use SymPress\NginxCache\Settings\CompatibilitySettings;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 
@@ -109,7 +110,7 @@ final readonly class CompatibilityFields
             <p><?php echo esc_html__('Enable prewarm in the Preload tab as well. Discovery accepts only this site, rejects external XML entities and redirects, and shares the existing preload URL limit.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
         </fieldset>
         <?php
-        if ($this->maps === null || !is_multisite() || !current_user_can('manage_network_options')) {
+        if ($this->maps === null || !is_multisite() || !current_user_can(Capabilities::PURGE_NETWORK)) {
             return;
         }
         ?>

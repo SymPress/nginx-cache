@@ -14,6 +14,7 @@ final readonly class CompatibilitySettings
     public function __construct(
         private WordPressCacheSettings $settings,
         private SecretCipher $secrets = new SecretCipher(),
+        private OptionSource $options = new OptionSource(),
     ) {
     }
 
@@ -34,7 +35,7 @@ final readonly class CompatibilitySettings
     }
 
     /** @return array<string, int|string> */
-    public function defaults(): array
+    public static function defaults(): array
     {
         return [
             'purge_backend'                => 'local_files',
@@ -90,13 +91,13 @@ final readonly class CompatibilitySettings
     private function value(string $name): mixed
     {
         $default = $this->defaults()[$name] ?? '';
-        return function_exists('get_option') ? get_option(self::PREFIX . $name, $default) : $default;
+        return $this->options->value(self::PREFIX . $name, $default);
     }
 
     /** @return array<string, int|string|float> */
     public function redisConnection(): array
     {
-        $stored = function_exists('get_option') ? get_option(self::REDIS_PASSWORD, '') : '';
+        $stored = $this->options->value(self::REDIS_PASSWORD, '');
         $password = defined('SYMPRESS_NGINX_CACHE_REDIS_PASSWORD')
             ? (string) constant('SYMPRESS_NGINX_CACHE_REDIS_PASSWORD')
             : $this->secrets->decrypt(is_string($stored) ? $stored : null, self::REDIS_PASSWORD);

@@ -73,6 +73,10 @@
         "tests:nginx": [
             "Composer\\Config::disableProcessTimeout",
             "php tests/Integration/nginx-config.php"
+        ],
+        "tests:multisite": [
+            "Composer\\Config::disableProcessTimeout",
+            "php tests/Integration/multisite.php"
         ]
     },
     "config": {

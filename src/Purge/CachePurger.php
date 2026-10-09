@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Purge;
 
 use SymPress\NginxCache\Filesystem\CachePathValidator;
+use SymPress\NginxCache\Key\CacheKeyStrategy;
 use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeMode;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
+use SymPress\NginxCache\Value\PurgeScope;
+use SymPress\NginxCache\Value\SiteKeyMatcher;
 use Symfony\Component\Filesystem\Exception\IOExceptionInterface;
 use Symfony\Component\Filesystem\Filesystem;
 
@@ -22,6 +25,8 @@ final readonly class CachePurger
         private CacheFileResolver $files,
         private FullPurgeEndpointDispatcher $fullPurgeEndpoint,
         private CacheClock $clock,
+        private ?SiteScopeResolver $scope = null,
+        private ?SiteScopedCacheScanner $scanner = null,
     ) {
     }
 
@@ -32,11 +37,29 @@ final readonly class CachePurger
 
     public function purgeRequest(string $path, PurgeRequest $request): PurgeResult
     {
+        return $this->purgeInScope($path, $request)->withScope($request->scope);
+    }
+
+    public function purgeSite(string $path, PurgeRequest $request, SiteKeyMatcher $matcher, string $cursor = ''): PurgeResult
+    {
+        if ($request->scope !== PurgeScope::Site || !$request->requiresFullPurge()) {
+            return PurgeResult::failure($path, 'A site scan requires a full site-scoped request.');
+        }
+        return $this->purgeInScope($path, $request, $matcher, $cursor)->withScope(PurgeScope::Site);
+    }
+
+    private function purgeInScope(string $path, PurgeRequest $request, ?SiteKeyMatcher $matcher = null, string $cursor = ''): PurgeResult
+    {
         $startedAt = $this->clock->highResolutionTimestamp();
         $createdAt = $this->clock->timestamp();
 
-        if ($request->requiresFullPurge() && $this->fullPurgeEndpoint->enabled()) {
+        if ($matcher === null && $request->requiresFullPurge() && $this->fullPurgeEndpoint->enabled()) {
             return $this->fullPurgeEndpoint->purge($request, $startedAt, $createdAt);
+        }
+
+        $scope = $this->scope ?? new SiteScopeResolver();
+        if ($matcher === null && $request->requiresFullPurge() && $request->scope === PurgeScope::Site && !$scope->isIsolated()) {
+            $matcher = $scope->matcher();
         }
 
         $validation = $this->validator->validate($path, !$request->dryRun, true);
@@ -55,7 +78,7 @@ final readonly class CachePurger
         }
 
         if ($request->dryRun && !file_exists($validation->path . '/' . self::LOCK_FILE)) {
-            return $this->purgeValidatedPath($validation->path, $request, $startedAt, $createdAt);
+            return $this->purgeValidatedPath($validation->path, $request, $startedAt, $createdAt, $matcher, $cursor);
         }
 
         $lock = $this->openLock($validation->path, $request->dryRun);
@@ -87,7 +110,7 @@ final readonly class CachePurger
                 );
             }
 
-            return $this->purgeValidatedPath($validation->path, $request, $startedAt, $createdAt);
+            return $this->purgeValidatedPath($validation->path, $request, $startedAt, $createdAt, $matcher, $cursor);
         } finally {
             flock($lock, LOCK_UN);
             // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Close the connection-local POSIX flock resource after releasing ownership.
@@ -95,10 +118,23 @@ final readonly class CachePurger
         }
     }
 
-    private function purgeValidatedPath(string $path, PurgeRequest $request, float $startedAt, int $createdAt): PurgeResult
+    private function purgeValidatedPath(string $path, PurgeRequest $request, float $startedAt, int $createdAt, ?SiteKeyMatcher $matcher = null, string $cursor = ''): PurgeResult
     {
         if (!$request->requiresFullPurge()) {
             return $this->purgeUrls($path, $request, $startedAt, $createdAt);
+        }
+
+        if ($matcher !== null) {
+            try {
+                $scanner = $this->scanner ?? new SiteScopedCacheScanner(new CacheKeyStrategy());
+                $scan = $scanner->scan($path, $matcher, $cursor);
+                if (!$request->dryRun) {
+                    $this->filesystem->remove($scan['entries']);
+                }
+                return PurgeResult::success($path, count($scan['entries']), $this->clock->elapsedSince($startedAt), reason: $request->reason, source: $request->source, dryRun: $request->dryRun, createdAt: $createdAt)->withScan($scan['partial'], $scan['unmatched'], $scan['cursor']);
+            } catch (\Throwable) {
+                return PurgeResult::failure($path, 'Site cache scan failed; no broader purge was attempted.', $this->clock->elapsedSince($startedAt), reason: $request->reason, source: $request->source, dryRun: $request->dryRun, createdAt: $createdAt);
+            }
         }
 
         $entries = $this->purgeableEntries($path);

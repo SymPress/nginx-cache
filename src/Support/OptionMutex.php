@@ -16,13 +16,14 @@ final readonly class OptionMutex
     ) {
     }
 
-    public function synchronized(string $name, callable $callback): mixed
+    public function synchronized(string $name, callable $callback, bool $network = false): mixed
     {
         // Database advisory locks have owner-aware release and no stale option/delete race.
         $database = $GLOBALS['wpdb'] ?? null;
 
         if ($database instanceof \wpdb) {
-            $scope = $database->get_var('SELECT DATABASE()') . ':' . $database->prefix . ':' . $name;
+            $prefix = $network ? $database->base_prefix . ':network:' . get_current_network_id() : $database->prefix;
+            $scope = $database->get_var('SELECT DATABASE()') . ':' . $prefix . ':' . $name;
             $key = 'sympress-cache:' . substr(hash('sha256', $scope), 0, 40);
 
             $acquired = $database->get_var($database->prepare('SELECT GET_LOCK(%s, 0)', $key));
@@ -40,7 +41,7 @@ final readonly class OptionMutex
             }
         }
 
-        $lock = $this->locks->createLock($this->normalizeName($name), self::TTL_SECONDS);
+        $lock = $this->locks->createLock($this->normalizeName(($network ? 'network:' : '') . $name), self::TTL_SECONDS);
 
         try {
             $acquired = $lock->acquire(false);

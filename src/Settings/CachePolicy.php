@@ -40,7 +40,7 @@ final readonly class CachePolicy
         $policy = [];
         foreach (self::LIMITS as $name => $bounds) {
             $constant = 'SYMPRESS_NGINX_CACHE_' . strtoupper($name);
-            $value = defined($constant) ? constant($constant) : (function_exists('get_option') ? get_option('sympress_nginx_cache_' . $name, $bounds['default']) : $bounds['default']);
+            $value = defined($constant) ? constant($constant) : (new OptionSource())->value('sympress_nginx_cache_' . $name, $bounds['default']);
             $policy[$name] = self::value($value, $bounds);
         }
         return $policy;

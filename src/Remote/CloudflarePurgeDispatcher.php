@@ -9,6 +9,7 @@ use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Surrogate\CacheTagResolver;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
+use SymPress\NginxCache\Value\PurgeScope;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 final readonly class CloudflarePurgeDispatcher
@@ -103,7 +104,9 @@ final readonly class CloudflarePurgeDispatcher
     private function payload(PurgeResult $result, PurgeRequest $request): array
     {
         if ($request->requiresFullPurge()) {
-            $payload = ['purge_everything' => true];
+            $payload = $this->siteFullPurge($request)
+                ? ['tags' => ['site:' . (function_exists('get_current_blog_id') ? (int) get_current_blog_id() : 1)]]
+                : ['purge_everything' => true];
         } else {
             $tags = array_values(
                 array_slice(
@@ -123,7 +126,13 @@ final readonly class CloudflarePurgeDispatcher
             $payload = (array) apply_filters('sympress_nginx_cache_cloudflare_payload', $payload, $result, $request);
         }
 
-        return $payload;
+        // A payload filter cannot accidentally widen a Multisite site purge to the whole zone.
+        return $this->siteFullPurge($request) ? ['tags' => ['site:' . (int) get_current_blog_id()]] : $payload;
+    }
+
+    private function siteFullPurge(PurgeRequest $request): bool
+    {
+        return $request->requiresFullPurge() && $request->scope === PurgeScope::Site && function_exists('is_multisite') && is_multisite();
     }
 
     /** @return array<string, mixed> */

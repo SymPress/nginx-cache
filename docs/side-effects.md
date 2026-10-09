@@ -7,12 +7,57 @@ request to local deletion and follow-up work.
 | --- | --- | --- | --- |
 | Content/user/term hooks | `AutomaticPurgeSubscriber` → merger → queue or `CacheManager` | None when queued; otherwise validated local/endpoint purge | Successful non-dry runs may queue prewarm, layer sync, remote purge, or Cloudflare |
 | Admin purge action | `SettingsPage` → `CacheManager` | Capability/nonce-gated local or endpoint purge | Same side-effect queue |
-| REST `/purge` | `CacheRestController` → queue or `CacheManager` | `manage_options`-gated purge; URLs must be same-origin | Same side-effect queue |
+| REST `/purge` | `CacheRestController` → queue or `CacheManager` | URL/site/network meta capability; REST nonce for cookie authentication; URLs must be same-origin | Same side-effect queue |
 | CLI `nginx-cache:purge` | `PurgeCommand` → queue or `CacheManager` | Explicit local, endpoint, or dry-run purge | Same side-effect queue |
 | CLI `nginx-cache:config --section=...` | `ConfigCommand` → `NginxConfigGenerator` | Prints HTTP/server/logging/FastCGI include text; no directory creation, file deletion, server reload or remote request | None |
 | Dashboard / diagnostics KPIs | `CacheStatusInspector`, queue/tag stores, `CacheMetricsReader` | Read-only cache scan, database counts and bounded private log read | None; Nginx writes metric records only after an operator applies the logging include |
 | Purge queue hook | `PurgeQueueProcessor` → `CacheManager` | Drains merged purge requests | Successful requests may create side-effect tasks |
-| Side-effect hook/CLI | `PurgeSideEffectProcessor` | No cache-file deletion | Prewarm, cache-layer sync, signed remote dispatch, Cloudflare dispatch |
+| Side-effect hook/CLI | `PurgeSideEffectProcessor` | Resumes partial site scans through the validated `CachePurger` lock | Prewarm, cache-layer sync, signed remote dispatch, Cloudflare dispatch after the scan finishes |
+| CLI `nginx-cache:work` | `CacheWorker` → queue processors | Runtime/task-bounded processing; network mode visits only durable pending site IDs | Same scoped side-effect queue; worker heartbeat |
+
+## Purge ownership and network settings
+
+Requests default to `site` scope, including legacy queue records. Site and
+network requests never merge. In Multisite, a shared local root is scanned under
+the existing purge lock. Only a parsed Nginx `KEY:` matching the current site's
+hosts and longest matching network path is removed. Unknown keys remain and are
+reported. Each chunk reads at most 4096 header bytes per file and scans at most
+20,000 files or ten seconds; a durable cursor resumes unfinished scans. Dry runs
+never persist a cursor. Single-site installations retain their full-root purge.
+`SYMPRESS_NGINX_CACHE_SITE_ISOLATED_PATH=true` explicitly confirms separate roots.
+
+Redis uses literal host/path prefixes for both supported key formats and parses
+every returned key again before deletion. A Multisite site full purge never
+flushes Cloudflare's entire zone: it uses `site:<blog_id>`. Global object-cache
+and OPcache flushes require explicit network scope in Multisite. Custom layer
+hooks receive the scoped result and must preserve its ownership boundaries.
+`--network --full` selects one network purge; `--network` otherwise processes
+each site separately. No failed scoped backend falls back to a broader purge.
+
+Multisite full HTTP endpoints require
+`SYMPRESS_NGINX_CACHE_ENDPOINT_SUPPORTS_SITE_SCOPE=true`. The receiver must
+enforce `X-SymPress-Purge-Scope`, `X-SymPress-Purge-Host`,
+`X-SymPress-Purge-Path`, and the base64 JSON `X-SymPress-Site-Boundaries`
+(`roots` and all same-host `paths`, longest prefix wins). The HMAC input is
+`timestamp.full-purge.scope.host.path.boundaries` for a site, or
+`timestamp.full-purge.network` for the network. Existing single-site endpoint
+signatures remain `timestamp.full-purge`. Excessive ownership metadata fails
+closed. The endpoint must reject missing boundaries or unsupported scopes.
+
+Configuration resolves constants first, then published locked network values,
+site values, network defaults, and code defaults. Existing networks retain site
+configuration until values are explicitly adopted. Cache roots, backends,
+connections, credentials, key templates and purge roles become locked once
+published. A generic option-write filter rejects site overrides of locked
+values, including forged settings submissions. Adopting network configuration
+does not replace the original site options. Meta capabilities are mapped at
+runtime and never added to role records.
+
+Network queue producers maintain generation-tagged pending markers under a
+network-wide advisory lock; contention retains durable per-site inbox markers.
+Workers clear a marker only when both queues are empty and its producer
+generation is unchanged. Queue work executes under the existing process locks;
+no network pending lock is held during purge or provider I/O.
 
 ## Safety gates
 

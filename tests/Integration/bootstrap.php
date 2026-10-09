@@ -16,8 +16,20 @@ define('DB_PASSWORD', getenv('NGINX_TEST_DB_PASSWORD') ?: '');
 define('DB_HOST', getenv('NGINX_TEST_DB_HOST') ?: '127.0.0.1:33079');
 define('DB_CHARSET', 'utf8mb4');
 define('DB_COLLATE', '');
-define('WP_HOME', 'https://example.test');
-define('WP_SITEURL', 'https://example.test');
+if (getenv('NGINX_TEST_MULTISITE') === '1') {
+    define('MULTISITE', true);
+    define('SUBDOMAIN_INSTALL', false);
+    define('DOMAIN_CURRENT_SITE', 'example.test');
+    define('PATH_CURRENT_SITE', '/');
+    define('SITE_ID_CURRENT_SITE', 1);
+    define('BLOG_ID_CURRENT_SITE', 1);
+    $_SERVER['HTTP_HOST'] = 'example.test';
+    $_SERVER['REQUEST_URI'] = '/';
+    $_SERVER['HTTPS'] = 'on';
+} else {
+    define('WP_HOME', 'https://example.test');
+    define('WP_SITEURL', 'https://example.test');
+}
 define('WP_CONTENT_DIR', sys_get_temp_dir() . '/sympress-nginx-integration-content-' . $schema);
 define('DISABLE_WP_CRON', true);
 define('WP_INSTALLING', true);

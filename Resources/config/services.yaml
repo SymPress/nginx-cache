@@ -39,6 +39,14 @@ services:
         arguments:
             $defaultPath: '%sympress_nginx_cache.default_path%'
 
+    SymPress\NginxCache\Security\Capabilities:
+        tags:
+            - { name: kernel.hook, hook: 'map_meta_cap', method: map, type: filter, accepted_args: 4 }
+
+    SymPress\NginxCache\Settings\OptionSource:
+        tags:
+            - { name: kernel.hook, hook: 'pre_update_option', method: protectUpdate, type: filter, accepted_args: 3 }
+
     SymPress\NginxCache\Purge\RedisPageCacheStore:
         alias: SymPress\NginxCache\Purge\PredisPageCacheStore
 

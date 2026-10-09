@@ -41,8 +41,9 @@ final readonly class PurgeSideEffectQueueRepository
             'completed' => [],
             'retry'     => (new QueueRetryState())->toArray(),
         ];
+        // Mark after durable insertion in both uncontended and inbox paths.
         try {
-            return $this->mutex->synchronized(
+            $coalesced = $this->mutex->synchronized(
                 self::OPTION_QUEUE,
                 function () use ($task): bool {
                     $this->ingestInbox();
@@ -54,6 +55,8 @@ final readonly class PurgeSideEffectQueueRepository
                     return $coalesced;
                 },
             );
+            (new NetworkPendingRepository($this->mutex))->mark();
+            return $coalesced;
         } catch (MutationLockUnavailable $error) {
             if (!(($GLOBALS['wpdb'] ?? null) instanceof \wpdb)) {
                 throw $error;
@@ -62,6 +65,7 @@ final readonly class PurgeSideEffectQueueRepository
             if (!add_option(self::INBOX_PREFIX . $task['id'], $task, '', false)) {
                 throw new \RuntimeException('Unable to persist the side-effect inbox task.');
             }
+            (new NetworkPendingRepository($this->mutex))->mark();
             return false;
         }
     }
@@ -211,7 +215,8 @@ final readonly class PurgeSideEffectQueueRepository
             foreach ($pending as $index => $current) {
                 if ($current['id'] === $task['id']) {
                     $current['retry'] = $task['retry'];
-                    $current['completed'] = array_values(array_unique([...$current['completed'], ...$task['completed']]));
+                    // Scan progress is owned by durable checkpoints, never by a stale reservation.
+                    $current['completed'] = $this->mergeCompleted($current['completed'], array_values(array_filter($task['completed'], static fn (string $value): bool => !str_starts_with($value, 'site-scan:'))));
                     $pending[$index] = $current;
                     if (!$this->persist($pending)) {
                         throw new \RuntimeException('Unable to persist side-effect progress.');
@@ -231,7 +236,7 @@ final readonly class PurgeSideEffectQueueRepository
                 $pending = $this->readQueue();
                 foreach ($pending as $index => $task) {
                     if ($task['id'] === $id) {
-                        $pending[$index]['completed'] = array_values(array_unique([...$task['completed'], $completed]));
+                        $pending[$index]['completed'] = $this->mergeCompleted($task['completed'], [$completed]);
                         if (!$this->persist($pending)) {
                             throw new \RuntimeException('Unable to persist side-effect progress.');
                         }
@@ -338,22 +343,33 @@ final readonly class PurgeSideEffectQueueRepository
         if (count($tasks) <= self::MAX_TASKS) {
             return $tasks;
         }
-        $latest = $tasks[array_key_last($tasks)];
-        $prewarm = false;
+        $groups = [];
         foreach ($tasks as $task) {
-            $prewarm = $prewarm || PurgeRequest::fromArray($task['request'])->prewarm;
+            $request = PurgeRequest::fromArray($task['request']);
+            $groups[$request->scope->value][] = $task;
         }
-        $result = PurgeResult::fromArray($latest['result']);
-        return [
-        [
-            'result'    => PurgeResult::success($result->path, $result->removedEntries, $result->durationSeconds, reason: 'side-effect-overflow', source: 'queue')->toArray(),
-            'request'   => PurgeRequest::full('side-effect-overflow', 'queue', prewarm: $prewarm)->toArray(),
+        $bounded = [];
+        foreach ($groups as $group) {
+            $latest = $group[array_key_last($group)];
+            $request = PurgeRequest::fromArray($latest['request']);
+            $result = PurgeResult::fromArray($latest['result']);
+            $prewarm = false;
+            $partial = false;
+            foreach ($group as $task) {
+                $prewarm = $prewarm || PurgeRequest::fromArray($task['request'])->prewarm;
+                $partial = $partial || PurgeResult::fromArray($task['result'])->partial;
+            }
+            // Restart an unfinished local scan; provider coalescing must never drop its coverage.
+            $bounded[] = [
+            'result'    => PurgeResult::success($result->path, 0, 0.0, reason: 'side-effect-overflow', source: 'queue')->withScope($request->scope)->withScan($partial, 0, '')->toArray(),
+            'request'   => PurgeRequest::full('side-effect-overflow', 'queue', prewarm: $prewarm, scope: $request->scope)->toArray(),
             'queued_at' => $this->clock->timestamp(),
             'id'        => bin2hex(random_bytes(16)),
             'completed' => [],
             'retry'     => (new QueueRetryState())->toArray(),
-        ],
-        ];
+            ];
+        }
+        return $bounded;
     }
 
     /** @return list<array{name: string, value: string, task: QueueTask}> */
@@ -468,7 +484,7 @@ final readonly class PurgeSideEffectQueueRepository
                 if ($event['completed'] === null) {
                     unset($pending[$index]);
                 } else {
-                    $pending[$index]['completed'] = array_values(array_unique([...$task['completed'], $event['completed']]));
+                    $pending[$index]['completed'] = $this->mergeCompleted($task['completed'], [$event['completed']]);
                 }
                 break;
             }
@@ -507,5 +523,21 @@ final readonly class PurgeSideEffectQueueRepository
         // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Stable legacy identity without deserialization.
         $payload = json_encode($task, JSON_INVALID_UTF8_SUBSTITUTE);
         return hash('sha256', $index . (string) $payload);
+    }
+
+    /**
+     * @param list<string> $current
+     * @param list<string> $incoming
+     * @return list<string>
+     */
+    private function mergeCompleted(array $current, array $incoming): array
+    {
+        foreach ($incoming as $value) {
+            if (str_starts_with($value, 'site-scan:')) {
+                $current = array_values(array_filter($current, static fn (string $item): bool => !str_starts_with($item, 'site-scan:')));
+            }
+            $current[] = $value;
+        }
+        return array_values(array_unique($current));
     }
 }

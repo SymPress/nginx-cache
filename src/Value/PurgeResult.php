@@ -30,6 +30,10 @@ final readonly class PurgeResult
         public array $errors = [],
         public array $sideEffects = [],
         public int $createdAt = 0,
+        public PurgeScope $scope = PurgeScope::Site,
+        public bool $partial = false,
+        public int $unmatched = 0,
+        public string $cursor = '',
     ) {
     }
 
@@ -131,6 +135,10 @@ final readonly class PurgeResult
             $this->errors,
             $this->sideEffects,
             $this->createdAt,
+            $this->scope,
+            $this->partial,
+            $this->unmatched,
+            $this->cursor,
         );
     }
 
@@ -154,6 +162,10 @@ final readonly class PurgeResult
             $this->errors,
             $sideEffects,
             $this->createdAt,
+            $this->scope,
+            $this->partial,
+            $this->unmatched,
+            $this->cursor,
         );
     }
 
@@ -188,6 +200,10 @@ final readonly class PurgeResult
             self::stringList($data['errors'] ?? []),
             is_array($data['side_effects'] ?? null) ? $data['side_effects'] : [],
             (int) ($data['created_at'] ?? 0),
+            ($data['scope'] ?? '') === PurgeScope::Network->value ? PurgeScope::Network : PurgeScope::Site,
+            (bool) ($data['partial'] ?? false),
+            max(0, (int) ($data['unmatched'] ?? 0)),
+            is_string($data['cursor'] ?? null) ? $data['cursor'] : '',
         );
     }
 
@@ -218,7 +234,21 @@ final readonly class PurgeResult
             'errors'           => $this->errors,
             'side_effects'     => $this->sideEffects,
             'created_at'       => $this->createdAt,
+            'scope'            => $this->scope->value,
+            'partial'          => $this->partial,
+            'unmatched'        => $this->unmatched,
+            'cursor'           => $this->cursor,
         ];
+    }
+
+    public function withScope(PurgeScope $scope): self
+    {
+        return self::fromArray([...$this->toArray(), 'scope' => $scope->value]);
+    }
+
+    public function withScan(bool $partial, int $unmatched, string $cursor, ?int $removedEntries = null): self
+    {
+        return self::fromArray([...$this->toArray(), 'partial' => $partial, 'unmatched' => $unmatched, 'cursor' => $cursor, 'removed_entries' => $removedEntries ?? $this->removedEntries]);
     }
 
     /** @return list<string> */

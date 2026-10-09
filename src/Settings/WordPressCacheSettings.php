@@ -49,6 +49,7 @@ final readonly class WordPressCacheSettings
         private string $defaultPath,
         private ?UrlPolicy $urlPolicy = null,
         private SecretCipher $secrets = new SecretCipher(),
+        private OptionSource $options = new OptionSource(),
     ) {
     }
 
@@ -161,7 +162,7 @@ final readonly class WordPressCacheSettings
             return false;
         }
 
-        return (bool) get_option(self::OPTION_AUTO_PURGE, false);
+        return (bool) $this->options->value(self::OPTION_AUTO_PURGE, false);
     }
 
     public function profile(): CacheProfile
@@ -270,7 +271,7 @@ final readonly class WordPressCacheSettings
     {
         foreach ([self::OPTION_REMOTE_SECRET, self::OPTION_CLOUDFLARE_API_TOKEN] as $option) {
             $stored = $this->rawOptionString($option);
-            if ($stored === null || $stored === '' || str_starts_with($stored, SecretCipher::PREFIX)) {
+            if ($this->options->managed($option) || $stored === null || $stored === '' || str_starts_with($stored, SecretCipher::PREFIX)) {
                 continue;
             }
             try {
@@ -565,40 +566,8 @@ final readonly class WordPressCacheSettings
             return false;
         }
 
-        $defaults = [
-            self::OPTION_PATH                   => '',
-            self::OPTION_AUTO_PURGE             => 0,
-            self::OPTION_PROFILE                => CacheProfile::Safe->value,
-            self::OPTION_SELECTIVE_PURGE        => 1,
-            self::OPTION_QUEUE_ENABLED          => 1,
-            self::OPTION_DEBOUNCE_SECONDS       => 10,
-            self::OPTION_PREWARM_ENABLED        => 0,
-            self::OPTION_PREWARM_URLS           => '',
-            self::OPTION_REST_ENABLED           => 1,
-            self::OPTION_TAG_INDEX_ENABLED      => 1,
-            self::OPTION_DEBUG_HEADERS_ENABLED  => 0,
-            self::OPTION_LAYER_SYNC_ENABLED     => 0,
-            self::OPTION_REMOTE_ENDPOINTS       => '',
-            self::OPTION_REMOTE_SECRET          => '',
-            self::OPTION_CLOUDFLARE_ENABLED     => 0,
-            self::OPTION_CLOUDFLARE_ZONE_ID     => '',
-            self::OPTION_CLOUDFLARE_API_TOKEN   => '',
-            self::OPTION_FULL_PURGE_MODE        => 'local_files',
-            self::OPTION_FULL_PURGE_ENDPOINT    => '',
-            self::OPTION_FULL_PURGE_HTTP_METHOD => 'PURGE',
-            self::OPTION_BYPASS_URIS            => '',
-            self::OPTION_BYPASS_COOKIES         => '',
-            self::OPTION_BYPASS_USER_AGENTS     => '',
-            self::OPTION_QUERY_ALLOWLIST        => '',
-            self::OPTION_PURGE_FEEDS            => 1,
-            self::OPTION_FEED_VARIANTS          => "feed/\nfeed/atom/\nfeed/rdf/",
-            self::OPTION_ARCHIVE_PAGE_LIMIT     => 1,
-            self::OPTION_PURGE_AMP              => 0,
-            self::OPTION_HEARTBEAT_MODE         => 'default',
-            self::OPTION_HEARTBEAT_INTERVAL     => 120,
-        ];
-        foreach ($defaults + CachePolicy::defaults() as $option => $default) {
-            $value = get_option($option, $default);
+        foreach (ConfigurationCatalog::defaults() as $option => $default) {
+            $value = $this->options->value($option, $default);
 
             if (is_int($default)) {
                 if ((int) $value !== $default) {
@@ -882,7 +851,7 @@ final readonly class WordPressCacheSettings
             return null;
         }
 
-        $value = get_option($option, '');
+        $value = $this->options->value($option, '');
 
         if (!is_string($value)) {
             return null;
@@ -920,7 +889,7 @@ final readonly class WordPressCacheSettings
             return $default;
         }
 
-        return (bool) get_option($option, $default);
+        return (bool) $this->options->value($option, $default);
     }
 
     private function integerOption(string $option, int $default): int
@@ -929,7 +898,7 @@ final readonly class WordPressCacheSettings
             return $default;
         }
 
-        return (int) get_option($option, $default);
+        return (int) $this->options->value($option, $default);
     }
 
     private function constantBool(string $constant, bool $default): bool

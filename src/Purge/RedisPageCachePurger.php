@@ -10,6 +10,8 @@ use SymPress\NginxCache\Settings\CompatibilitySettings;
 use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
+use SymPress\NginxCache\Value\PurgeScope;
+use SymPress\NginxCache\Value\SiteKeyMatcher;
 
 final readonly class RedisPageCachePurger
 {
@@ -19,10 +21,26 @@ final readonly class RedisPageCachePurger
         private UrlPolicy $urls,
         private CacheKeyStrategy $keys,
         private CacheClock $clock,
+        private ?SiteScopeResolver $scope = null,
     ) {
     }
 
     public function purge(PurgeRequest $request): PurgeResult
+    {
+        $scope = $this->scope ?? new SiteScopeResolver();
+        $matcher = $request->requiresFullPurge() && $request->scope === PurgeScope::Site && $scope->isMultisite() ? $scope->matcher() : null;
+        return $this->purgeInScope($request, $matcher)->withScope($request->scope);
+    }
+
+    public function purgeSite(PurgeRequest $request, SiteKeyMatcher $matcher): PurgeResult
+    {
+        if (!$request->requiresFullPurge() || $request->scope !== PurgeScope::Site) {
+            return PurgeResult::failure('redis', 'A site scan requires a full site-scoped request.');
+        }
+        return $this->purgeInScope($request, $matcher)->withScope(PurgeScope::Site);
+    }
+
+    private function purgeInScope(PurgeRequest $request, ?SiteKeyMatcher $matcher): PurgeResult
     {
         $started = $this->clock->highResolutionTimestamp();
         $created = $this->clock->timestamp();
@@ -39,19 +57,21 @@ final readonly class RedisPageCachePurger
             }
             $removed = 0;
             if ($request->requiresFullPurge()) {
-                $cursor = '0';
                 $batches = 0;
-                do {
-                    [$cursor, $keys] = $this->store->scan($cursor, $prefix);
-                    $keys = array_values(array_filter($keys, static fn (string $key): bool => str_starts_with($key, $prefix)));
-                    foreach (array_chunk($keys, 200) as $chunk) {
-                        $removed += $this->store->delete($chunk);
-                    }
-                    ++$batches;
-                    if ($cursor !== '0' && ($batches >= 1000 || $this->clock->elapsedSince($started) >= 15.0)) {
-                        throw new \RuntimeException('Redis scan budget exhausted.');
-                    }
-                } while ($cursor !== '0');
+                foreach ($this->scanPrefixes($prefix, $matcher) as $scanPrefix) {
+                    $cursor = '0';
+                    do {
+                        [$cursor, $keys] = $this->store->scan($cursor, $scanPrefix);
+                        $keys = array_values(array_filter($keys, fn (string $key): bool => str_starts_with($key, $prefix) && ($matcher === null || $this->matchesSite(substr($key, strlen($prefix)), $matcher))));
+                        foreach (array_chunk($keys, 200) as $chunk) {
+                            $removed += $this->store->delete($chunk);
+                        }
+                        ++$batches;
+                        if ($cursor !== '0' && ($batches >= 1000 || $this->clock->elapsedSince($started) >= 15.0)) {
+                            throw new \RuntimeException('Redis scan budget exhausted.');
+                        }
+                    } while ($cursor !== '0');
+                }
             } else {
                 foreach ($request->urls as $url) {
                     $removed += $this->store->delete($this->urlKeys($prefix, $url));
@@ -61,6 +81,34 @@ final readonly class RedisPageCachePurger
         } catch (\Throwable) {
             return PurgeResult::failure('redis', 'Redis page-cache purge failed; check configuration and server access.', $this->clock->elapsedSince($started), $request->mode, $request->reason, $request->source, $request->dryRun, createdAt: $created);
         }
+    }
+
+    /** @return list<string> */
+    private function scanPrefixes(string $prefix, ?SiteKeyMatcher $matcher): array
+    {
+        if ($matcher === null) {
+            return [$prefix];
+        }
+        $prefixes = [];
+        foreach ($matcher->roots as $host => $path) {
+            foreach (['http', 'https'] as $scheme) {
+                foreach (['GET', 'HEAD'] as $method) {
+                    $prefixes[] = $prefix . $scheme . '|' . $method . '|' . $host . '|' . $path;
+                    $prefixes[] = $prefix . $scheme . $method . $host . $path;
+                }
+            }
+        }
+        // Custom key templates may put URI before host. Prefix scan remains safe because every returned key is parsed and matched again.
+        return $this->keys->template() === CacheKeyStrategy::TEMPLATE ? array_values(array_unique($prefixes)) : [$prefix];
+    }
+
+    private function matchesSite(string $key, SiteKeyMatcher $matcher): bool
+    {
+        $parsed = $this->keys->parseKey($key);
+        if ($parsed === null && preg_match('~^(https?)(GET|HEAD)([a-zA-Z0-9.-]+)(/[^\r\n]*)$~D', $key, $match) === 1) {
+            $parsed = ['host' => $match[3], 'uri' => $match[4]];
+        }
+        return $parsed !== null && $matcher->matches($parsed['host'], $parsed['uri']);
     }
 
     /** @return list<string> */
