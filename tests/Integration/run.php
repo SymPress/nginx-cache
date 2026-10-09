@@ -109,6 +109,22 @@ try {
     $wpdb->query($wpdb->prepare("UPDATE {$wpdb->prefix}sympress_cache_tags SET touched=%d WHERE tag='global-old' OR url='https://example.test/global-recent/old/'", time() - 200));
     $wpdb->query($wpdb->prepare("UPDATE {$wpdb->prefix}sympress_cache_tags SET touched=%d WHERE url='https://example.test/global-recent/new/'", time() + 10));
     check($index->stats()['tags'] > 1000, 'inserts defer global index pruning to maintenance');
+    $index->remember('https://example.test/rollback-expired/', ['rollback-expired']);
+    $wpdb->query($wpdb->prepare("UPDATE {$wpdb->prefix}sympress_cache_tags SET touched=%d WHERE tag='rollback-expired'", time() - 604801));
+    $cursorBefore = get_option($maintenance::CURSOR, '');
+    $fault = static function (string $query): string {
+        if (str_starts_with($query, 'DELETE FROM') && str_contains($query, 'sympress_cache_tags') && str_contains($query, 'WHERE tag IN')) {
+            return 'DELETE FROM `' . $GLOBALS['wpdb']->prefix . 'sympress_cache_tags` WHERE fixture_missing_column=1';
+        }
+        return $query;
+    };
+    $previousErrors = $wpdb->suppress_errors(true);
+    add_filter('query', $fault);
+    $rolledBack = false;
+    try { $maintenance->prune(); } catch (RuntimeException) { $rolledBack = true; }
+    finally { remove_filter('query', $fault); $wpdb->suppress_errors($previousErrors); }
+    check($rolledBack && (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}sympress_cache_tags WHERE tag='rollback-expired'") === 1, 'failed global maintenance rolls back preceding TTL deletion');
+    check(get_option($maintenance::CURSOR, '') === $cursorBefore && (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}sympress_cache_tags WHERE tag='bounded'") === 55, 'failed maintenance restores retention rows and cached cursor');
     for ($tick = 0; $tick < 200 && $index->stats()['tags'] > 1000; ++$tick) {
         check($maintenance->prune() <= 500, 'maintenance tick deletes at most 500 rows');
     }
