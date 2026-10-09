@@ -196,6 +196,7 @@ jobs:
             status=$(docker inspect --format='{{.State.Health.Status}}' "$SCALE_DB_CONTAINER")
             if [ "$status" = healthy ]; then break; fi
             if [ "$status" = unhealthy ]; then docker logs "$SCALE_DB_CONTAINER"; exit 1; fi
+            echo "Waiting for disposable database (${attempt}/60)"
             sleep 2
           done
           if [ "$status" != healthy ]; then docker logs "$SCALE_DB_CONTAINER"; exit 1; fi
