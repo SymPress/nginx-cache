@@ -14,6 +14,27 @@ request to local deletion and follow-up work.
 | Purge queue hook | `PurgeQueueProcessor` → `CacheManager` | Drains merged purge requests | Successful requests may create side-effect tasks |
 | Side-effect hook/CLI | `PurgeSideEffectProcessor` | Resumes partial site scans through the validated `CachePurger` lock | Prewarm, cache-layer sync, signed remote dispatch, Cloudflare dispatch after the scan finishes |
 | CLI `nginx-cache:work` | `CacheWorker` → queue processors | Runtime/task-bounded processing; network mode visits only durable pending site IDs | Same scoped side-effect queue; worker heartbeat |
+| Anonymous cacheable response | `SurrogateTagSubscriber` → `TagIndexRepository` | Registers canonical URL/tag mappings; fresh identical mappings issue no writes | Schedules tag maintenance |
+| Tag-maintenance cron / side-effect tick | `TagIndexMaintenance` | Deletes at most 500 index rows per call under the index mutation lock, enforcing TTL and retention limits | Schedules another maintenance event; no filesystem deletion or HTTP |
+
+## Tag retention, setup and translated requests
+
+Tag retention no longer prunes on each insertion. Maintenance uses the current
+site's table and limits; global tag age is its newest URL timestamp. The
+`sympress_nginx_cache_prune_tags` event runs independently of purge work and is
+cleared on explicit data-deleting uninstall. Dry runs never invoke maintenance.
+With WP-Cron disabled, idle sites require an external cron runner for due events.
+
+Simple-mode changes and preset application require the manage capability and a
+nonce. Preview is read-only; applying a preset changes only writable settings,
+respecting constant and network ownership. Neither action modifies Nginx files,
+reloads the server, starts a purge or installs system cron.
+
+When Polylang is available, public translation APIs expand the existing content
+URL/tag collection. Language changes request the existing site-scoped full
+purge. The same URL validation, capability, queue and dry-run boundaries apply.
+Prewarm planning orders affected URLs before home, archives and sitemap entries;
+the configured rate limit applies within each site's bounded worker task.
 
 ## Purge ownership and network settings
 

@@ -591,12 +591,15 @@ try {
     require __DIR__ . '/optimization.php';
     // Default retention and explicit data removal, without filesystem operations.
     $index->remember('https://example.test/retention-fixture/', ['retained']);
+    wp_schedule_single_event(time() + 120, 'fixture_unrelated_cron');
     \SymPress\NginxCache\Support\UninstallPolicy::removeCurrentSiteData();
     check($index->stats()['urls'] > 0 && $queue->count() === 1, 'default uninstall retains index and queue');
+    check(wp_next_scheduled(\SymPress\NginxCache\Surrogate\TagIndexMaintenance::HOOK) !== false, 'default uninstall retains tag-maintenance scheduling');
     update_option($settings::OPTION_DELETE_ON_UNINSTALL, 1);
     \SymPress\NginxCache\Support\UninstallPolicy::removeCurrentSiteData();
     check(get_option($settings::OPTION_AUTO_PURGE, null) === null && get_option($index::OPTION_VERSION, null) === null, 'explicit uninstall removes owned settings');
     check($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->prefix . $index::TABLE_SUFFIX)) === null, 'explicit uninstall drops only owned index table');
+    check(wp_next_scheduled(\SymPress\NginxCache\Surrogate\TagIndexMaintenance::HOOK) === false && wp_next_scheduled('fixture_unrelated_cron') !== false, 'explicit uninstall clears tag maintenance and preserves unrelated cron');
     echo 'Integration complete: ' . $checks . ' assertions; real WordPress ' . $GLOBALS['wp_version'] . '/' . $pdo->query('SELECT VERSION()')->fetchColumn() . '; zero external HTTP.' . PHP_EOL;
 } finally {
     foreach ($workers ?? [] as $worker) {
