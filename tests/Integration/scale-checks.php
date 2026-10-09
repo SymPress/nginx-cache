@@ -57,7 +57,6 @@ $root = sys_get_temp_dir() . '/sympress-scale-cache-' . bin2hex(random_bytes(8))
 require __DIR__ . '/scale-runtime.php';
 $report = ['environment' => ['php' => PHP_VERSION, 'wordpress' => $GLOBALS['wp_version'], 'database' => $wpdb->get_var('SELECT VERSION()'), 'os' => PHP_OS_FAMILY, 'external_http' => 0], 'method' => 'Native PHP/WordPress; disposable DB; warm filesystem cache; lightweight synthetic Nginx entries. Timings exclude fixture seeding. Network sites have real WP_Site records and minimal options tables; theme/content tables are not needed by the measured worker.'];
 $report['environment']['innodb_buffer_pool_bytes'] = (int) $wpdb->get_var('SELECT @@GLOBAL.innodb_buffer_pool_size');
-$report['environment']['initial_buffer_pool_bytes'] = getenv('NGINX_TEST_SCALE_INITIAL_BUFFER_POOL_BYTES') ?: $report['environment']['innodb_buffer_pool_bytes'];
 $report['environment']['innodb_flush_log_at_trx_commit'] = (int) $wpdb->get_var('SELECT @@GLOBAL.innodb_flush_log_at_trx_commit');
 $report['environment']['sync_binlog'] = (int) $wpdb->get_var('SELECT @@GLOBAL.sync_binlog');
 try {

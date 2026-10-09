@@ -151,22 +151,24 @@ jobs:
             health: mysqladmin ping -h 127.0.0.1 --silent
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    services:
-      database:
-        image: ${{ matrix.image }}
-        env:
-          MARIADB_ROOT_PASSWORD: sympress-db-test-only
-          MYSQL_ROOT_PASSWORD: sympress-db-test-only
-          MYSQL_ROOT_HOST: '%'
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="${{ matrix.health }}"
-          --health-interval=5s --health-timeout=3s --health-retries=20
+    env:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      SCALE_DB_CONTAINER: sympress-nginx-scale-${{ github.run_id }}-${{ github.run_attempt }}
+      SCALE_DB_IMAGE: ${{ matrix.image }}
+      SCALE_DB_HEALTH: ${{ matrix.health }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+      - name: Start disposable database with fixed memory budget
+        run: |
+          docker run --detach --name "$SCALE_DB_CONTAINER" \
+            --env MARIADB_ROOT_PASSWORD=sympress-db-test-only \
+            --env MYSQL_ROOT_PASSWORD=sympress-db-test-only \
+            --env MYSQL_ROOT_HOST=% --publish 127.0.0.1:3306:3306 \
+            --health-cmd="$SCALE_DB_HEALTH" \
+            --health-interval=5s --health-timeout=3s --health-retries=20 \
+            "$SCALE_DB_IMAGE" --innodb-buffer-pool-size=512M
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.5'
@@ -185,12 +187,18 @@ jobs:
           tar -xzf "$RUNNER_TEMP/wordpress.tar.gz" --directory "$RUNNER_TEMP/nginx-wordpress" --strip-components=1
       - name: Measure large site, tag index and network worker
         env:
-          NGINX_TEST_SCALE_BUFFER_POOL_MB: '512'
           NGINX_TEST_DB_NAME: sympress_review_nginx_scale_ci
           NGINX_TEST_DB_HOST: 127.0.0.1:3306
           NGINX_TEST_DB_PASSWORD: sympress-db-test-only
           NGINX_TEST_WORDPRESS_DIR: ${{ runner.temp }}/nginx-wordpress
         run: |
+          for attempt in $(seq 1 60); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' "$SCALE_DB_CONTAINER")
+            if [ "$status" = healthy ]; then break; fi
+            if [ "$status" = unhealthy ]; then docker logs "$SCALE_DB_CONTAINER"; exit 1; fi
+            sleep 2
+          done
+          if [ "$status" != healthy ]; then docker logs "$SCALE_DB_CONTAINER"; exit 1; fi
           composer tests:scale
 
       - name: Print measured report
@@ -203,3 +211,9 @@ jobs:
           name: scale-${{ matrix.engine }}
           path: build/scale-report.json
           if-no-files-found: warn
+      - name: Stop disposable database
+        if: always()
+        run: |
+          if docker inspect "$SCALE_DB_CONTAINER" >/dev/null 2>&1; then
+            docker rm --force "$SCALE_DB_CONTAINER"
+          fi

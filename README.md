@@ -237,10 +237,10 @@ Reproduce with `composer tests:scale` and the same disposable database/core
 environment variables as the integration harness. The opt-in QA dispatch input
 `scale=true` runs both MariaDB and MySQL and uploads `build/scale-report.json`.
 CI gives both disposable database engines a fixed 512 MiB InnoDB buffer pool;
-the report records initial/effective memory, durability settings and the ten
-slowest data queries. Locally no server setting changes by default. The optional
-`NGINX_TEST_SCALE_BUFFER_POOL_MB` override (64..2048 MiB) refuses servers with
-other user schemas and restores the original size after the test.
+the report records effective memory, durability settings and the ten slowest
+data queries. CI supplies the budget when starting its dedicated Docker
+container. The harness never changes database server settings; local runs use
+the server configuration prepared by the operator.
 
 Measured locally on 2026-10-09: native Linux, PHP 8.5.4, WordPress 7.1.2,
 MariaDB 11.8.6 with a 64 MiB buffer pool; warm filesystem cache, zero external HTTP.
