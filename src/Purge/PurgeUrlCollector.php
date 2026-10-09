@@ -137,7 +137,39 @@ final readonly class PurgeUrlCollector
             && !str_ends_with($tag, ':collection') && !in_array($tag, ['posts', 'archive', 'comments'], true)));
     }
 
-    public function requiresFullPurge(string $hook): bool
+    /**
+     * @param array<mixed> $arguments
+     * @return list<string>
+     */
+    public function affectedUrls(string $hook, array $arguments): array
+    {
+        $urls = [];
+        $post = $this->postId($hook, $arguments);
+        $ids = array_values(array_unique([...($post !== null ? [$post] : []), ...$this->publicProductIds($hook, $arguments), ...$this->commentPostIds($hook, $arguments)]));
+        foreach ($ids as $id) {
+            $url = function_exists('get_permalink') ? get_permalink($id) : false;
+            if (!is_string($url)) {
+                continue;
+            }
+
+            $urls[] = $url;
+        }
+        foreach ($this->termIds($hook, $arguments) as $id) {
+            $url = function_exists('get_term_link') ? get_term_link($id) : false;
+            if (!is_string($url)) {
+                continue;
+            }
+
+            $urls[] = $url;
+        }
+        if (function_exists('apply_filters')) {
+            $urls = (array) apply_filters('sympress_nginx_cache_affected_urls', $urls, $hook, $arguments);
+        }
+        return array_values(array_unique(array_filter(array_map($this->urls->normalizeSameOriginHttpUrl(...), array_filter($urls, is_string(...))))));
+    }
+
+    /** @param array<mixed> $arguments */
+    public function requiresFullPurge(string $hook, array $arguments = []): bool
     {
         $fullHooks = [
             'switch_theme',
@@ -150,7 +182,7 @@ final readonly class PurgeUrlCollector
         ];
 
         if (function_exists('apply_filters')) {
-            $fullHooks = (array) apply_filters('sympress_nginx_cache_full_purge_hooks', $fullHooks);
+            $fullHooks = (array) apply_filters('sympress_nginx_cache_full_purge_hooks', $fullHooks, $hook, $arguments);
         }
 
         return in_array($hook, $fullHooks, true);
@@ -160,7 +192,7 @@ final readonly class PurgeUrlCollector
     public function postId(string $hook, array $arguments): ?int
     {
         $postHooks = [
-        'publish_post', 'save_post', 'edit_post', 'before_delete_post', 'deleted_post',
+        'publish_post', 'save_post', 'pll_save_post', 'edit_post', 'before_delete_post', 'deleted_post',
             'delete_post', 'trashed_post', 'untrashed_post', 'transition_post_status', 'delete_attachment', 'clean_post_cache',
         ];
         if (!in_array($hook, $postHooks, true)) {

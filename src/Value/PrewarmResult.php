@@ -10,11 +10,13 @@ final readonly class PrewarmResult
      * @param list<string> $urls
      * @param array<string, int|string> $responses
      * @param list<string> $errors
+     * @param array<string, int> $priorities
      */
     public function __construct(
         public array $urls,
         public array $responses,
         public array $errors = [],
+        public array $priorities = [],
     ) {
     }
 

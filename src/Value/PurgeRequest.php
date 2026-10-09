@@ -9,6 +9,7 @@ final readonly class PurgeRequest
     /**
      * @param list<string> $urls
      * @param list<string> $tags
+     * @param list<string> $affectedUrls
      */
     public function __construct(
         public PurgeMode $mode = PurgeMode::Full,
@@ -19,23 +20,28 @@ final readonly class PurgeRequest
         public bool $prewarm = false,
         public array $tags = [],
         public PurgeScope $scope = PurgeScope::Site,
+        public bool $allowFullPurge = true,
+        public array $affectedUrls = [],
     ) {
     }
 
+    /** @param list<string> $affectedUrls */
     public static function full(
         string $reason = 'manual',
         string $source = 'runtime',
         bool $dryRun = false,
         bool $prewarm = false,
         PurgeScope $scope = PurgeScope::Site,
+        array $affectedUrls = [],
     ): self {
 
-        return new self(PurgeMode::Full, [], $reason, $source, $dryRun, $prewarm, scope: $scope);
+        return new self(PurgeMode::Full, [], $reason, $source, $dryRun, $prewarm, scope: $scope, affectedUrls: $affectedUrls);
     }
 
     /**
      * @param list<string> $urls
      * @param list<string> $tags
+     * @param list<string> $affectedUrls
      */
     public static function urls(
         array $urls,
@@ -45,6 +51,8 @@ final readonly class PurgeRequest
         bool $prewarm = false,
         array $tags = [],
         PurgeScope $scope = PurgeScope::Site,
+        bool $allowFullPurge = true,
+        array $affectedUrls = [],
     ): self {
 
         $urls = array_values(
@@ -65,6 +73,8 @@ final readonly class PurgeRequest
             $prewarm,
             $tags,
             $scope,
+            $allowFullPurge,
+            $affectedUrls,
         );
     }
 
@@ -84,6 +94,8 @@ final readonly class PurgeRequest
             $enabled,
             $this->tags,
             $this->scope,
+            $this->allowFullPurge,
+            $this->affectedUrls,
         );
     }
 
@@ -98,6 +110,8 @@ final readonly class PurgeRequest
             $this->prewarm,
             $this->tags,
             $this->scope,
+            $this->allowFullPurge,
+            $this->affectedUrls,
         );
     }
 
@@ -105,14 +119,16 @@ final readonly class PurgeRequest
     public function toArray(): array
     {
         return [
-            'mode'    => $this->mode->value,
-            'urls'    => $this->urls,
-            'reason'  => $this->reason,
-            'source'  => $this->source,
-            'dry_run' => $this->dryRun,
-            'prewarm' => $this->prewarm,
-            'tags'    => $this->tags,
-            'scope'   => $this->scope->value,
+            'mode'             => $this->mode->value,
+            'urls'             => $this->urls,
+            'reason'           => $this->reason,
+            'source'           => $this->source,
+            'dry_run'          => $this->dryRun,
+            'prewarm'          => $this->prewarm,
+            'tags'             => $this->tags,
+            'scope'            => $this->scope->value,
+            'allow_full_purge' => $this->allowFullPurge,
+            'affected_urls'    => $this->affectedUrls,
         ];
     }
 
@@ -148,6 +164,8 @@ final readonly class PurgeRequest
             (bool) ($data['prewarm'] ?? false),
             $tags,
             ($data['scope'] ?? '') === PurgeScope::Network->value ? PurgeScope::Network : PurgeScope::Site,
+            (bool) ($data['allow_full_purge'] ?? true),
+            array_values(array_filter(is_array($data['affected_urls'] ?? null) ? $data['affected_urls'] : [], is_string(...))),
         );
     }
 }

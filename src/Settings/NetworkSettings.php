@@ -4,10 +4,18 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Settings;
 
+use SymPress\NginxCache\Support\OptionMutex;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
+
 final readonly class NetworkSettings
 {
     public const string PREFIX = 'sympress_nginx_cache_network_';
     public const string POLICIES = self::PREFIX . 'policies';
+
+    public function __construct(private OptionMutex $mutex = new OptionMutex(new LockFactory(new InMemoryStore())))
+    {
+    }
 
     public function active(): bool
     {
@@ -56,10 +64,19 @@ final readonly class NetworkSettings
         if (!$this->active()) {
             throw new \LogicException('Network settings require Multisite.');
         }
-        update_site_option($this->name($option), $value);
-        $policies = get_site_option(self::POLICIES, []);
-        $policies = is_array($policies) ? $policies : [];
-        $policies[$option] = $this->mandatory($option) || $policy === 'network' ? 'network' : 'default';
-        update_site_option(self::POLICIES, $policies);
+        $this->mutex->synchronized(self::POLICIES, function () use ($option, $value, $policy): void {
+            wp_cache_delete(get_current_network_id() . ':' . self::POLICIES, 'site-options');
+            wp_cache_delete(get_current_network_id() . ':' . $this->name($option), 'site-options');
+            wp_cache_delete(get_current_network_id() . ':notoptions', 'site-options');
+            if (!update_site_option($this->name($option), $value) && get_site_option($this->name($option)) !== $value) {
+                throw new \RuntimeException('Unable to save the network cache setting.');
+            }
+            $policies = get_site_option(self::POLICIES, []);
+            $policies = is_array($policies) ? $policies : [];
+            $policies[$option] = $this->mandatory($option) || $policy === 'network' ? 'network' : 'default';
+            if (!update_site_option(self::POLICIES, $policies) && get_site_option(self::POLICIES) !== $policies) {
+                throw new \RuntimeException('Unable to save network cache policies.');
+            }
+        }, network: true);
     }
 }

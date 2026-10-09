@@ -248,7 +248,9 @@ final readonly class PurgeResult
 
     public function withScan(bool $partial, int $unmatched, string $cursor, ?int $removedEntries = null): self
     {
-        return self::fromArray([...$this->toArray(), 'partial' => $partial, 'unmatched' => $unmatched, 'cursor' => $cursor, 'removed_entries' => $removedEntries ?? $this->removedEntries]);
+        $removed = $removedEntries ?? $this->removedEntries;
+        $message = $this->successful ? sprintf('%s%s %d cache entries.', $this->dryRun ? 'Dry run: ' : '', $partial ? 'Scan incomplete; matched' : 'Purged', $removed) : $this->message;
+        return self::fromArray([...$this->toArray(), 'message' => $message, 'partial' => $partial, 'unmatched' => $unmatched, 'cursor' => $cursor, 'removed_entries' => $removed]);
     }
 
     /** @return list<string> */

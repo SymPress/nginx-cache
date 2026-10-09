@@ -112,6 +112,9 @@ final class PurgeCommand extends AbstractCacheCommand
         if ($result->missedUrls !== []) {
             $this->warning(sprintf('%d requested URLs had no matching cache file.', count($result->missedUrls)), $output);
         }
+        if ($result->partial) {
+            $this->warning($result->dryRun ? 'Dry run reached the scan budget; the matching count is incomplete.' : 'Site scan is incomplete. Run nginx-cache work and inspect queue status for completion.', $output);
+        }
 
         if ($result->prewarm !== null) {
             $this->log(sprintf(

@@ -112,6 +112,9 @@ final readonly class CachePathValidator
                 }
 
                 if (strlen($name) === 32 && ctype_xdigit($name)) {
+                    if ($checked >= 64) {
+                        return null;
+                    }
                     continue;
                 }
 

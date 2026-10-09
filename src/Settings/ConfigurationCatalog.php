@@ -44,6 +44,9 @@ final readonly class ConfigurationCatalog
             WordPressCacheSettings::OPTION_HEARTBEAT_INTERVAL     => 120,
             'sympress_nginx_cache_purge_roles'                    => [],
             'sympress_nginx_cache_key_template'                   => CacheKeyStrategy::TEMPLATE,
+            'sympress_nginx_cache_tag_urls_per_tag'               => 50,
+            'sympress_nginx_cache_tag_max_tags'                   => 1000,
+            'sympress_nginx_cache_tag_ttl_seconds'                => CachePolicy::values()['inactive_seconds'],
         ];
         foreach (CompatibilitySettings::defaults() as $name => $value) {
             $defaults[CompatibilitySettings::PREFIX . $name] = $value;

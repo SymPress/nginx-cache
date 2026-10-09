@@ -29,7 +29,20 @@ final readonly class OptionSource
 
     public function protectUpdate(mixed $value, string $option, mixed $oldValue): mixed
     {
+        // options.php also updates registered fields absent from the submitted view.
+        // Preserve those fields when a compact or duplicated section is submitted.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- options.php verifies the nonce; this guard only preserves missing values.
+        if (isset($_POST['option_page']) && $_POST['option_page'] === 'sympress_nginx_cache' && array_key_exists($option, ConfigurationCatalog::defaults()) && !array_key_exists($option, $_POST)) {
+            return $oldValue;
+        }
         return $this->network->managed($option) ? $oldValue : $value;
+    }
+
+    public function locked(string $option): bool
+    {
+        $names = ['nginx_cache_path' => 'PATH', 'nginx_auto_purge' => 'AUTO_PURGE', 'sympress_nginx_cache_queue_enabled' => 'QUEUE', 'sympress_nginx_cache_prewarm_enabled' => 'PREWARM'];
+        $suffix = $names[$option] ?? strtoupper(str_replace('sympress_nginx_cache_', '', $option));
+        return $this->managed($option) || LegacyConstants::value('SYMPRESS_NGINX_CACHE_' . $suffix) !== null;
     }
 
     public function managed(string $option): bool

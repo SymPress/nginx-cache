@@ -7,6 +7,11 @@ FastCGI, proxy and uWSGI cache setups running on the SymPress kernel. It
 combines admin tools, WP-CLI commands, automatic purge hooks, surrogate tag
 tracking, queue processing, diagnostics and generated Nginx configuration.
 
+Version 1 adds safe Multisite scope, Network Admin, delegated editor actions,
+a network worker, migration, Site Health, compact setup, scalable tag retention
+and Polylang integration. See [operation and configuration](docs/operations.md),
+[migration](docs/migration.md) and [the extension API](docs/extending.md).
+
 ## Package
 
 ```bash
@@ -47,7 +52,9 @@ resets its retry budget and schedules processing. See the
 
 New purge events use 64 bounded merge slots plus at most four overflow markers
 for the dry-run/prewarm combinations. When selective work exceeds the URL budget,
-it becomes a full invalidation rather than losing URLs. Retry exhaustion does
+it becomes a full invalidation within its original scope rather than losing URLs.
+URL-only editor/REST requests retain selective targets and fail explicitly if
+the durable inbox is unavailable; they never escalate to a site purge. Retry exhaustion does
 not scan the inbox on content hooks. Existing legacy inbox rows are ingested in
 batches of at most 68 after processing or an explicit retry resumes.
 

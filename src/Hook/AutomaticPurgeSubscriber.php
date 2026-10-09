@@ -173,7 +173,7 @@ final class AutomaticPurgeSubscriber
     /** @param array<mixed> $arguments */
     private function request(string $hook, array $arguments): ?PurgeRequest
     {
-        if ($this->urls->requiresFullPurge($hook)) {
+        if ($this->urls->requiresFullPurge($hook, $arguments)) {
             return PurgeRequest::full($hook, 'wordpress-hook', false, $this->settings->prewarmEnabled());
         }
 
@@ -185,9 +185,9 @@ final class AutomaticPurgeSubscriber
             return null;
         }
         if ($this->isImportRequest() || !$this->settings->selectivePurgeEnabled()) {
-            return PurgeRequest::full($hook, 'wordpress-hook', false, $this->settings->prewarmEnabled());
+            return PurgeRequest::full($hook, 'wordpress-hook', false, $this->settings->prewarmEnabled(), affectedUrls: $this->urls->affectedUrls($hook, $arguments));
         }
-        return PurgeRequest::urls($urls, $hook, 'wordpress-hook', false, $prewarm, $tags);
+        return PurgeRequest::urls($urls, $hook, 'wordpress-hook', false, $prewarm, $tags, affectedUrls: $this->urls->affectedUrls($hook, $arguments));
     }
 
     private function isAutosaveOrRevision(mixed $postId): bool

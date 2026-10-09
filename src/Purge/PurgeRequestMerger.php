@@ -36,6 +36,8 @@ final readonly class PurgeRequestMerger
         $prewarm = false;
         $dryRun = true;
         $requiresFull = false;
+        $allowFull = true;
+        $affected = [];
 
         foreach ($items as $item) {
             $reasons[] = $item->reason;
@@ -43,6 +45,8 @@ final readonly class PurgeRequestMerger
             $prewarm = $prewarm || $item->prewarm;
             $dryRun = $dryRun && $item->dryRun;
             $tags = [...$tags, ...$item->tags];
+            $allowFull = $allowFull && $item->allowFullPurge;
+            $affected = [...$affected, ...$item->affectedUrls];
 
             if ($item->mode === PurgeMode::Full) {
                 $requiresFull = true;
@@ -58,15 +62,15 @@ final readonly class PurgeRequestMerger
         $urls = array_values(array_unique($urls));
         $tags = array_values(array_unique($tags));
 
-        if ($requiresFull || count($urls) > self::MAX_URLS) {
-            return [PurgeRequest::full($reasons, $sources, $dryRun, $prewarm, $scope)];
+        if ($requiresFull || (count($urls) > self::MAX_URLS && $allowFull)) {
+            return [PurgeRequest::full($reasons, $sources, $dryRun, $prewarm, $scope, array_values(array_unique($affected)))];
         }
 
         if ($urls === []) {
             return [];
         }
 
-        return [PurgeRequest::urls($urls, $reasons, $sources, $dryRun, $prewarm, $tags, $scope)];
+        return [PurgeRequest::urls($urls, $reasons, $sources, $dryRun, $prewarm, $tags, $scope, $allowFull, array_values(array_unique($affected)))];
     }
 
     /** @param list<string> $values */

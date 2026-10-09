@@ -3,6 +3,12 @@
 declare(strict_types=1);
 
 namespace {
+    if (!function_exists('wp_cache_delete')) {
+        function wp_cache_delete(string $key, string $group = ''): bool { return true; }
+    }
+    if (!function_exists('get_current_network_id')) {
+        function get_current_network_id(): int { return 1; }
+    }
     if (!function_exists('is_multisite')) {
         function is_multisite(): bool { return (bool) ($GLOBALS['sympress_test_multisite'] ?? false); }
     }

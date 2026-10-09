@@ -2,6 +2,8 @@
 
 /.github export-ignore
 /tests export-ignore
+/bin export-ignore
+/build export-ignore
 /docs export-ignore
 /prototypes export-ignore
 /AGENTS.md export-ignore

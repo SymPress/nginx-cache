@@ -28,7 +28,7 @@ jobs:
     with:
       artifact_attestation: false
       artifact_extra_excludes: >-
-        /tests /docs /prototypes /AGENTS.md /CONTRIBUTING.md /qa-adoption.json
+        /tests /docs /prototypes /bin /build /AGENTS.md /CONTRIBUTING.md /qa-adoption.json
         /phpcs.xml /phpcs.xml.dist /phpstan.neon /phpstan.neon.dist
         /phpunit*.xml* /.php-cs-fixer* /.gitignore /.gitattributes
         /composer.review*.json /composer.review*.lock

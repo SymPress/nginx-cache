@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SymPress\NginxCache\Purge;
 
 use SymPress\NginxCache\Security\UrlPolicy;
+use SymPress\NginxCache\Settings\CompatibilitySettings;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PrewarmResult;
@@ -31,30 +32,57 @@ final readonly class Prewarmer
         return new PrewarmResult($result->urls, $result->responses, [...$plan->errors, ...$result->errors]);
     }
 
-    /** @param list<string> $urls */
-    public function plan(array $urls = []): PrewarmResult
+    /**
+     * @param list<string> $urls
+     * @param list<string> $affectedUrls
+     */
+    public function plan(array $urls = [], bool $withRelated = false, array $affectedUrls = []): PrewarmResult
     {
-        $discover = $urls === [] && ($this->sitemaps?->enabled() ?? false);
+        if ($withRelated && $urls === [] && $affectedUrls !== []) {
+            $urls = $affectedUrls;
+        }
+        $affectedUrls = $affectedUrls !== [] ? $affectedUrls : array_slice($urls, 0, 1);
+        $home = function_exists('home_url') ? home_url('/') : '';
+        $affectedOnly = (new CompatibilitySettings($this->settings))->integer('prewarm_affected_only') !== 0;
+        if ($withRelated && $affectedOnly) {
+            $urls = array_values(array_intersect($urls, $affectedUrls));
+            if ($urls === []) {
+                return new PrewarmResult([], [], []);
+            }
+        }
+        $discover = $urls === [] && ($this->sitemaps?->enabled() ?? false) && !($withRelated && $affectedOnly);
+        if ($withRelated && $urls !== [] && !$affectedOnly && $home !== '') {
+            $urls[] = $home;
+        }
         $urls = $urls !== [] ? $urls : $this->settings->prewarmUrls();
         $errors = [];
+        $priorities = [];
+        foreach ($urls as $url) {
+            $priorities[$url] = in_array($url, $affectedUrls, true) ? 0 : ($url === $home ? 1 : 2);
+        }
         if ($discover && $this->sitemaps !== null) {
             $discovered = $this->sitemaps->discover(max(0, $this->settings->maxPrewarmUrls() - count($urls)));
+            foreach ($discovered['urls'] as $url) {
+                $priorities[$url] ??= 3;
+            }
             $urls = [...$urls, ...$discovered['urls']];
             $errors = $discovered['errors'];
         }
-        $urls = array_values(
-            array_slice(
-                array_unique(
-                    array_filter(
-                        array_map($this->urls->normalizeSameOriginHttpUrl(...), $urls),
-                        static fn (string $url): bool => $url !== '',
-                    ),
-                ),
-                0,
-                $this->settings->maxPrewarmUrls(),
-            ),
-        );
-        return new PrewarmResult($urls, [], $errors);
+        $normalizedPriorities = [];
+        foreach ($priorities as $url => $priority) {
+            $normalized = $this->urls->normalizeSameOriginHttpUrl($url);
+            if ($normalized === '') {
+                continue;
+            }
+            $normalizedPriorities[$normalized] = min($priority, $normalizedPriorities[$normalized] ?? $priority);
+        }
+        $priorities = $normalizedPriorities;
+        $urls = array_values(array_unique(array_filter(array_map($this->urls->normalizeSameOriginHttpUrl(...), $urls), static fn (string $url): bool => $url !== '')));
+        if ($withRelated) {
+            usort($urls, static fn (string $left, string $right): int => ($priorities[$left] ?? 2) <=> ($priorities[$right] ?? 2));
+        }
+        $urls = array_slice($urls, 0, $this->settings->maxPrewarmUrls());
+        return new PrewarmResult($urls, [], $errors, array_intersect_key($priorities, array_flip($urls)));
     }
 
     /** @param list<string> $urls */

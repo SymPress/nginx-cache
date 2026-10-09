@@ -22,6 +22,11 @@ remote endpoint unless that side effect is explicitly in scope.
 
 ## Invariants
 
+- No dependency on private packages. Third-party integrations use documented
+  hooks from `docs/extending.md`; only optional built-in support for public
+  plugins (WooCommerce, Polylang) is allowed, guarded by
+  `function_exists`/`class_exists`.
+
 - Validate the cache path and same-origin/remote URLs before any side effect.
 - Keep filesystem deletion behind `CachePurger` and its exclusive lock.
 - Dry runs must not delete, mutate the tag index, queue side effects, or call HTTP.

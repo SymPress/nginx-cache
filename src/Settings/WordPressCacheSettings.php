@@ -612,13 +612,18 @@ final readonly class WordPressCacheSettings
 
     public function prewarmDelayMilliseconds(): int
     {
-        $value = $this->constantInt('SYMPRESS_NGINX_CACHE_PREWARM_DELAY_MS', 100);
+        $value = $this->constantInt('SYMPRESS_NGINX_CACHE_PREWARM_DELAY_MS', 200);
 
         if (function_exists('apply_filters')) {
             $value = (int) apply_filters('sympress_nginx_cache_prewarm_delay_ms', $value);
         }
 
-        return max(0, min(5000, $value));
+        return max((int) ceil(1000 / $this->prewarmRequestsPerSecond()), min(5000, $value));
+    }
+
+    public function prewarmRequestsPerSecond(): int
+    {
+        return max(1, min(100, $this->constantInt('SYMPRESS_NGINX_CACHE_PREWARM_RPS', 5)));
     }
 
     /** @return list<string> */
@@ -662,6 +667,7 @@ final readonly class WordPressCacheSettings
             'debounce_seconds' => $this->debounceSeconds(),
             'prewarm'          => $this->prewarmEnabled(),
             'prewarm_limit'    => $this->maxPrewarmUrls(),
+            'prewarm_rps'      => $this->prewarmRequestsPerSecond(),
             'cache_policy'     => CachePolicy::values(),
             'rest'             => $this->restEnabled(),
             'levels'           => $this->cacheLevels(),

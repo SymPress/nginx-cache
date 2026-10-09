@@ -259,6 +259,9 @@ final readonly class PurgeQueueRepository
         for ($attempt = 0; $attempt < 3; ++$attempt) {
             $previous = $db->get_var($db->prepare('SELECT option_value FROM %i WHERE option_name = %s', $db->options, $name));
             $oldRequest = is_string($previous) ? $this->decodeInbox($previous) : null;
+            if (is_string($previous) && $oldRequest === null && !$request->allowFullPurge) {
+                throw new \RuntimeException('The URL purge inbox requires operator repair. Retry later.');
+            }
             $merged = is_string($previous) && $oldRequest === null
                 ? PurgeRequest::full('Invalid inbox payload', 'queue', $request->dryRun, $request->prewarm, $request->scope)
                 : ($this->merger->merge([$request, ...($oldRequest !== null ? [$oldRequest] : [])])[0] ?? $request);
@@ -277,6 +280,9 @@ final readonly class PurgeQueueRepository
         }
         // Bounded contention fallback: an atomic full-purge marker covers all
         // affected URLs. Separate flags preserve dry-run and prewarm semantics.
+        if (!$request->allowFullPurge) {
+            throw new \RuntimeException('The URL purge inbox is busy. Retry later.');
+        }
         $name = self::OPTION_QUEUE . '_inbox_overflow_' . $request->scope->value . '_' . (int) $request->dryRun . (int) $request->prewarm;
         $full = PurgeRequest::full('Inbox contention', 'queue', $request->dryRun, $request->prewarm, $request->scope);
         $value = maybe_serialize([...$full->toArray(), '_id' => bin2hex(random_bytes(16))]);

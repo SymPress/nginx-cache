@@ -61,10 +61,12 @@
             "@tests"
         ],
         "qa": [
+            "@check:hooks",
             "@cs",
             "@static-analysis",
             "@tests"
         ],
+        "check:hooks": "php bin/check-hooks.php",
         "tests:integration": [
             "Composer\\Config::disableProcessTimeout",
             "php tests/Integration/run.php",
@@ -72,11 +74,16 @@
         ],
         "tests:nginx": [
             "Composer\\Config::disableProcessTimeout",
-            "php tests/Integration/nginx-config.php"
+            "php tests/Integration/nginx-config.php",
+            "php tests/Integration/nginx-scope.php"
         ],
         "tests:multisite": [
             "Composer\\Config::disableProcessTimeout",
             "php tests/Integration/multisite.php"
+        ],
+        "tests:scale": [
+            "Composer\\Config::disableProcessTimeout",
+            "php tests/Integration/scale.php"
         ]
     },
     "config": {

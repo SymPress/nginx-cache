@@ -15,6 +15,7 @@ use SymPress\NginxCache\Security\Capabilities;
 use SymPress\NginxCache\Settings\CachePolicy;
 use SymPress\NginxCache\Settings\CompatibilitySettings;
 use SymPress\NginxCache\Settings\OptionSource;
+use SymPress\NginxCache\Settings\UiMode;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Value\CacheProfile;
 use SymPress\NginxCache\Value\PurgeRequest;
@@ -40,6 +41,8 @@ final readonly class SettingsPage
         private ?CompatibilityFields $compatibility = null,
         private ?CompatibilitySettings $backendSettings = null,
         private ?PermissionFields $permissions = null,
+        private ?UiMode $mode = null,
+        private ?SimpleSettingsPage $simplePage = null,
     ) {
     }
 
@@ -150,7 +153,7 @@ final readonly class SettingsPage
         }
 
         $result = $this->cache->purgeConfiguredPath($this->manualRequest('admin-settings'));
-        $this->flashNotice($this->noticeMessage($result->successful, $result->dryRun, $this->prewarmRequested()), $result->message, $result->removedEntries);
+        $this->flashNotice($this->noticeMessage($result->successful, $result->dryRun, $this->prewarmRequested(), $result->partial), $result->message, $result->removedEntries);
 
         wp_safe_redirect($this->cleanNoticeUrl($this->pageUrl()));
         exit;
@@ -165,7 +168,7 @@ final readonly class SettingsPage
         }
 
         $result = $this->cache->purgeConfiguredPath($this->manualRequest('admin-bar'));
-        $this->flashNotice($this->noticeMessage($result->successful, $result->dryRun, $this->prewarmRequested()), $result->message, $result->removedEntries);
+        $this->flashNotice($this->noticeMessage($result->successful, $result->dryRun, $this->prewarmRequested(), $result->partial), $result->message, $result->removedEntries);
 
         wp_safe_redirect($this->cleanNoticeUrl($this->redirectUrl()));
         exit;
@@ -202,6 +205,10 @@ final readonly class SettingsPage
         $message = $notice['message'];
 
         // phpcs:enable WordPress.Security.NonceVerification.Recommended
+        if (in_array($message, ['partial', 'dry-run-partial'], true)) {
+            $this->renderNotice($message === 'partial' ? __('Site scan is incomplete. The worker continues the remaining scan; check queue status for completion.', WordPressCacheSettings::TEXT_DOMAIN) : sprintf(__('Dry run stopped at the scan budget: at least %d entries match. No cache files were changed.', WordPressCacheSettings::TEXT_DOMAIN), $notice['entries']), 'warning');
+            return;
+        }
         if ($message === 'purged') {
             $this->renderNotice(__('Cache purged.', WordPressCacheSettings::TEXT_DOMAIN), 'success');
 
@@ -285,6 +292,14 @@ final readonly class SettingsPage
             $this->addRequestNotice($validation->firstError());
         }
 
+        if ($this->mode?->simple() && $this->simplePage !== null) {
+            echo '<div class="wrap sympress-cache-admin">';
+            $this->renderStyles();
+            $this->simplePage->render($status, $diagnostics, $generatedConfig, $pluginData['version'], [__('Purge Cache', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeUrl(), __('Dry Run', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeActionUrl(true), __('Prewarm', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeActionUrl(false, true), __('Flush Queue', WordPressCacheSettings::TEXT_DOMAIN) => $this->queueActionUrl()]);
+            echo '</div>';
+            return;
+        }
+
         ?>
         <div class="wrap sympress-cache-admin">
             <?php $this->renderStyles(); ?>
@@ -296,7 +311,7 @@ final readonly class SettingsPage
                     data-sympress-onboarding-completed
                     name="<?php echo esc_attr(WordPressCacheSettings::OPTION_ONBOARDING_COMPLETED); ?>"
                     value="<?php echo esc_attr($this->settings->onboardingCompleted() ? '1' : '0'); ?>"
-                />
+                <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_ONBOARDING_COMPLETED); ?>/>
 
                 <header class="sympress-product-bar">
                     <div class="sympress-product-brand">
@@ -312,6 +327,9 @@ final readonly class SettingsPage
                         <small><?php echo esc_html($healthDescription); ?></small>
                     </div>
                     <div class="sympress-product-actions">
+                        <?php if ($this->mode !== null) : ?>
+                            <a class="button button-secondary" href="<?php echo esc_url($this->mode->toggleUrl()); ?>"><?php echo esc_html__('Einfacher Modus', WordPressCacheSettings::TEXT_DOMAIN); ?></a>
+                        <?php endif; ?>
                         <button type="button" class="button button-secondary" data-sympress-export-settings>
                             <?php echo esc_html__('Einstellungen exportieren', WordPressCacheSettings::TEXT_DOMAIN); ?>
                         </button>
@@ -344,6 +362,9 @@ final readonly class SettingsPage
 
                     <main class="sympress-cache-content">
                         <section id="sympress-tab-dashboard" class="sympress-cache-panel is-active" data-sympress-panel="dashboard">
+                            <?php if (!empty($diagnostics['worker']['warning'])) : ?>
+                                <p class="sympress-simple-warning" role="status"><?php echo esc_html__('Der Cache-Worker wurde seit mehr als fünf Minuten nicht gesehen. Prüfe den Worker oder den System-Cron.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+                            <?php endif; ?>
                             <?php if ($showOnboarding) : ?>
                                 <section class="sympress-welcome-panel" aria-label="<?php echo esc_attr__('Nginx Cache onboarding', WordPressCacheSettings::TEXT_DOMAIN); ?>">
                                     <div class="sympress-welcome-icon" aria-hidden="true">
@@ -403,7 +424,7 @@ final readonly class SettingsPage
                                                 value="<?php echo esc_attr($path); ?>"
                                                 placeholder="<?php echo esc_attr($this->settings->defaultPath()); ?>"
                                                 <?php echo $pathReadOnly ? 'readonly="readonly"' : ''; ?>
-                                            />
+                                            <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_PATH); ?>/>
                                             <small><?php echo esc_html__('Verzeichnis, in dem die Cache-Dateien gespeichert werden.', WordPressCacheSettings::TEXT_DOMAIN); ?></small>
                                         </span>
                                     </label>
@@ -411,7 +432,7 @@ final readonly class SettingsPage
                                     <label class="sympress-setting-row">
                                         <span><?php echo esc_html__('Cache-Profil', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                         <span>
-                                            <select name="<?php echo esc_attr(WordPressCacheSettings::OPTION_PROFILE); ?>" class="sympress-input">
+                                            <select name="<?php echo esc_attr(WordPressCacheSettings::OPTION_PROFILE); ?>" class="sympress-input" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_PROFILE); ?>>
                                                 <?php foreach (CacheProfile::cases() as $profile) : ?>
                                                     <option value="<?php echo esc_attr($profile->value); ?>" <?php selected($this->settings->profile()->value, $profile->value); ?>>
                                                         <?php echo esc_html($this->profileLabel($profile)); ?>
@@ -428,7 +449,7 @@ final readonly class SettingsPage
                                     <label class="sympress-setting-row">
                                         <span><?php echo esc_html__('Queue Debounce', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                         <span>
-                                            <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_DEBOUNCE_SECONDS); ?>" type="number" min="0" max="300" class="small-text sympress-number" value="<?php echo esc_attr((string) $this->settings->debounceSeconds()); ?>" />
+                                            <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_DEBOUNCE_SECONDS); ?>" type="number" min="0" max="300" class="small-text sympress-number" value="<?php echo esc_attr((string) $this->settings->debounceSeconds()); ?>"  <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_DEBOUNCE_SECONDS); ?>/>
                                             <small><?php echo esc_html__('Minimaler Abstand zwischen mehreren Purge-Anfragen.', WordPressCacheSettings::TEXT_DOMAIN); ?></small>
                                         </span>
                                     </label>
@@ -436,7 +457,7 @@ final readonly class SettingsPage
                                     <label class="sympress-setting-row">
                                         <span><?php echo esc_html__('Prewarm URLs', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                         <span>
-                                            <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_PREWARM_URLS); ?>" rows="4" class="large-text code sympress-textarea" placeholder="<?php echo esc_attr(home_url('/important-page/')); ?>"><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_PREWARM_URLS)); ?></textarea>
+                                            <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_PREWARM_URLS); ?>" rows="4" class="large-text code sympress-textarea" placeholder="<?php echo esc_attr(home_url('/important-page/')); ?>" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_PREWARM_URLS); ?>><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_PREWARM_URLS)); ?></textarea>
                                             <small><?php echo esc_html__('Eine URL pro Zeile. Wird nach einem Purge im Hintergrund vorgewärmt.', WordPressCacheSettings::TEXT_DOMAIN); ?></small>
                                         </span>
                                     </label>
@@ -451,7 +472,7 @@ final readonly class SettingsPage
                                     <div class="sympress-card">
                                         <h3><?php echo esc_html__('Remote Purge Endpoints', WordPressCacheSettings::TEXT_DOMAIN); ?></h3>
                                         <p><?php echo esc_html__('Externe Dienste informieren, wenn Inhalte gelöscht werden.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
-                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_REMOTE_ENDPOINTS); ?>" rows="4" class="large-text code sympress-textarea" placeholder="https://api.example.com/purge"><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_REMOTE_ENDPOINTS)); ?></textarea>
+                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_REMOTE_ENDPOINTS); ?>" rows="4" class="large-text code sympress-textarea" placeholder="https://api.example.com/purge" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_REMOTE_ENDPOINTS); ?>><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_REMOTE_ENDPOINTS)); ?></textarea>
                                         <small><?php echo esc_html__('Eine URL pro Zeile.', WordPressCacheSettings::TEXT_DOMAIN); ?></small>
                                     </div>
 
@@ -512,7 +533,7 @@ final readonly class SettingsPage
                                 <?php foreach (['valid_seconds' => __('Gültigkeit (Sekunden)', WordPressCacheSettings::TEXT_DOMAIN), 'inactive_seconds' => __('Entfernen bei Inaktivität (Sekunden)', WordPressCacheSettings::TEXT_DOMAIN), 'max_size_mb' => __('Maximaler Plattenspeicher (MiB)', WordPressCacheSettings::TEXT_DOMAIN), 'keys_zone_mb' => __('Speicher für Cache-Schlüssel (MiB)', WordPressCacheSettings::TEXT_DOMAIN)] as $name => $label) : ?>
                                     <label class="sympress-field">
                                         <span class="sympress-field__label"><?php echo esc_html($label); ?></span>
-                                        <input type="number" class="small-text sympress-input" name="<?php echo esc_attr('sympress_nginx_cache_' . $name); ?>" value="<?php echo esc_attr((string) CachePolicy::values()[$name]); ?>" min="<?php echo esc_attr((string) CachePolicy::LIMITS[$name]['min']); ?>" max="<?php echo esc_attr((string) CachePolicy::LIMITS[$name]['max']); ?>" <?php disabled(defined('SYMPRESS_NGINX_CACHE_' . strtoupper($name))); ?> />
+                                        <input type="number" class="small-text sympress-input" name="<?php echo esc_attr('sympress_nginx_cache_' . $name); ?>" value="<?php echo esc_attr((string) CachePolicy::values()[$name]); ?>" min="<?php echo esc_attr((string) CachePolicy::LIMITS[$name]['min']); ?>" max="<?php echo esc_attr((string) CachePolicy::LIMITS[$name]['max']); ?>" <?php disabled(defined('SYMPRESS_NGINX_CACHE_' . strtoupper($name))); ?>  <?php FieldOwnership::attributes('sympress_nginx_cache_' . $name); ?>/>
                                         <small><?php echo esc_html(sprintf(__('Standard: %d. Konfigurierte Konstanten haben Vorrang.', WordPressCacheSettings::TEXT_DOMAIN), CachePolicy::LIMITS[$name]['default'])); ?></small>
                                     </label>
                                 <?php endforeach; ?>
@@ -530,7 +551,7 @@ final readonly class SettingsPage
                                         value="<?php echo esc_attr($path); ?>"
                                         placeholder="<?php echo esc_attr($this->settings->defaultPath()); ?>"
                                         <?php echo $pathReadOnly ? 'readonly="readonly"' : ''; ?>
-                                    />
+                                    <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_PATH); ?>/>
                                     <span class="sympress-field__description">
                                         <?php
                                         echo esc_html(
@@ -569,7 +590,7 @@ final readonly class SettingsPage
                                         max="300"
                                         class="small-text sympress-number"
                                         value="<?php echo esc_attr((string) $this->settings->debounceSeconds()); ?>"
-                                    />
+                                    <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_DEBOUNCE_SECONDS); ?>/>
                                 </label>
                             </div>
                         </section>
@@ -589,7 +610,7 @@ final readonly class SettingsPage
                                 <?php $this->renderSwitch(WordPressCacheSettings::OPTION_PREWARM_ENABLED, $this->settings->prewarmEnabled(), __('Enable prewarm', WordPressCacheSettings::TEXT_DOMAIN), __('Warm the homepage and configured same-origin URLs after successful purges.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
                                 <label class="sympress-field">
                                     <span class="sympress-field__label"><?php echo esc_html__('Prewarm URLs', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                    <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_PREWARM_URLS); ?>" rows="8" class="large-text code sympress-textarea" placeholder="<?php echo esc_attr(home_url('/important-page/')); ?>"><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_PREWARM_URLS)); ?></textarea>
+                                    <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_PREWARM_URLS); ?>" rows="8" class="large-text code sympress-textarea" placeholder="<?php echo esc_attr(home_url('/important-page/')); ?>" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_PREWARM_URLS); ?>><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_PREWARM_URLS)); ?></textarea>
                                     <span class="sympress-field__description"><?php echo esc_html(sprintf(__('One URL per line. The homepage is always included. Limit: %d URLs.', WordPressCacheSettings::TEXT_DOMAIN), $this->settings->maxPrewarmUrls())); ?></span>
                                 </label>
                             </div>
@@ -608,22 +629,22 @@ final readonly class SettingsPage
                                 <div class="sympress-rule-grid">
                                     <label class="sympress-field">
                                         <span class="sympress-field__label"><?php echo esc_html__('Never cache URI patterns', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_BYPASS_URIS); ?>" rows="7" class="large-text code sympress-textarea" placeholder="^/private/"><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_BYPASS_URIS)); ?></textarea>
+                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_BYPASS_URIS); ?>" rows="7" class="large-text code sympress-textarea" placeholder="^/private/" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_BYPASS_URIS); ?>><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_BYPASS_URIS)); ?></textarea>
                                         <span class="sympress-field__description"><?php echo esc_html__('Regex snippets matched against $request_uri, one per line.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                     </label>
                                     <label class="sympress-field">
                                         <span class="sympress-field__label"><?php echo esc_html__('Never cache cookies', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_BYPASS_COOKIES); ?>" rows="7" class="large-text code sympress-textarea" placeholder="customer_segment"><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_BYPASS_COOKIES)); ?></textarea>
+                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_BYPASS_COOKIES); ?>" rows="7" class="large-text code sympress-textarea" placeholder="customer_segment" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_BYPASS_COOKIES); ?>><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_BYPASS_COOKIES)); ?></textarea>
                                         <span class="sympress-field__description"><?php echo esc_html__('Cookie name or regex snippets matched against the Cookie header.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                     </label>
                                     <label class="sympress-field">
                                         <span class="sympress-field__label"><?php echo esc_html__('Never cache user agents', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_BYPASS_USER_AGENTS); ?>" rows="7" class="large-text code sympress-textarea" placeholder="SpecialBot"><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_BYPASS_USER_AGENTS)); ?></textarea>
+                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_BYPASS_USER_AGENTS); ?>" rows="7" class="large-text code sympress-textarea" placeholder="SpecialBot" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_BYPASS_USER_AGENTS); ?>><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_BYPASS_USER_AGENTS)); ?></textarea>
                                         <span class="sympress-field__description"><?php echo esc_html__('Regex snippets matched against $http_user_agent.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                     </label>
                                     <label class="sympress-field">
                                         <span class="sympress-field__label"><?php echo esc_html__('Cache query strings', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_QUERY_ALLOWLIST); ?>" rows="7" class="large-text code sympress-textarea" placeholder="^utm_source=organic$"><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_QUERY_ALLOWLIST)); ?></textarea>
+                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_QUERY_ALLOWLIST); ?>" rows="7" class="large-text code sympress-textarea" placeholder="^utm_source=organic$" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_QUERY_ALLOWLIST); ?>><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_QUERY_ALLOWLIST)); ?></textarea>
                                         <span class="sympress-field__description"><?php echo esc_html__('Query regex snippets allowed to stay cacheable. Empty query is always allowed.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                     </label>
                                 </div>
@@ -639,12 +660,12 @@ final readonly class SettingsPage
                                 <div class="sympress-rule-grid">
                                     <label class="sympress-field">
                                         <span class="sympress-field__label"><?php echo esc_html__('Archive page limit', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                        <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_ARCHIVE_PAGE_LIMIT); ?>" type="number" min="1" max="50" class="small-text sympress-number" value="<?php echo esc_attr((string) $this->settings->archivePageLimit()); ?>" />
+                                        <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_ARCHIVE_PAGE_LIMIT); ?>" type="number" min="1" max="50" class="small-text sympress-number" value="<?php echo esc_attr((string) $this->settings->archivePageLimit()); ?>"  <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_ARCHIVE_PAGE_LIMIT); ?>/>
                                         <span class="sympress-field__description"><?php echo esc_html__('Paginated archive pages included per affected archive.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                     </label>
                                     <label class="sympress-field">
                                         <span class="sympress-field__label"><?php echo esc_html__('Feed variants', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FEED_VARIANTS); ?>" rows="5" class="large-text code sympress-textarea" placeholder="feed/"><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_FEED_VARIANTS, "feed/\nfeed/atom/\nfeed/rdf/")); ?></textarea>
+                                        <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FEED_VARIANTS); ?>" rows="5" class="large-text code sympress-textarea" placeholder="feed/" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_FEED_VARIANTS); ?>><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_FEED_VARIANTS, "feed/\nfeed/atom/\nfeed/rdf/")); ?></textarea>
                                         <span class="sympress-field__description"><?php echo esc_html__('One relative feed path per line.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                     </label>
                                 </div>
@@ -667,7 +688,7 @@ final readonly class SettingsPage
                                 <div class="sympress-rule-grid">
                                     <label class="sympress-field">
                                         <span class="sympress-field__label"><?php echo esc_html__('Cloudflare zone ID', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                        <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_CLOUDFLARE_ZONE_ID); ?>" type="text" class="regular-text code sympress-input" value="<?php echo esc_attr($option(WordPressCacheSettings::OPTION_CLOUDFLARE_ZONE_ID)); ?>" autocomplete="off" />
+                                        <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_CLOUDFLARE_ZONE_ID); ?>" type="text" class="regular-text code sympress-input" value="<?php echo esc_attr($option(WordPressCacheSettings::OPTION_CLOUDFLARE_ZONE_ID)); ?>" autocomplete="off"  <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_CLOUDFLARE_ZONE_ID); ?>/>
                                     </label>
                                     <label class="sympress-field">
                                         <span class="sympress-field__label"><?php echo esc_html__('Cloudflare API token', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
@@ -677,14 +698,14 @@ final readonly class SettingsPage
 
                                 <div class="sympress-radio-stack" role="radiogroup" aria-label="<?php echo esc_attr__('Full purge mode', WordPressCacheSettings::TEXT_DOMAIN); ?>">
                                     <label class="sympress-radio-row">
-                                        <input type="radio" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FULL_PURGE_MODE); ?>" value="local_files" <?php checked($this->settings->fullPurgeMode(), 'local_files'); ?> />
+                                        <input type="radio" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FULL_PURGE_MODE); ?>" value="local_files" <?php checked($this->settings->fullPurgeMode(), 'local_files'); ?>  <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_FULL_PURGE_MODE); ?>/>
                                         <span>
                                             <strong><?php echo esc_html__('Local files', WordPressCacheSettings::TEXT_DOMAIN); ?></strong>
                                             <small><?php echo esc_html__('Remove cache files from the configured cache path.', WordPressCacheSettings::TEXT_DOMAIN); ?></small>
                                         </span>
                                     </label>
                                     <label class="sympress-radio-row">
-                                        <input type="radio" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FULL_PURGE_MODE); ?>" value="endpoint" <?php checked($this->settings->fullPurgeMode(), 'endpoint'); ?> />
+                                        <input type="radio" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FULL_PURGE_MODE); ?>" value="endpoint" <?php checked($this->settings->fullPurgeMode(), 'endpoint'); ?>  <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_FULL_PURGE_MODE); ?>/>
                                         <span>
                                             <strong><?php echo esc_html__('Secured endpoint', WordPressCacheSettings::TEXT_DOMAIN); ?></strong>
                                             <small><?php echo esc_html__('Call a protected Nginx purge endpoint for whole-zone purges.', WordPressCacheSettings::TEXT_DOMAIN); ?></small>
@@ -695,11 +716,11 @@ final readonly class SettingsPage
                                 <div class="sympress-rule-grid">
                                     <label class="sympress-field">
                                         <span class="sympress-field__label"><?php echo esc_html__('Full purge endpoint', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                        <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FULL_PURGE_ENDPOINT); ?>" type="url" class="regular-text code sympress-input" value="<?php echo esc_attr($option(WordPressCacheSettings::OPTION_FULL_PURGE_ENDPOINT)); ?>" placeholder="<?php echo esc_attr(home_url('/__sympress-nginx-cache-purge-all')); ?>" />
+                                        <input name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FULL_PURGE_ENDPOINT); ?>" type="url" class="regular-text code sympress-input" value="<?php echo esc_attr($option(WordPressCacheSettings::OPTION_FULL_PURGE_ENDPOINT)); ?>" placeholder="<?php echo esc_attr(home_url('/__sympress-nginx-cache-purge-all')); ?>"  <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_FULL_PURGE_ENDPOINT); ?>/>
                                     </label>
                                     <label class="sympress-field">
                                         <span class="sympress-field__label"><?php echo esc_html__('Full purge method', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                        <select name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FULL_PURGE_HTTP_METHOD); ?>" class="sympress-input">
+                                        <select name="<?php echo esc_attr(WordPressCacheSettings::OPTION_FULL_PURGE_HTTP_METHOD); ?>" class="sympress-input" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_FULL_PURGE_HTTP_METHOD); ?>>
                                             <?php foreach (['PURGE', 'POST', 'DELETE'] as $method) : ?>
                                                 <option value="<?php echo esc_attr($method); ?>" <?php selected($this->settings->fullPurgeHttpMethod(), $method); ?>><?php echo esc_html($method); ?></option>
                                             <?php endforeach; ?>
@@ -709,7 +730,7 @@ final readonly class SettingsPage
 
                                 <label class="sympress-field">
                                     <span class="sympress-field__label"><?php echo esc_html__('Remote purge endpoints', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                                    <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_REMOTE_ENDPOINTS); ?>" rows="7" class="large-text code sympress-textarea" placeholder="https://cache-agent.internal/purge"><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_REMOTE_ENDPOINTS)); ?></textarea>
+                                    <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_REMOTE_ENDPOINTS); ?>" rows="7" class="large-text code sympress-textarea" placeholder="https://cache-agent.internal/purge" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_REMOTE_ENDPOINTS); ?>><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_REMOTE_ENDPOINTS)); ?></textarea>
                                     <span class="sympress-field__description"><?php echo esc_html__('One endpoint per line. Requests are normalized and signed when a secret is configured.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                 </label>
                                 <label class="sympress-field">
@@ -726,7 +747,7 @@ final readonly class SettingsPage
                             </div>
                         </section>
 
-                        <p><label><input type="hidden" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_DELETE_ON_UNINSTALL); ?>" value="0" /><input type="checkbox" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_DELETE_ON_UNINSTALL); ?>" value="1" <?php checked((bool) get_option(WordPressCacheSettings::OPTION_DELETE_ON_UNINSTALL, false)); ?> /> <?php echo esc_html__('Delete plugin settings, queues and tag index on uninstall (cache files are retained)', WordPressCacheSettings::TEXT_DOMAIN); ?></label></p>
+                        <p><label><input type="hidden" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_DELETE_ON_UNINSTALL); ?>" value="0"  <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_DELETE_ON_UNINSTALL); ?>/><input type="checkbox" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_DELETE_ON_UNINSTALL); ?>" value="1" <?php checked((bool) get_option(WordPressCacheSettings::OPTION_DELETE_ON_UNINSTALL, false)); ?>  <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_DELETE_ON_UNINSTALL); ?>/> <?php echo esc_html__('Delete plugin settings, queues and tag index on uninstall (cache files are retained)', WordPressCacheSettings::TEXT_DOMAIN); ?></label></p>
                         <section id="sympress-tab-layers" class="sympress-cache-panel" data-sympress-panel="layers">
                             <div class="sympress-section-heading">
                                 <div>
@@ -739,7 +760,7 @@ final readonly class SettingsPage
                                 <div class="sympress-radio-stack" role="radiogroup" aria-label="<?php echo esc_attr__('Heartbeat mode', WordPressCacheSettings::TEXT_DOMAIN); ?>">
                                     <?php foreach (['default', 'reduce', 'disable'] as $mode) : ?>
                                         <label class="sympress-radio-row">
-                                            <input type="radio" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_HEARTBEAT_MODE); ?>" value="<?php echo esc_attr($mode); ?>" <?php checked($this->settings->heartbeatMode(), $mode); ?> />
+                                            <input type="radio" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_HEARTBEAT_MODE); ?>" value="<?php echo esc_attr($mode); ?>" <?php checked($this->settings->heartbeatMode(), $mode); ?>  <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_HEARTBEAT_MODE); ?>/>
                                             <span>
                                                 <strong><?php echo esc_html($this->heartbeatModeLabel($mode)); ?></strong>
                                                 <small><?php echo esc_html($this->heartbeatModeDescription($mode)); ?></small>
@@ -753,7 +774,7 @@ final readonly class SettingsPage
                                         <span class="sympress-field__label"><?php echo esc_html__('Reduced interval', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                         <span class="sympress-field__description"><?php echo esc_html__('Applies when Heartbeat is set to Reduce activity.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                     </span>
-                                    <input id="<?php echo esc_attr(WordPressCacheSettings::OPTION_HEARTBEAT_INTERVAL); ?>" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_HEARTBEAT_INTERVAL); ?>" type="number" min="60" max="300" class="small-text sympress-number" value="<?php echo esc_attr((string) $this->settings->heartbeatInterval()); ?>" />
+                                    <input id="<?php echo esc_attr(WordPressCacheSettings::OPTION_HEARTBEAT_INTERVAL); ?>" name="<?php echo esc_attr(WordPressCacheSettings::OPTION_HEARTBEAT_INTERVAL); ?>" type="number" min="60" max="300" class="small-text sympress-number" value="<?php echo esc_attr((string) $this->settings->heartbeatInterval()); ?>"  <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_HEARTBEAT_INTERVAL); ?>/>
                                 </label>
 
                                 <?php $this->renderSwitch(WordPressCacheSettings::OPTION_LAYER_SYNC_ENABLED, $this->settings->layerSyncEnabled(), __('Layer sync', WordPressCacheSettings::TEXT_DOMAIN), __('After successful Nginx purges, enqueue the integration hook for object cache, OPcache or custom cache layer workers.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
@@ -890,8 +911,8 @@ final readonly class SettingsPage
     {
         ?>
         <label class="sympress-switch">
-            <input type="hidden" name="<?php echo esc_attr($option); ?>" value="0" />
-            <input type="checkbox" name="<?php echo esc_attr($option); ?>" value="1" <?php checked($checked); ?> />
+            <input type="hidden" name="<?php echo esc_attr($option); ?>" value="0"  <?php FieldOwnership::attributes($option); ?>/>
+            <input type="checkbox" name="<?php echo esc_attr($option); ?>" value="1" <?php checked($checked); ?>  <?php FieldOwnership::attributes($option); ?>/>
             <span class="sympress-switch__track" aria-hidden="true"></span>
             <span class="sympress-switch__copy">
                 <strong><?php echo esc_html($title); ?></strong>
@@ -908,8 +929,8 @@ final readonly class SettingsPage
             <span><?php echo esc_html($title); ?></span>
             <span>
                 <span class="sympress-mini-switch">
-                    <input type="hidden" name="<?php echo esc_attr($option); ?>" value="0" />
-                    <input type="checkbox" name="<?php echo esc_attr($option); ?>" value="1" <?php checked($checked); ?> />
+                    <input type="hidden" name="<?php echo esc_attr($option); ?>" value="0"  <?php FieldOwnership::attributes($option); ?>/>
+                    <input type="checkbox" name="<?php echo esc_attr($option); ?>" value="1" <?php checked($checked); ?>  <?php FieldOwnership::attributes($option); ?>/>
                     <span aria-hidden="true"></span>
                 </span>
                 <small><?php echo esc_html($description); ?></small>
@@ -927,7 +948,7 @@ final readonly class SettingsPage
                 name="<?php echo esc_attr(WordPressCacheSettings::OPTION_PROFILE); ?>"
                 value="<?php echo esc_attr($profile->value); ?>"
                 <?php checked($checked); ?>
-            />
+            <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_PROFILE); ?>/>
             <span>
                 <strong><?php echo esc_html($this->profileLabel($profile)); ?></strong>
                 <small><?php echo esc_html($this->profileDescription($profile)); ?></small>
@@ -2046,10 +2067,14 @@ final readonly class SettingsPage
             || (isset($_REQUEST['prewarm']) && (string) wp_unslash($_REQUEST['prewarm']) === '1');
     }
 
-    private function noticeMessage(bool $successful, bool $dryRun, bool $prewarm): string
+    private function noticeMessage(bool $successful, bool $dryRun, bool $prewarm, bool $partial = false): string
     {
         if (!$successful) {
             return 'failed';
+        }
+
+        if ($partial) {
+            return $dryRun ? 'dry-run-partial' : 'partial';
         }
 
         if ($dryRun) {
