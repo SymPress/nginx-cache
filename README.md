@@ -257,7 +257,7 @@ These measurements describe this fixture/environment, not production latency
 guarantees. Provider requests and real page rendering add their own cost.
 The report preserves maximum index data-query, transaction and overall statement
 latency separately. The 200 ms index target applies to data queries. On the hosted
-MySQL runner, one `COMMIT` took 330.9 ms; storage/fsync and scheduling can exceed
+MySQL runner, one `COMMIT` took 330.9 ms (MariaDB: 690.7 ms); storage/fsync and scheduling can exceed
 that target even when index queries meet it. No durability setting is relaxed.
 
 ## Nginx Helper compatibility
