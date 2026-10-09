@@ -123,7 +123,8 @@ final readonly class EditorActions
         $kind = sanitize_key((string) wp_unslash($_GET['kind'] ?? ''));
         $value = sanitize_text_field((string) wp_unslash($_GET['value'] ?? ''));
         $this->purgeUrls($this->objectUrls($kind, $value));
-        $redirect = wp_validate_redirect((string) wp_unslash($_GET['redirect_to'] ?? ''), admin_url());
+        $target = isset($_GET['redirect_to']) && is_string($_GET['redirect_to']) ? sanitize_url(wp_unslash($_GET['redirect_to'])) : '';
+        $redirect = wp_validate_redirect($target, admin_url());
         wp_safe_redirect($redirect);
         exit;
     }

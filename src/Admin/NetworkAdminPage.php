@@ -45,7 +45,9 @@ final readonly class NetworkAdminPage
         $tab = 'sites';
         if ($operation === 'settings') {
             $this->configuration->register();
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Each allowlisted value uses the registered schema sanitizer below; credentials must preserve literal characters.
             $values = isset($_POST['values']) && is_array($_POST['values']) ? wp_unslash($_POST['values']) : [];
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Every policy is compared to the exact network literal before use.
             $policies = isset($_POST['policies']) && is_array($_POST['policies']) ? wp_unslash($_POST['policies']) : [];
             $sanitized = [];
             foreach (ConfigurationCatalog::defaults() as $option => $default) {
@@ -60,7 +62,7 @@ final readonly class NetworkAdminPage
             $tab = 'settings';
         } elseif ($operation === 'network') {
             $domain = get_network()->domain ?? '';
-            $confirmation = isset($_POST['confirmation']) && is_string($_POST['confirmation']) ? trim(wp_unslash($_POST['confirmation'])) : '';
+            $confirmation = isset($_POST['confirmation']) && is_string($_POST['confirmation']) ? trim(sanitize_text_field(wp_unslash($_POST['confirmation']))) : '';
             if (!hash_equals($domain, $confirmation)) {
                 wp_die(esc_html__('Enter the exact network domain to confirm this purge.', WordPressCacheSettings::TEXT_DOMAIN));
             }
@@ -99,7 +101,8 @@ final readonly class NetworkAdminPage
             wp_die(esc_html__('Network cache permission is required.', WordPressCacheSettings::TEXT_DOMAIN));
         }
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only view selection, allowlisted before use.
-        $tab = isset($_GET['tab']) && in_array($_GET['tab'], ['settings', 'sites', 'network'], true) ? $_GET['tab'] : 'settings';
+        $candidate = isset($_GET['tab']) && is_string($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : '';
+        $tab = in_array($candidate, ['settings', 'sites', 'network'], true) ? $candidate : 'settings';
         ?>
         <div class="wrap sympress-network">
             <h1><?php echo esc_html__('Nginx Cache · Network', WordPressCacheSettings::TEXT_DOMAIN); ?></h1>

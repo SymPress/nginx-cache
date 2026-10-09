@@ -37,10 +37,10 @@ final readonly class MigrationNotice
             wp_die('Forbidden', '', ['response' => 403]);
         }
         check_admin_referer('sympress_nginx_cache_migrate');
-        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Exact literal comparison after nonce/capability checks.
-        $preview = ($_REQUEST['preview'] ?? '') === '1';
-        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Exact literal comparison after nonce/capability checks.
-        $source = ($_REQUEST['source'] ?? '') === 'nginx-cache' ? 'nginx-cache' : 'nginx-helper';
+        $previewValue = isset($_REQUEST['preview']) && is_string($_REQUEST['preview']) ? sanitize_key(wp_unslash($_REQUEST['preview'])) : '';
+        $preview = $previewValue === '1';
+        $sourceValue = isset($_REQUEST['source']) && is_string($_REQUEST['source']) ? sanitize_key(wp_unslash($_REQUEST['source'])) : '';
+        $source = $sourceValue === 'nginx-cache' ? 'nginx-cache' : 'nginx-helper';
         try {
             $report = $this->importer->import($source, $preview);
         } catch (\Throwable) {

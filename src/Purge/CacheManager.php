@@ -33,7 +33,7 @@ final readonly class CacheManager
             foreach ($request->urls as $url) {
                 $parts = wp_parse_url($url);
                 if (!is_array($parts) || !$matcher->matches((string) ($parts['host'] ?? ''), (string) ($parts['path'] ?? '/'))) {
-                    return PurgeResult::failure($this->settings->cachePath(), 'The URL belongs to another site.')->withScope(PurgeScope::Site);
+                    return PurgeResult::failure($this->settings->cachePath(), 'The URL belongs to another site.', mode: $request->mode, reason: $request->reason, source: $request->source, dryRun: $request->dryRun)->withScope(PurgeScope::Site);
                 }
             }
         }

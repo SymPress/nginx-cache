@@ -23,7 +23,8 @@ final readonly class SimpleSettingsPage
     public function render(CacheStatus $status, array $diagnostics, string $config, string $version, array $actions): void
     {
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only allowlisted preset preview.
-        $preview = isset($_GET['preset-preview']) && in_array($_GET['preset-preview'], ['small', 'standard', 'large'], true) ? $_GET['preset-preview'] : null;
+        $candidate = isset($_GET['preset-preview']) && is_string($_GET['preset-preview']) ? sanitize_key(wp_unslash($_GET['preset-preview'])) : '';
+        $preview = in_array($candidate, ['small', 'standard', 'large'], true) ? $candidate : null;
         $metrics = is_array($diagnostics['metrics'] ?? null) ? $diagnostics['metrics'] : [];
         $worker = is_array($diagnostics['worker'] ?? null) ? $diagnostics['worker'] : [];
         $tagStats = is_array($diagnostics['tag_index'] ?? null) ? $diagnostics['tag_index'] : [];
