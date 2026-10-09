@@ -38,6 +38,7 @@ final readonly class SettingsPage
         private NginxConfigGenerator $config,
         private ?CompatibilityFields $compatibility = null,
         private ?CompatibilitySettings $backendSettings = null,
+        private ?PermissionFields $permissions = null,
     ) {
     }
 
@@ -277,9 +278,7 @@ final readonly class SettingsPage
             $healthLabel = __('Alternatives Purge-Backend konfiguriert', WordPressCacheSettings::TEXT_DOMAIN);
             $healthDescription = __('Der lokale Cache-Pfad ist für dieses Backend nicht erforderlich. Serverzugriff wurde nicht geprüft.', WordPressCacheSettings::TEXT_DOMAIN);
         }
-        $option = static fn (string $name, string $default = ''): string => function_exists('get_option')
-            ? (string) get_option($name, $default)
-            : $default;
+        $option = static fn (string $name, string $default = ''): string => (string) (new \SymPress\NginxCache\Settings\OptionSource())->value($name, $default);
 
         if ($localBackend) {
             $this->addRequestNotice($validation->firstError());
@@ -596,6 +595,7 @@ final readonly class SettingsPage
                         </section>
 
                         <section id="sympress-tab-advanced" class="sympress-cache-panel" data-sympress-panel="advanced">
+                            <?php $this->permissions?->render(); ?>
                             <div class="sympress-section-heading">
                                 <div>
                                     <h2><?php echo esc_html__('Advanced Rules', WordPressCacheSettings::TEXT_DOMAIN); ?></h2>

@@ -34,6 +34,7 @@ services:
             - '../../src/Exception/'
             - '../../src/Event/'
             - '../../src/Value/'
+            - '../../src/Admin/NetworkSitesTable.php'
 
     SymPress\NginxCache\Settings\WordPressCacheSettings:
         arguments:
@@ -78,6 +79,16 @@ services:
             - { name: kernel.hook, hook: 'admin_post_sympress_nginx_cache_flush_queue', method: handleQueueAction }
             - { name: kernel.hook, hook: 'admin_bar_menu', method: addAdminBarNode, accepted_args: 1, priority: 100 }
             - { name: kernel.hook, hook: 'plugin_action_links_nginx-cache/nginx-cache.php', method: addPluginActionLinks, type: filter, accepted_args: 1 }
+
+    SymPress\NginxCache\Admin\NetworkAdminPage:
+        tags:
+            - { name: kernel.hook, hook: 'network_admin_menu', method: menu }
+            - { name: kernel.hook, hook: 'network_admin_edit_sympress_nginx_cache_network', method: handle }
+
+    SymPress\NginxCache\Admin\PermissionFields:
+        tags:
+            - { name: kernel.hook, hook: 'admin_init', method: register }
+            - { name: kernel.hook, hook: 'admin_footer', method: managedFields }
 
     SymPress\NginxCache\Surrogate\TagIndexRepository:
         tags:

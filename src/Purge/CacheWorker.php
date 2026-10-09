@@ -55,9 +55,10 @@ final readonly class CacheWorker
                     $exhausted = count(array_filter([...$this->purges->inspect(), ...$this->effects->inspect()], static fn (array $task): bool => ($task['exhausted'] ?? false) === true));
                     $sites[$id] = ['tasks' => ($sites[$id]['tasks'] ?? 0) + $done, 'pending' => $this->purges->count() + $this->effects->count(), 'exhausted' => $exhausted];
                     foreach ([$this->purges->nextAttemptAt(), $this->effects->nextAttemptAt()] as $next) {
-                        if ($next !== null) {
-                            $nextAttempts[] = $next;
+                        if ($next === null) {
+                            continue;
                         }
+                        $nextAttempts[] = $next;
                     }
                     if ($network) {
                         $this->pending->clear($id, $generation, fn (): bool => $this->purges->count() + $this->effects->count() === 0);

@@ -115,16 +115,8 @@ final readonly class CompatibilityFields
         }
         ?>
         <h3><?php echo esc_html__('Multisite Nginx map', WordPressCacheSettings::TEXT_DOMAIN); ?></h3>
-        <p><?php echo esc_html__('Use this map with your Nginx static-upload configuration. Set SYMPRESS_NGINX_CACHE_MULTISITE_MAP_FILE to an absolute .conf path outside the public directory for automatic, atomic updates. Reload Nginx after changes.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+        <p><a href="<?php echo esc_url(add_query_arg(['page' => 'sympress-nginx-cache', 'tab' => 'network'], network_admin_url('settings.php'))); ?>"><?php echo esc_html__('Open the Multisite map in network administration', WordPressCacheSettings::TEXT_DOMAIN); ?></a></p>
         <?php
-        try {
-            $map = $this->maps->generate();
-            ?>
-            <textarea class="large-text code" rows="8" readonly aria-label="<?php echo esc_attr__('Generated multisite map', WordPressCacheSettings::TEXT_DOMAIN); ?>"><?php echo esc_textarea($map); ?></textarea>
-            <?php
-        } catch (\RuntimeException) {
-            echo '<p>' . esc_html__('Multisite map generation failed; check site data and network size.', WordPressCacheSettings::TEXT_DOMAIN) . '</p>';
-        }
         $error = get_site_transient('sympress_nginx_cache_multisite_map_error');
         if (!is_string($error) || $error === '') {
             return;
