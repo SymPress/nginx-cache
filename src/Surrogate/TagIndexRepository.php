@@ -224,7 +224,8 @@ final readonly class TagIndexRepository
             $tags += count($batch);
             $cursor = $batch !== [] ? (string) end($batch) : $cursor;
         } while (count($batch) === 1000);
-        $urls = $rows = 0;
+        $urls = 0;
+        $rows = 0;
         $cursor = '';
         do {
             $batch = $db->get_results($db->prepare('SELECT url_hash,COUNT(*) AS row_count FROM %i FORCE INDEX (url_hash) WHERE url_hash > %s GROUP BY url_hash ORDER BY url_hash LIMIT 1000', $this->table(), $cursor), ARRAY_A);
