@@ -293,7 +293,7 @@ final readonly class SettingsPage
         }
 
         if ($this->mode?->simple() && $this->simplePage !== null) {
-            echo '<div class="wrap sympress-cache-admin">';
+            echo '<div class="wrap sympress-cache-admin sympress-simple-admin">';
             $this->renderStyles();
             $this->simplePage->render($status, $diagnostics, $generatedConfig, $pluginData['version'], [__('Purge Cache', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeUrl(), __('Dry Run', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeActionUrl(true), __('Prewarm', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeActionUrl(false, true), __('Flush Queue', WordPressCacheSettings::TEXT_DOMAIN) => $this->queueActionUrl()]);
             echo '</div>';

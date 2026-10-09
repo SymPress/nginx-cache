@@ -66,7 +66,7 @@ if (is_string($artifact) && is_dir($artifact)) {
     preg_match('/<style>(.*?)<\/style>/s', $page, $styles);
     $css = $styles[1] . file_get_contents(dirname(__DIR__, 2) . '/Resources/assets/cache-metrics.css') . file_get_contents(dirname(__DIR__, 2) . '/Resources/assets/cache-simple.css');
     $base = 'body{margin:20px;background:#f0f0f1;font:14px/1.5 system-ui;color:#1d2327}input,textarea,button{font:inherit}input[type=text],textarea{padding:8px;border:1px solid #8c8f94;border-radius:4px}textarea{width:100%}.button{display:inline-block;text-decoration:none;cursor:pointer;padding:8px 14px;border:1px solid;border-radius:4px;line-height:1.5}.screen-reader-text{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}.widefat{width:100%;border-collapse:collapse}.widefat th,.widefat td{padding:12px;text-align:left;vertical-align:top}.striped tr:nth-child(even){background:#f6f7f7}';
-    file_put_contents($artifact . '/simple-prototype.html', '<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nginx Cache – einfacher Modus</title><style>' . $base . $css . '</style><div class="sympress-cache-admin">' . $markup . '</div></html>');
+    file_put_contents($artifact . '/simple-prototype.html', '<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nginx Cache – einfacher Modus</title><style>' . $base . $css . '</style><div class="sympress-cache-admin sympress-simple-admin">' . $markup . '</div></html>');
 }
 unset($_GET['preset-preview']);
 $saved = array_column($beforePresets, 'option_value', 'option_name');
