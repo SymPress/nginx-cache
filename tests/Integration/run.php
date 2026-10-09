@@ -103,11 +103,18 @@ try {
         $index->remember('https://example.test/bounded-tags/' . $i . '/', $tags);
     }
     $maintenance = new \SymPress\NginxCache\Surrogate\TagIndexMaintenance(new \SymPress\NginxCache\Settings\TagIndexSettings(), new \SymPress\NginxCache\Time\CacheClock(new \Symfony\Component\Clock\NativeClock()), testMutex());
+    $index->remember('https://example.test/global-old/', ['global-old']);
+    $index->remember('https://example.test/global-recent/old/', ['global-recent']);
+    $index->remember('https://example.test/global-recent/new/', ['global-recent']);
+    $wpdb->query($wpdb->prepare("UPDATE {$wpdb->prefix}sympress_cache_tags SET touched=%d WHERE tag='global-old' OR url='https://example.test/global-recent/old/'", time() - 200));
+    $wpdb->query($wpdb->prepare("UPDATE {$wpdb->prefix}sympress_cache_tags SET touched=%d WHERE url='https://example.test/global-recent/new/'", time() + 10));
     check($index->stats()['tags'] > 1000, 'inserts defer global index pruning to maintenance');
     for ($tick = 0; $tick < 200 && $index->stats()['tags'] > 1000; ++$tick) {
         check($maintenance->prune() <= 500, 'maintenance tick deletes at most 500 rows');
     }
     check($index->stats()['tags'] <= 1000, 'deferred global tag retention remains bounded');
+    check($index->urlsForTags(['global-old']) === [], 'global retention removes the least recently touched tag');
+    check(count($index->urlsForTags(['global-recent'])) === 2, 'global retention ranks a tag by its newest URL timestamp');
     $index->remember('https://example.test/ttl-fixture/', ['ttl-fixture']);
     $wpdb->query($wpdb->prepare("UPDATE {$wpdb->prefix}sympress_cache_tags SET touched=%d WHERE tag='ttl-fixture'", time() - 604801));
     $maintenance->prune();

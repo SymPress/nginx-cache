@@ -118,6 +118,7 @@ try {
     $tooLarge = (int) $wpdb->get_var("SELECT COUNT(*) FROM (SELECT tag FROM {$wpdb->prefix}sympress_cache_tags GROUP BY tag HAVING COUNT(*) > 50) oversized");
     verifyScale($stats['tags'] <= 1000 && $tooLarge === 0, '100000 indexed URLs converge to both configured limits');
     $report['tag_index'] = ['inserted_urls' => 100000, 'inserted_rows' => 200000, 'prune_ticks' => $ticks, 'final' => $stats, 'max_index_query_ms' => $maxIndexQuery, 'max_transaction_ms' => $GLOBALS['scale_max_transaction_ms'] ?? 0.0, 'max_statement_ms' => $GLOBALS['scale_max_statement_ms'] ?? 0.0];
+    $report['tag_index']['slowest_index_query'] = $GLOBALS['scale_slowest_query'] ?? '';
     echo 'Index maximum query: ' . $maxIndexQuery . ' ms; ' . ($GLOBALS['scale_slowest_query'] ?? '') . PHP_EOL;
     $wpdb->queries = [];
 
