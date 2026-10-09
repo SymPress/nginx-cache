@@ -312,3 +312,34 @@ unique `?utm_source=` requests to one anonymous path must cause one PHP entry
 bypass cache. Use a disposable cache path and database.
 QA's `WordPress MariaDB integration` job runs this on a separate MariaDB service
 and a hash-verified WordPress 7.1.2 archive. Require this check before merging.
+
+## Site and network scope
+
+Manual actions, content hooks, overflow and legacy requests default to `Site`.
+On shared Multisite roots, native cache deletion reads each cache file's `KEY`
+and matches the current site's original/mapped hosts and longest network path.
+Unknown key formats, symlinks and other sites remain untouched. Budgeted scans
+persist their cursor in the existing follow-up queue and resume under the purge
+lock; providers run after the completed scan. Configure
+`SYMPRESS_NGINX_CACHE_SITE_ISOLATED_PATH=true` only for genuinely isolated roots.
+
+An HTTP full-purge endpoint on a shared root must explicitly support scope
+(`SYMPRESS_NGINX_CACHE_ENDPOINT_SUPPORTS_SITE_SCOPE=true`) and validate the
+signed site hosts, paths and boundaries; otherwise site purges fail closed.
+Network scope must be explicitly requested by Network Admin, an authorized REST
+client or `wp nginx-cache purge --network --full` / `--scope=network`.
+Cloudflare site-wide purges use the `site:<blog_id>` cache tag; only network
+scope permits a whole-zone purge. The Cloudflare account must support cache-tag
+purging. Global object-cache and OPcache invalidation is restricted to network
+scope in Multisite. Queues preserve scope through merging and recovery.
+
+Editor actions require `sympress_nginx_cache_purge_url` and a nonce, validate
+public objects and same-origin URLs, then use the existing manager or queue.
+Empty/invalid targets never become full purges. A REST/CLI dry run with a queue
+flag executes a preview immediately and writes no queue or follow-up task.
+
+Migration is an explicit configuration write; its preview changes no options,
+and reports never include plaintext credentials. Network adoption writes only
+network values and never modifies existing site options. Site Health reads
+existing filesystem/queue information; its Redis check issues one bounded PING
+only when Redis is selected. It performs no HTTP loopback or purge.

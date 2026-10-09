@@ -31,7 +31,9 @@ final readonly class PermissionFields
             <p><?php echo esc_html__('Selected roles may purge public URLs. Full purges and settings remain restricted to administrators.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
             <input type="hidden" name="<?php echo esc_attr(Capabilities::ROLES_OPTION); ?>[]" value="" />
             <?php foreach (wp_roles()->get_names() as $role => $name) : ?>
-                <?php if ($role === 'administrator') { continue; } ?>
+                <?php if ($role === 'administrator') {
+                    continue;
+                } ?>
                 <label><input type="checkbox" name="<?php echo esc_attr(Capabilities::ROLES_OPTION); ?>[]" value="<?php echo esc_attr($role); ?>" <?php checked(in_array($role, $selected, true)); ?> /> <?php echo esc_html(translate_user_role($name)); ?></label><br />
             <?php endforeach; ?>
         </fieldset>

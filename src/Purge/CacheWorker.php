@@ -81,7 +81,8 @@ final readonly class CacheWorker
                 }
                 $this->clock->sleepMicroseconds($delay * 1000000);
             }
-            $this->clock->sleepMicroseconds($sleepMs * 1000);
+            $remaining = max(0.0, $maxRuntime - $this->clock->elapsedSince($started));
+            $this->clock->sleepMicroseconds((int) min($sleepMs * 1000, $remaining * 1000000));
         } while (true);
         return ['tasks' => $tasks, 'runtime_seconds' => $this->clock->elapsedSince($started), 'exhausted' => array_sum(array_column($sites, 'exhausted')), 'sites' => $sites];
     }

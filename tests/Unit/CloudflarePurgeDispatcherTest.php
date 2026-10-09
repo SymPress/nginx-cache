@@ -72,5 +72,20 @@ namespace SymPress\NginxCache\Tests\Unit {
             self::assertJson((string) $body);
             self::assertSame(['tags' => ['post:42', 'rest:post:42']], json_decode((string) $body, true));
         }
+
+        public function testOnlyExplicitNetworkScopeMayInvalidateTheEntireCloudflareZone(): void
+        {
+            $payloads = [];
+            $client = new MockHttpClient(static function (string $method, string $url, array $options) use (&$payloads): MockResponse {
+                $payloads[] = json_decode($options['body'], true);
+                return new MockResponse('{"success":true}', ['http_code' => 200]);
+            });
+            $dispatcher = new CloudflarePurgeDispatcher($client, new WordPressCacheSettings('/tmp/cache'), new CacheTagResolver(), new UrlPolicy());
+            $result = PurgeResult::success('/tmp/cache', 1, 0.01, PurgeMode::Full);
+            $dispatcher->dispatch($result, PurgeRequest::full());
+            $dispatcher->dispatch($result->withScope(\SymPress\NginxCache\Value\PurgeScope::Network), PurgeRequest::full(scope: \SymPress\NginxCache\Value\PurgeScope::Network));
+            self::assertSame(['tags' => ['site:1']], $payloads[0]);
+            self::assertSame(['purge_everything' => true], $payloads[1]);
+        }
     }
 }

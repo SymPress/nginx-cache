@@ -51,9 +51,38 @@ services:
     SymPress\NginxCache\Purge\RedisPageCacheStore:
         alias: SymPress\NginxCache\Purge\PredisPageCacheStore
 
+    SymPress\NginxCache\Purge\SiteScopeResolver:
+        tags:
+            - { name: kernel.hook, hook: 'wp_initialize_site', method: reset }
+            - { name: kernel.hook, hook: 'wp_update_site', method: reset }
+            - { name: kernel.hook, hook: 'wp_delete_site', method: reset }
+
     SymPress\NginxCache\Settings\CompatibilitySettings:
         tags:
             - { name: kernel.hook, hook: 'admin_init', method: register }
+
+    SymPress\NginxCache\Migration\LegacyHookBridge:
+        tags:
+            - { name: kernel.hook, hook: 'init', method: register, priority: 10 }
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_purge_urls', method: additionalUrls, type: filter }
+
+    SymPress\NginxCache\Admin\MigrationNotice:
+        tags:
+            - { name: kernel.hook, hook: 'admin_notices', method: notice }
+            - { name: kernel.hook, hook: 'admin_post_sympress_nginx_cache_migrate', method: handle }
+
+    SymPress\NginxCache\Admin\EditorActions:
+        tags:
+            - { name: kernel.hook, hook: 'admin_bar_menu', method: adminBar, accepted_args: 1, priority: 110 }
+            - { name: kernel.hook, hook: 'post_row_actions', method: postActions, type: filter, accepted_args: 2 }
+            - { name: kernel.hook, hook: 'page_row_actions', method: postActions, type: filter, accepted_args: 2 }
+            - { name: kernel.hook, hook: 'tag_row_actions', method: termActions, type: filter, accepted_args: 2 }
+            - { name: kernel.hook, hook: 'bulk_actions-edit-post', method: bulkActions, type: filter }
+            - { name: kernel.hook, hook: 'bulk_actions-edit-page', method: bulkActions, type: filter }
+            - { name: kernel.hook, hook: 'handle_bulk_actions-edit-post', method: bulk, type: filter, accepted_args: 3 }
+            - { name: kernel.hook, hook: 'handle_bulk_actions-edit-page', method: bulk, type: filter, accepted_args: 3 }
+            - { name: kernel.hook, hook: 'admin_post_sympress_nginx_cache_purge_object', method: handle }
+            - { name: kernel.hook, hook: 'admin_notices', method: notice }
 
     SymPress\NginxCache\Config\MultisiteMapGenerator:
         tags:
@@ -69,6 +98,11 @@ services:
     SymPress\NginxCache\Inspection\CacheStatusInspector:
         arguments:
             $scanLimit: '%sympress_nginx_cache.status_scan_limit%'
+
+    SymPress\NginxCache\Inspection\SiteHealth:
+        tags:
+            - { name: kernel.hook, hook: 'site_status_tests', method: tests, type: filter }
+            - { name: kernel.hook, hook: 'debug_information', method: debug, type: filter }
 
     SymPress\NginxCache\Admin\SettingsPage:
         tags:

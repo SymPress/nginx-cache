@@ -14,6 +14,7 @@ use SymPress\NginxCache\Purge\PurgeSideEffectProcessor;
 use SymPress\NginxCache\Security\Capabilities;
 use SymPress\NginxCache\Settings\CachePolicy;
 use SymPress\NginxCache\Settings\CompatibilitySettings;
+use SymPress\NginxCache\Settings\OptionSource;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Value\CacheProfile;
 use SymPress\NginxCache\Value\PurgeRequest;
@@ -278,7 +279,7 @@ final readonly class SettingsPage
             $healthLabel = __('Alternatives Purge-Backend konfiguriert', WordPressCacheSettings::TEXT_DOMAIN);
             $healthDescription = __('Der lokale Cache-Pfad ist für dieses Backend nicht erforderlich. Serverzugriff wurde nicht geprüft.', WordPressCacheSettings::TEXT_DOMAIN);
         }
-        $option = static fn (string $name, string $default = ''): string => (string) (new \SymPress\NginxCache\Settings\OptionSource())->value($name, $default);
+        $option = static fn (string $name, string $default = ''): string => (string) (new OptionSource())->value($name, $default);
 
         if ($localBackend) {
             $this->addRequestNotice($validation->firstError());

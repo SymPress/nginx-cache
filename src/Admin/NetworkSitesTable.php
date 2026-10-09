@@ -10,6 +10,7 @@ use SymPress\NginxCache\Purge\PurgeSideEffectProcessor;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 
 /** Loaded only after WordPress' admin list-table base class is available. */
+// phpcs:disable PSR1.Methods.CamelCapsMethodName.NotCamelCaps -- WordPress list-table override contract.
 final class NetworkSitesTable extends \WP_List_Table
 {
     public function __construct(private readonly PurgeQueueProcessor $queue, private readonly PurgeSideEffectProcessor $effects, private readonly PurgeHistoryRepository $history)
@@ -48,12 +49,20 @@ final class NetworkSitesTable extends \WP_List_Table
         $this->set_pagination_args(['total_items' => $total, 'per_page' => 20]);
     }
 
-    public function column_default($item, $column_name): string
+    /**
+     * @param array<string, int|string>|object $item
+     * @param string $columnName
+     */
+    public function column_default(mixed $item, mixed $columnName): string
     {
-        return esc_html((string) ($item[$column_name] ?? ''));
+        if (!is_array($item)) {
+            return '';
+        }
+        return esc_html((string) ($item[$columnName] ?? ''));
     }
 
-    public function column_site($item): string
+    /** @param array{id: int, site: string, address: string, pending: int, exhausted: int, last: string} $item */
+    public function column_site(array $item): string
     {
         $actions = [];
         foreach (['purge_site' => __('Purge site', WordPressCacheSettings::TEXT_DOMAIN), 'retry' => __('Retry queue', WordPressCacheSettings::TEXT_DOMAIN)] as $operation => $label) {

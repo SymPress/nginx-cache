@@ -53,7 +53,7 @@ final readonly class WordPressCacheSettings
     ) {
     }
 
-    public function register(): void
+    public function register(bool $migrateSecrets = true): void
     {
         if (!function_exists('register_setting')) {
             return;
@@ -94,6 +94,10 @@ final readonly class WordPressCacheSettings
         $this->registerSetting(self::OPTION_HEARTBEAT_MODE, 'string', $this->sanitizeHeartbeatMode(...), 'default');
         $this->registerSetting(self::OPTION_HEARTBEAT_INTERVAL, 'integer', $this->sanitizeHeartbeatInterval(...), 120);
         $this->registerSetting(self::OPTION_ONBOARDING_COMPLETED, 'boolean', $boolean, 0);
+        if (!$migrateSecrets) {
+            return;
+        }
+
         $this->migrateLegacySecrets();
     }
 
@@ -864,11 +868,10 @@ final readonly class WordPressCacheSettings
 
     private function constantValue(string $constant): ?string
     {
-        if (!defined($constant)) {
+        $value = LegacyConstants::value($constant);
+        if ($value === null) {
             return null;
         }
-
-        $value = constant($constant);
 
         if (is_bool($value)) {
             return $value ? '1' : '0';

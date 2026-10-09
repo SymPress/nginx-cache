@@ -54,7 +54,7 @@ final readonly class NetworkAdminPage
             }
             $tab = 'settings';
         } elseif ($operation === 'network') {
-            $domain = get_network()->domain;
+            $domain = get_network()->domain ?? '';
             $confirmation = isset($_POST['confirmation']) && is_string($_POST['confirmation']) ? trim(wp_unslash($_POST['confirmation'])) : '';
             if (!hash_equals($domain, $confirmation)) {
                 wp_die(esc_html__('Enter the exact network domain to confirm this purge.', WordPressCacheSettings::TEXT_DOMAIN));
@@ -104,7 +104,13 @@ final readonly class NetworkAdminPage
                     <a class="nav-tab <?php echo $tab === $key ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['page' => 'sympress-nginx-cache', 'tab' => $key], network_admin_url('settings.php'))); ?>"><?php echo esc_html($label); ?></a>
                 <?php endforeach; ?>
             </nav>
-            <?php if ($tab === 'settings') { $this->settings(); } elseif ($tab === 'sites') { $this->sites(); } else { $this->networkActions(); } ?>
+            <?php if ($tab === 'settings') {
+                $this->settings();
+            } elseif ($tab === 'sites') {
+                $this->sites();
+            } else {
+                $this->networkActions();
+            } ?>
         </div>
         <?php
     }
@@ -129,12 +135,16 @@ final readonly class NetworkAdminPage
                 $value = is_array($value) ? $value : [];
                 echo '<input type="hidden" name="values[' . esc_attr($option) . '][]" value="" />';
                 foreach (wp_roles()->get_names() as $role => $name) {
-                    if ($role === 'administrator') { continue; }
+                    if ($role === 'administrator') {
+                        continue;
+                    }
                     echo '<label><input type="checkbox" name="values[' . esc_attr($option) . '][]" value="' . esc_attr($role) . '" ' . checked(in_array($role, $value, true), true, false) . ' /> ' . esc_html(translate_user_role($name)) . '</label><br />';
                 }
             } else {
                 echo '<input class="regular-text" id="' . esc_attr($id) . '" type="' . (ConfigurationCatalog::secret($option) ? 'password' : (is_int($default) ? 'number' : 'text')) . '" name="values[' . esc_attr($option) . ']" value="' . esc_attr(ConfigurationCatalog::secret($option) ? '' : (string) $value) . '" autocomplete="off" />';
-                if (ConfigurationCatalog::secret($option)) { echo '<p class="description">' . esc_html__('Leave empty to retain the stored credential.', WordPressCacheSettings::TEXT_DOMAIN) . '</p>'; }
+                if (ConfigurationCatalog::secret($option)) {
+                    echo '<p class="description">' . esc_html__('Leave empty to retain the stored credential.', WordPressCacheSettings::TEXT_DOMAIN) . '</p>';
+                }
             }
             if ($this->network->mandatory($option)) {
                 echo '<p class="description">' . esc_html__('Managed by the network.', WordPressCacheSettings::TEXT_DOMAIN) . '</p>';
@@ -161,7 +171,7 @@ final readonly class NetworkAdminPage
 
     private function networkActions(): void
     {
-        $domain = get_network()->domain;
+        $domain = get_network()->domain ?? '';
         echo '<h2>' . esc_html__('Purge network cache', WordPressCacheSettings::TEXT_DOMAIN) . '</h2><p>' . esc_html__('This removes cache entries across the shared network. Confirm the domain to proceed.', WordPressCacheSettings::TEXT_DOMAIN) . '</p>';
         $this->form('network');
         echo '<p><label for="network-confirmation">' . esc_html(sprintf(__('Type %s to confirm', WordPressCacheSettings::TEXT_DOMAIN), $domain)) . '</label><br /><input id="network-confirmation" name="confirmation" type="text" required autocomplete="off" /></p>';

@@ -126,13 +126,13 @@ final readonly class CloudflarePurgeDispatcher
             $payload = (array) apply_filters('sympress_nginx_cache_cloudflare_payload', $payload, $result, $request);
         }
 
-        // A payload filter cannot accidentally widen a Multisite site purge to the whole zone.
-        return $this->siteFullPurge($request) ? ['tags' => ['site:' . (int) get_current_blog_id()]] : $payload;
+        // A payload filter cannot widen a site purge to the whole zone.
+        return $this->siteFullPurge($request) ? ['tags' => ['site:' . (function_exists('get_current_blog_id') ? (int) get_current_blog_id() : 1)]] : $payload;
     }
 
     private function siteFullPurge(PurgeRequest $request): bool
     {
-        return $request->requiresFullPurge() && $request->scope === PurgeScope::Site && function_exists('is_multisite') && is_multisite();
+        return $request->requiresFullPurge() && $request->scope === PurgeScope::Site;
     }
 
     /** @return array<string, mixed> */
