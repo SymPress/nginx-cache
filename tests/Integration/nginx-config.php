@@ -46,6 +46,11 @@ error_log $root/error.log;
 events { worker_connections 32; }
 http {
     access_log off;
+    client_body_temp_path $root/body;
+    proxy_temp_path $root/proxy-temp;
+    fastcgi_temp_path $root/fastcgi-temp;
+    uwsgi_temp_path $root/uwsgi-temp;
+    scgi_temp_path $root/scgi-temp;
     include $root/http.conf;
     server {
         listen $address;
