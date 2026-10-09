@@ -106,6 +106,12 @@ proportional cache-served/newly-requested split. File, size, queue and tag count
 remain alongside it. Measurement details are initially collapsed and contain
 all six Nginx status counts, eligibility rules and sample limitations. Native
 keyboard controls open the details without submitting the settings form.
+The plugin uses NGINX green accents and black action buttons, independently of
+the surrounding WordPress admin theme. Card headings share one type style;
+section descriptions have explicit spacing beneath their titles.
+The purge-rule matrix scrolls within the Cache section on narrow screens and
+can be focused and scrolled by keyboard. Section buttons expose their active
+state with `aria-pressed`.
 The [HTML prototype](prototypes/cache-metrics.html) provides preview states;
 its example data and state selector are not production measurements or settings.
 
