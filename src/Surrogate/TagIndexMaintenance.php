@@ -59,7 +59,10 @@ final readonly class TagIndexMaintenance
                 }
                 update_option(self::CURSOR, count($tags) < 32 ? '' : $last, false);
                 if ($removed < self::BATCH) {
-                    $excessTags = $db->get_col($db->prepare('SELECT tag FROM %i GROUP BY tag ORDER BY MAX(touched) DESC,tag DESC LIMIT %d,%d', $table, $this->limits->maxTags(), self::BATCH - $removed));
+                    // The covering tag/timestamp index permits a loose index
+                    // scan for MAX(touched), rather than reading every URL row.
+                    $indexHint = get_option(TagIndexRepository::OPTION_VERSION) === '3' ? ' FORCE INDEX (tag_touched)' : '';
+                    $excessTags = $db->get_col($db->prepare('SELECT tag FROM %i' . $indexHint . ' GROUP BY tag ORDER BY MAX(touched) DESC,tag DESC LIMIT %d,%d', $table, $this->limits->maxTags(), self::BATCH - $removed));
                     if ($excessTags !== []) {
                         $placeholders = implode(',', array_fill(0, count($excessTags), '%s'));
                         $removed += $this->delete($db, $db->prepare('DELETE FROM %i WHERE tag IN (' . $placeholders . ') LIMIT %d', $table, ...[...$excessTags, self::BATCH - $removed]));
