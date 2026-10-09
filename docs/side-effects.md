@@ -26,6 +26,7 @@ table and limits; global tag age is its newest URL timestamp. The
 `sympress_nginx_cache_prune_tags` event runs independently of purge work and is
 cleared on explicit data-deleting uninstall. Dry runs never invoke maintenance.
 With WP-Cron disabled, idle sites require an external cron runner for due events.
+Failed batches reschedule the consumed event before propagating the error.
 
 Simple-mode changes and preset application require the manage capability and a
 nonce. Preview is read-only; applying a preset changes only writable settings,

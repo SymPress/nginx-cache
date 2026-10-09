@@ -236,6 +236,11 @@ FastCGI caching or create that directory.
 Reproduce with `composer tests:scale` and the same disposable database/core
 environment variables as the integration harness. The opt-in QA dispatch input
 `scale=true` runs both MariaDB and MySQL and uploads `build/scale-report.json`.
+CI gives both disposable database engines a fixed 512 MiB InnoDB buffer pool;
+the report records initial/effective memory, durability settings and the ten
+slowest data queries. Locally no server setting changes by default. The optional
+`NGINX_TEST_SCALE_BUFFER_POOL_MB` override (64..2048 MiB) refuses servers with
+other user schemas and restores the original size after the test.
 
 Measured locally on 2026-10-09: native Linux, PHP 8.5.4, WordPress 7.1.2,
 MariaDB 11.8.6 with a 64 MiB buffer pool; warm filesystem cache, zero external HTTP.
@@ -245,13 +250,13 @@ worker. Separate native Nginx tests verify real binary KEY parsing and MISS/HITs
 
 | Workload | Measurement |
 | --- | --- |
-| 50,000 posts, 200 categories; 200 content-hook samples | 9.1 ms `save_post` p95 |
-| 10,000 cache files | 36,346 files/s site scan |
-| 200 queued edits coalesced to one purge | 136.6 coalesced tasks/min (one measured task, not a capacity bound) |
-| 100,000 indexed URLs / 200,000 rows | 158.8 ms maximum query; limits reached in 398 batches of at most 500 rows |
-| Shared root, 500 sites × 200 files | 4.0 s full site purge, retaining all other sites |
-| 500 pending site URL tasks | 11.8 s network worker |
-| 5,000 registered sites | 25.3 ms for the current 20-row Network Admin page |
+| 50,000 posts, 200 categories; 200 content-hook samples | 9.3 ms `save_post` p95 |
+| 10,000 cache files | 37,179 files/s site scan |
+| 200 queued edits coalesced to one purge | 145.8 coalesced tasks/min (one measured task, not a capacity bound) |
+| 100,000 indexed URLs / 200,000 rows | 159.0 ms maximum query; limits reached in 398 batches of at most 500 rows |
+| Shared root, 500 sites × 200 files | 4.5 s full site purge, retaining all other sites |
+| 500 pending site URL tasks | 9.2 s network worker |
+| 5,000 registered sites | 27.0 ms for the current 20-row Network Admin page |
 
 These measurements describe this fixture/environment, not production latency
 guarantees. Provider requests and real page rendering add their own cost.
@@ -259,6 +264,12 @@ The report preserves maximum index data-query, transaction and overall statement
 latency separately. The 200 ms index target applies to data queries. On the hosted
 MySQL runner, one `COMMIT` took 330.9 ms (MariaDB: 690.7 ms); storage/fsync and scheduling can exceed
 that target even when index queries meet it. No durability setting is relaxed.
+Earlier default-sized MySQL runs also recorded isolated insert/delete spikes
+of 303/413 ms and one 98.9 ms hook p95. The index alone allocated about 136 MB,
+exceeding MySQL's [128 MiB default buffer pool](https://dev.mysql.com/doc/refman/8.4/en/innodb-parameters.html#sysvar_innodb_buffer_pool_size).
+Memory pressure is a possible contributor; these results remain limitations,
+not a universal 200 ms latency guarantee. Final CI uses the explicit memory
+budget above, with the same latency targets and full durability.
 
 ## Nginx Helper compatibility
 
