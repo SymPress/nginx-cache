@@ -85,6 +85,10 @@ NGINX);
         if (!is_file($file) || $snapshot !== [hash_file('sha256', $file), filemtime($file)]) { throw new RuntimeException('Native sibling cache changed.'); }
     }
     echo 'PASS: real Nginx MISS/HIT responses, binary KEY parsing, nested-site boundaries and unchanged sibling cache hashes/mtimes.' . PHP_EOL;
+} catch (Throwable $error) {
+    fwrite(STDERR, 'Nginx fixture: ' . (is_file($root . '/error.log') ? $fs->readFile($root . '/error.log') : '') . PHP_EOL);
+    fwrite(STDERR, 'Origin fixture: ' . ($origin?->getErrorOutput() ?? '') . PHP_EOL);
+    throw $error;
 } finally {
     $server?->stop(2);
     $origin?->stop(2);

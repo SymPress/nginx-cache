@@ -71,7 +71,7 @@ final readonly class SiteHealth
             $status = $readable ? 'good' : 'recommended';
             $description = $readable ? __('The cache metrics log is readable.', WordPressCacheSettings::TEXT_DOMAIN) : __('Configure the Nginx metrics log to measure the cache hit rate.', WordPressCacheSettings::TEXT_DOMAIN);
         } elseif ($name === 'scope' && !$this->scope->isIsolated()) {
-            $scoped = $backend !== 'http' && $this->settings->fullPurgeMode() === 'local_files';
+            $scoped = $backend === 'redis' || ($backend === 'local_files' && $this->settings->fullPurgeMode() === 'local_files');
             $scoped = $scoped || (defined('SYMPRESS_NGINX_CACHE_ENDPOINT_SUPPORTS_SITE_SCOPE') && constant('SYMPRESS_NGINX_CACHE_ENDPOINT_SUPPORTS_SITE_SCOPE') === true);
             $status = $scoped ? 'good' : 'critical';
             $description = $scoped ? __('The configured backend supports purges restricted to one site.', WordPressCacheSettings::TEXT_DOMAIN) : __('A shared cache root requires a site-aware full purge endpoint. Site purges fail closed until it is configured.', WordPressCacheSettings::TEXT_DOMAIN);
