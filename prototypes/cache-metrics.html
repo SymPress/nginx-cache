@@ -6,12 +6,12 @@
     <title>Nginx Cache – Dashboard-Prototyp</title>
     <link rel="stylesheet" href="../Resources/assets/cache-metrics.css">
     <style>
-        :root { --sympress-blue: #3d50ed; --sympress-blue-dark: #283bc9; --sympress-text: #1d2327; --sympress-muted: #646970; --sympress-border: #dcdcde; --sympress-surface: #fff; --sympress-bg: #f0f0f1; --sympress-warning: #b26200; }
+        :root { --sympress-brand: #009639; --sympress-brand-strong: #006f2a; --sympress-action: #161616; --sympress-action-hover: #000; --sympress-text: #1d2327; --sympress-muted: #646970; --sympress-border: #dcdcde; --sympress-surface: #fff; --sympress-bg: #f0f0f1; --sympress-warning: #b26200; }
         * { box-sizing: border-box; }
         body { margin: 0; background: var(--sympress-bg); color: var(--sympress-text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
         button, select { font: inherit; }
         button { cursor: pointer; }
-        :focus-visible { outline: 2px solid var(--sympress-blue); outline-offset: 3px; }
+        :focus-visible { outline: 2px solid var(--sympress-brand); outline-offset: 3px; }
         .admin-bar { min-height: 32px; padding: 5px 22px; background: #232323; color: #fff; font-size: 12px; }
         .preview { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 22px; background: #fff; border-bottom: 1px solid var(--sympress-border); font-size: 12px; }
         .preview strong { margin-right: 8px; }
@@ -19,34 +19,36 @@
         .app { margin: 18px 22px; }
         .product-bar { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; background: #fff; border: 1px solid var(--sympress-border); border-radius: 8px 8px 0 0; padding: 14px 18px; }
         .brand { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-        .logo { display: grid; place-items: center; width: 34px; height: 40px; background: var(--sympress-blue); color: #fff; font-size: 22px; font-weight: 700; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+        .logo { display: grid; place-items: center; width: 34px; height: 40px; background: var(--sympress-brand); color: #fff; font-size: 22px; font-weight: 700; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
         h1 { margin: 0; font-size: 24px; }
-        .version { color: var(--sympress-blue-dark); background: #e9edff; padding: 2px 6px; border-radius: 3px; font-size: 12px; font-weight: 600; }
+        .version { color: var(--sympress-brand-strong); background: color-mix(in srgb, var(--sympress-brand) 10%, #fff); padding: 2px 6px; border-radius: 3px; font-size: 12px; font-weight: 600; }
         .health { padding-left: 18px; border-left: 1px solid var(--sympress-border); font-size: 12px; }
         .health strong { display: block; color: #007a1c; }
         .health span { color: var(--sympress-muted); }
         .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
-        .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 8px 12px; border: 1px solid var(--sympress-blue); border-radius: 4px; background: transparent; color: var(--sympress-blue-dark); font-size: 13px; font-weight: 600; }
-        .button.primary { background: var(--sympress-blue); color: #fff; }
+        .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 8px 12px; border: 1px solid var(--sympress-action); border-radius: 4px; background: #fff; color: var(--sympress-action); font-size: 13px; font-weight: 600; }
+        .button.primary { background: var(--sympress-action); color: #fff; }
+        .button:hover { background: var(--sympress-bg); border-color: var(--sympress-action-hover); color: var(--sympress-action-hover); }
+        .button.primary:hover { background: var(--sympress-action-hover); color: #fff; }
         .shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); }
         nav { padding: 14px 10px; background: #fff; border-right: 1px solid var(--sympress-border); }
         nav button { display: block; width: 100%; padding: 13px; text-align: left; border: 0; border-radius: 5px; background: transparent; font-weight: 600; color: var(--sympress-text); }
-        nav button.active { background: #e9edff; color: var(--sympress-blue-dark); box-shadow: inset 3px 0 0 var(--sympress-blue); }
+        nav button.active { background: color-mix(in srgb, var(--sympress-brand) 10%, #fff); color: var(--sympress-brand-strong); box-shadow: inset 3px 0 0 var(--sympress-brand); }
         main { min-width: 0; padding: 16px; }
         .sympress-metrics-grid { display: grid; }
-        .sympress-metric { position: relative; padding: 16px 50px 14px 16px; min-height: 110px; background: #fff; border: 1px solid var(--sympress-border); border-radius: 8px; }
-        .sympress-metric > span { display: block; font-size: 13px; }
+        .sympress-metric { position: relative; padding: 20px 50px 16px 20px; min-height: 118px; background: #fff; border: 1px solid var(--sympress-border); border-radius: 8px; }
+        .sympress-metric h3 { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.5; }
         .sympress-metric strong { display: block; margin: 9px 0 4px; font-size: 26px; line-height: 1.1; }
         .sympress-metric small { color: var(--sympress-muted); font-size: 12px; }
-        .sympress-metric i { position: absolute; top: 18px; right: 16px; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #e9edff; color: var(--sympress-blue); font-style: normal; }
+        .sympress-metric i { position: absolute; top: 16px; right: 16px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: color-mix(in srgb, var(--sympress-brand) 10%, #fff); color: var(--sympress-brand); font-style: normal; }
         .quick-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
         .below { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; }
         .card { padding: 18px; background: #fff; border: 1px solid var(--sympress-border); border-radius: 8px; }
-        .card h2 { font-size: 16px; margin: 0 0 18px; }
+        .card h2 { font-size: 14px; font-weight: 600; line-height: 1.5; margin: 0 0 16px; }
         .row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--sympress-border); font-size: 13px; }
         .row code { font-size: 12px; overflow-wrap: anywhere; }
         .row span:last-child { color: var(--sympress-muted); }
-        .toggle { width: 32px; height: 18px; border-radius: 9px; background: var(--sympress-blue); position: relative; }
+        .toggle { width: 32px; height: 18px; border-radius: 9px; background: var(--sympress-brand); position: relative; }
         .toggle::after { content: ""; position: absolute; background: #fff; width: 12px; height: 12px; border-radius: 50%; right: 3px; top: 3px; }
         [hidden] { display: none !important; }
         @media (max-width: 1100px) { .shell { grid-template-columns: 1fr; } nav { display: flex; overflow-x: auto; gap: 5px; border-right: 0; } nav button { width: auto; white-space: nowrap; } .product-bar { align-items: flex-start; } .actions { margin-left: 0; } .below { grid-template-columns: 1fr; } }
@@ -81,10 +83,10 @@
                         </details>
                     </section>
                     <div class="sympress-metrics-grid" aria-label="Lokaler Cache">
-                        <div class="sympress-metric"><span>Cache-Dateien</span><i aria-hidden="true">▤</i><strong>1</strong><small>Dateien</small></div>
-                        <div class="sympress-metric"><span>Cache-Größe</span><i aria-hidden="true">▥</i><strong>38.1 KB</strong><small>Belegter Speicher</small></div>
-                        <div class="sympress-metric"><span>Angefragt (Queue)</span><i aria-hidden="true">◷</i><strong>0</strong><small>Leer</small></div>
-                        <div class="sympress-metric"><span>Tag-Index</span><i aria-hidden="true">◇</i><strong>4</strong><small>1 URL</small></div>
+                        <div class="sympress-metric"><h3>Cache-Dateien</h3><i aria-hidden="true">▤</i><strong>1</strong><small>Dateien</small></div>
+                        <div class="sympress-metric"><h3>Cache-Größe</h3><i aria-hidden="true">▥</i><strong>38.1 KB</strong><small>Belegter Speicher</small></div>
+                        <div class="sympress-metric"><h3>Angefragt (Queue)</h3><i aria-hidden="true">◷</i><strong>0</strong><small>Leer</small></div>
+                        <div class="sympress-metric"><h3>Tag-Index</h3><i aria-hidden="true">◇</i><strong>4</strong><small>1 URL</small></div>
                     </div>
                 </div>
                 <div class="quick-actions"><button type="button" class="button primary">Purge Cache</button><button type="button" class="button">Dry Run</button><button type="button" class="button">Prewarm</button><button type="button" class="button">Flush Queue</button></div>

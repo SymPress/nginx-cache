@@ -8,6 +8,7 @@ where applicable.
 
 ## Unreleased
 
+- Use NGINX green accents and black action buttons, align card headings and separate section subtitles without changing the surrounding WordPress theme; constrain the purge-rule matrix on narrow screens and expose section-button state with valid ARIA.
 - Present cache hit rates with their request denominator and a proportional distribution, four adjacent operational KPIs and collapsed measurement details; preserve per-status counts, measurement time, eligibility and sample notices from one diagnostic snapshot.
 - Add validated cache validity, inactivity, disk and key-zone limits to generated Nginx configuration without changing profile defaults.
 - Process deferred prewarm in durable five-URL batches, checkpoint each successful URL and retain the failure budget across ordinary continuations.

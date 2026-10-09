@@ -853,7 +853,7 @@ final readonly class SettingsPage
             class="sympress-cache-tabs__item <?php echo $active ? 'is-active' : ''; ?>"
             data-sympress-tab="<?php echo esc_attr($target); ?>"
             aria-controls="sympress-tab-<?php echo esc_attr($target); ?>"
-            aria-selected="<?php echo esc_attr($active ? 'true' : 'false'); ?>"
+            aria-pressed="<?php echo esc_attr($active ? 'true' : 'false'); ?>"
         >
             <span class="dashicons dashicons-<?php echo esc_attr($icon); ?>" aria-hidden="true"></span>
             <span><?php echo esc_html($label); ?></span>
@@ -865,7 +865,7 @@ final readonly class SettingsPage
     {
         ?>
         <div class="sympress-metric is-<?php echo esc_attr($tone); ?>">
-            <span><?php echo esc_html($label); ?></span>
+            <h3><?php echo esc_html($label); ?></h3>
             <span class="sympress-metric__icon dashicons dashicons-<?php echo esc_attr($icon); ?>" aria-hidden="true"></span>
             <strong><?php echo esc_html($value); ?></strong>
             <small><?php echo esc_html($description); ?></small>
@@ -993,9 +993,11 @@ final readonly class SettingsPage
         ?>
         <style>
             .sympress-cache-admin {
-                --sympress-blue: var(--wp-admin-theme-color, #2271b1);
-                --sympress-blue-dark: var(--wp-admin-theme-color-darker-10, #135e96);
-                --sympress-blue-deep: var(--wp-admin-theme-color-darker-20, #0a4b78);
+                --sympress-brand: #009639;
+                --sympress-brand-strong: #006f2a;
+                --sympress-action: #161616;
+                --sympress-action-hover: #000;
+                --wp-admin-theme-color: var(--sympress-brand-strong);
                 --sympress-surface: #fff;
                 --sympress-bg: #f0f0f1;
                 --sympress-border: #dcdcde;
@@ -1007,6 +1009,62 @@ final readonly class SettingsPage
                 margin-right: 20px;
             }
             .sympress-cache-admin * { box-sizing: border-box; letter-spacing: 0; }
+            .sympress-cache-admin .button {
+                color: var(--sympress-action);
+                background: var(--sympress-surface);
+                border-color: var(--sympress-action);
+                box-shadow: none;
+                text-shadow: none;
+            }
+            .sympress-cache-admin .button-primary {
+                color: #fff;
+                background: var(--sympress-action);
+            }
+            .sympress-cache-admin .button:hover,
+            .sympress-cache-admin .button:active {
+                color: var(--sympress-action-hover);
+                background: var(--sympress-bg);
+                border-color: var(--sympress-action-hover);
+            }
+            .sympress-cache-admin .button-primary:hover,
+            .sympress-cache-admin .button-primary:active {
+                color: #fff;
+                background: var(--sympress-action-hover);
+            }
+            .sympress-cache-admin .button:focus {
+                color: var(--sympress-action);
+                background: var(--sympress-surface);
+                border-color: var(--sympress-action);
+                box-shadow: none;
+            }
+            .sympress-cache-admin .button-primary:focus {
+                color: #fff;
+                background: var(--sympress-action);
+            }
+            .sympress-cache-admin .button:focus-visible,
+            .sympress-cache-tabs__item:focus-visible {
+                outline: 2px solid var(--sympress-brand-strong);
+                outline-offset: 3px;
+            }
+            .sympress-cache-admin .button:disabled,
+            .sympress-cache-admin .button[aria-disabled="true"] {
+                color: var(--sympress-muted);
+                background: var(--sympress-bg);
+                border-color: var(--sympress-border);
+                cursor: default;
+            }
+            .sympress-cache-admin :is(input, select, textarea):focus {
+                border-color: var(--sympress-brand-strong);
+                box-shadow: 0 0 0 1px var(--sympress-brand-strong);
+            }
+            .sympress-cache-admin input[type="radio"]:checked::before {
+                background: var(--sympress-brand-strong);
+            }
+            .sympress-mini-switch input:focus-visible + span,
+            .sympress-switch input:focus-visible + .sympress-switch__track {
+                outline: 2px solid var(--sympress-brand-strong);
+                outline-offset: 3px;
+            }
             .sympress-product-bar {
                 display: grid;
                 grid-template-columns: minmax(238px, auto) minmax(150px, 1fr) max-content;
@@ -1043,7 +1101,7 @@ final readonly class SettingsPage
                 width: 40px;
                 height: 40px;
                 color: #fff;
-                background: linear-gradient(145deg, var(--sympress-blue), var(--sympress-blue-deep));
+                background: var(--sympress-brand);
                 clip-path: polygon(50% 0, 91% 24%, 91% 76%, 50% 100%, 9% 76%, 9% 24%);
                 font-weight: 800;
                 font-size: 21px;
@@ -1054,8 +1112,8 @@ final readonly class SettingsPage
                 min-height: 22px;
                 padding: 2px 7px;
                 border-radius: 5px;
-                color: var(--sympress-blue-deep);
-                background: color-mix(in srgb, var(--sympress-blue) 12%, #fff);
+                color: var(--sympress-brand-strong);
+                background: color-mix(in srgb, var(--sympress-brand) 12%, #fff);
                 font-size: 12px;
                 font-weight: 700;
             }
@@ -1096,7 +1154,7 @@ final readonly class SettingsPage
                 margin: 22px 0 16px;
                 background: var(--sympress-surface);
                 border: 1px solid var(--sympress-border);
-                border-top: 4px solid var(--sympress-blue);
+                border-top: 4px solid var(--sympress-brand);
                 border-radius: 8px;
                 box-shadow: 0 10px 28px rgba(0, 0, 0, .05);
             }
@@ -1116,8 +1174,8 @@ final readonly class SettingsPage
                 gap: 20px;
                 padding: 18px 20px;
                 margin: 0 0 16px;
-                background: color-mix(in srgb, var(--sympress-blue) 8%, #fff);
-                border: 1px solid color-mix(in srgb, var(--sympress-blue) 26%, #fff);
+                background: color-mix(in srgb, var(--sympress-brand) 8%, #fff);
+                border: 1px solid color-mix(in srgb, var(--sympress-brand) 26%, #fff);
                 border-radius: 8px;
             }
             .sympress-onboarding-callout p { margin: 4px 0 0; color: var(--sympress-muted); }
@@ -1153,11 +1211,11 @@ final readonly class SettingsPage
             }
             .sympress-cache-tabs__item:hover,
             .sympress-cache-tabs__item.is-active {
-                color: var(--sympress-blue-dark);
-                background: color-mix(in srgb, var(--sympress-blue) 10%, #fff);
+                color: var(--sympress-brand-strong);
+                background: color-mix(in srgb, var(--sympress-brand) 10%, #fff);
             }
             .sympress-cache-tabs__item.is-active {
-                box-shadow: inset 3px 0 0 var(--sympress-blue);
+                box-shadow: inset 3px 0 0 var(--sympress-brand);
             }
             .sympress-cache-help {
                 display: grid;
@@ -1174,14 +1232,14 @@ final readonly class SettingsPage
                 line-height: 1.25;
             }
             .sympress-cache-help:hover {
-                color: var(--sympress-blue-dark);
+                color: var(--sympress-brand-strong);
             }
             .sympress-cache-help .dashicons {
                 width: 16px;
                 height: 16px;
                 font-size: 16px;
             }
-            .sympress-cache-content { min-width: 0; }
+            .sympress-cache-content { min-width: 0; padding-top: 16px; }
             .sympress-cache-panel { display: none; }
             .sympress-cache-panel.is-active { display: grid; gap: 16px; }
             .sympress-section-heading {
@@ -1194,7 +1252,7 @@ final readonly class SettingsPage
                 border: 1px solid var(--sympress-border);
                 border-radius: 8px;
             }
-            .sympress-section-heading h2 { margin: 0 0 6px; font-size: 24px; line-height: 1.25; }
+            .sympress-section-heading h2 { margin: 0 0 8px; color: var(--sympress-text); font-size: 20px; font-weight: 600; line-height: 1.4; }
             .sympress-section-heading p { margin: 0; color: var(--sympress-muted); font-size: 14px; line-height: 1.55; }
             .sympress-card,
             .sympress-metric,
@@ -1205,10 +1263,11 @@ final readonly class SettingsPage
                 box-shadow: 0 4px 16px rgba(0, 0, 0, .035);
             }
             .sympress-card { padding: 18px; }
-            .sympress-card h3 { margin: 0 0 12px; font-size: 16px; }
-            .sympress-card p { margin: -4px 0 12px; color: var(--sympress-muted); }
-            .sympress-card__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+            .sympress-card h3 { margin: 0 0 12px; color: var(--sympress-text); font-size: 14px; font-weight: 600; line-height: 1.5; }
+            .sympress-card p { margin: 0 0 12px; color: var(--sympress-muted); line-height: 1.55; }
+            .sympress-card__heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
             .sympress-card__heading h3 { margin: 0; }
+            .sympress-card__heading p { margin: 6px 0 0; }
             .sympress-metrics-grid,
             .sympress-action-grid,
             .sympress-two-column,
@@ -1221,7 +1280,7 @@ final readonly class SettingsPage
             .sympress-metric {
                 position: relative;
                 min-height: 96px;
-                padding: 16px 52px 14px 16px;
+                padding: 20px 52px 16px 20px;
                 border-left: 0;
                 overflow: hidden;
             }
@@ -1234,21 +1293,21 @@ final readonly class SettingsPage
             .sympress-switch small,
             .sympress-profile-card small,
             .sympress-radio-row small { color: var(--sympress-muted); }
-            .sympress-metric > span:first-child { display: block; color: var(--sympress-text); font-size: 13px; }
+            .sympress-metric h3 { margin: 0; color: var(--sympress-text); font-size: 14px; font-weight: 600; line-height: 1.5; }
             .sympress-metric__icon {
                 position: absolute;
-                top: 22px;
+                top: 16px;
                 right: 16px;
                 display: grid;
                 place-items: center;
-                width: 34px;
-                height: 34px;
+                width: 28px;
+                height: 28px;
                 border-radius: 50%;
-                color: var(--sympress-blue);
-                background: color-mix(in srgb, var(--sympress-blue) 10%, #fff);
-                font-size: 21px;
+                color: var(--sympress-brand);
+                background: color-mix(in srgb, var(--sympress-brand) 10%, #fff);
+                font-size: 18px;
             }
-            .sympress-metric .sympress-metric__icon { color: var(--sympress-blue); }
+            .sympress-metric .sympress-metric__icon { color: var(--sympress-brand); }
             .sympress-metric strong { display: block; margin: 9px 0 4px; color: var(--sympress-text); font-size: 26px; line-height: 1.1; }
             .sympress-metric small { display: block; line-height: 1.45; }
             .sympress-welcome-panel {
@@ -1259,12 +1318,12 @@ final readonly class SettingsPage
                 gap: 16px;
                 padding: 16px 18px;
                 background: #fff;
-                border: 1px solid var(--sympress-blue);
+                border: 1px solid var(--sympress-brand);
                 border-radius: 8px;
             }
             .sympress-welcome-panel h2 {
                 margin: 0 0 4px;
-                color: var(--sympress-blue-deep);
+                color: var(--sympress-brand-strong);
                 font-size: 17px;
             }
             .sympress-welcome-panel p {
@@ -1277,8 +1336,8 @@ final readonly class SettingsPage
                 width: 48px;
                 height: 48px;
                 border-radius: 50%;
-                color: var(--sympress-blue);
-                background: color-mix(in srgb, var(--sympress-blue) 10%, #fff);
+                color: var(--sympress-brand);
+                background: color-mix(in srgb, var(--sympress-brand) 10%, #fff);
             }
             .sympress-welcome-icon .dashicons { width: 28px; height: 28px; font-size: 28px; }
             .sympress-quick-actions {
@@ -1374,7 +1433,7 @@ final readonly class SettingsPage
                 background: #fff;
                 transition: transform .16s ease;
             }
-            .sympress-mini-switch input[type="checkbox"]:checked + span { background: var(--sympress-blue); }
+            .sympress-mini-switch input[type="checkbox"]:checked + span { background: var(--sympress-brand); }
             .sympress-mini-switch input[type="checkbox"]:checked + span::after { transform: translateX(18px); }
             .sympress-config-output.is-compact {
                 min-height: 180px;
@@ -1412,10 +1471,16 @@ final readonly class SettingsPage
                 color: var(--sympress-text);
                 text-decoration: none;
             }
-            .sympress-action-card:hover { border-color: var(--sympress-blue); color: var(--sympress-blue-dark); }
-            .sympress-action-card .dashicons { grid-row: span 2; color: var(--sympress-blue); }
-            .sympress-form-card { display: grid; gap: 20px; }
-            .sympress-field { display: grid; gap: 8px; }
+            .sympress-action-card:hover { border-color: var(--sympress-brand); color: var(--sympress-brand-strong); }
+            .sympress-action-card .dashicons { grid-row: span 2; color: var(--sympress-brand); }
+            .sympress-form-card { display: grid; gap: 20px; min-width: 0; }
+            .sympress-field { display: grid; gap: 8px; min-width: 0; }
+            .sympress-cache-admin fieldset { min-width: 0; }
+            .sympress-table-scroll { min-width: 0; overflow-x: auto; }
+            .sympress-table-scroll:focus-visible {
+                outline: 2px solid var(--sympress-brand-strong);
+                outline-offset: 3px;
+            }
             .sympress-field--inline { grid-template-columns: minmax(0, 1fr) 120px; align-items: center; gap: 18px; }
             .sympress-field__label { color: var(--sympress-text); font-weight: 700; }
             .sympress-field__description { line-height: 1.45; }
@@ -1441,8 +1506,8 @@ final readonly class SettingsPage
             .sympress-radio-row input { margin-top: 2px; }
             .sympress-profile-card:has(input:checked),
             .sympress-radio-row:has(input:checked) {
-                border-color: var(--sympress-blue);
-                box-shadow: 0 0 0 1px var(--sympress-blue);
+                border-color: var(--sympress-brand);
+                box-shadow: 0 0 0 1px var(--sympress-brand);
             }
             .sympress-profile-card strong,
             .sympress-radio-row strong,
@@ -1472,7 +1537,7 @@ final readonly class SettingsPage
                 background: #fff;
                 transition: transform .16s ease;
             }
-            .sympress-switch input[type="checkbox"]:checked + .sympress-switch__track { background: var(--sympress-blue); }
+            .sympress-switch input[type="checkbox"]:checked + .sympress-switch__track { background: var(--sympress-brand); }
             .sympress-switch input[type="checkbox"]:checked + .sympress-switch__track::after { transform: translateX(18px); }
             .sympress-inline-state,
             .sympress-alert {
@@ -1525,7 +1590,7 @@ final readonly class SettingsPage
             .sympress-modal-close .dashicons { font-size: 24px; width: 24px; height: 24px; }
             .sympress-onboarding-steps { display: flex; gap: 8px; padding: 0 24px; }
             .sympress-onboarding-steps span { flex: 1; height: 4px; border-radius: 99px; background: #dcdcde; }
-            .sympress-onboarding-steps span.is-active { background: var(--sympress-blue); }
+            .sympress-onboarding-steps span.is-active { background: var(--sympress-brand); }
             @media (max-width: 1100px) {
                 .sympress-product-bar {
                     grid-template-columns: 1fr;
@@ -1549,7 +1614,7 @@ final readonly class SettingsPage
                     border-radius: 8px;
                 }
                 .sympress-cache-tabs__item { min-width: max-content; }
-                .sympress-cache-tabs__item.is-active { box-shadow: inset 0 -3px 0 var(--sympress-blue); }
+                .sympress-cache-tabs__item.is-active { box-shadow: inset 0 -3px 0 var(--sympress-brand); }
                 .sympress-cache-help {
                     min-width: max-content;
                     margin-top: 0;
@@ -1623,7 +1688,7 @@ final readonly class SettingsPage
                     tabs.forEach((tab) => {
                         const active = tab.dataset.sympressTab === id;
                         tab.classList.toggle('is-active', active);
-                        tab.setAttribute('aria-selected', active ? 'true' : 'false');
+                        tab.setAttribute('aria-pressed', active ? 'true' : 'false');
                     });
                     panels.forEach((panel) => panel.classList.toggle('is-active', panel.dataset.sympressPanel === id));
                     if (pushHash && window.history.replaceState) {

@@ -67,7 +67,7 @@
     background: var(--sympress-bg);
 }
 .sympress-performance-bar > span { min-width: 0; }
-.sympress-performance-bar__hit { background: var(--sympress-blue); }
+.sympress-performance-bar__hit { background: var(--sympress-brand); }
 .sympress-performance-bar__fresh { background: var(--sympress-warning); }
 .sympress-performance-totals {
     margin: 10px 0 14px;
@@ -83,7 +83,7 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--sympress-blue);
+    background: var(--sympress-brand);
 }
 .sympress-performance-dot--fresh { background: var(--sympress-warning); }
 .sympress-performance-note {
@@ -106,12 +106,12 @@
 }
 .sympress-performance-details summary {
     width: fit-content;
-    color: var(--sympress-blue-dark);
+    color: var(--sympress-brand-strong);
     font-weight: 600;
     cursor: pointer;
 }
 .sympress-performance-details summary:focus-visible {
-    outline: 2px solid var(--sympress-blue);
+    outline: 2px solid var(--sympress-brand);
     outline-offset: 4px;
     border-radius: 2px;
 }

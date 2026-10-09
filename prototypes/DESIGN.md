@@ -3,7 +3,7 @@
 The dashboard answers two questions: how much eligible traffic Nginx serves
 from cache, and whether local cache operations need attention. The supplied
 screenshots are the reference for the existing blue accent, white surfaces,
-compact controls and sidebar. The open paragraph block in the latest screenshot
+compact controls and sidebar. The open paragraph block in the earlier screenshot
 has weak hierarchy and repeats information already present in the KPI cards.
 
 - Put the hit rate, request denominator and proportional distribution together
@@ -22,7 +22,16 @@ has weak hierarchy and repeats information already present in the KPI cards.
 - At desktop widths use a performance panel and a two-by-two operational grid.
   Below 1100px stack them; below 480px stack operational cards. Text and controls
   wrap without horizontal document overflow at 320, 768, 1024 and 1440px.
-- Preserve WordPress theme colors, existing controls and page navigation.
+- Use NGINX green for the product mark, navigation, icons, enabled switches
+  and cache-served distribution. Use a darker green for small text. Use black
+  for primary action buttons and black outlines/text for secondary buttons;
+  scope all colors to this plugin so WordPress's admin theme stays intact.
+- Give card headings one consistent 14px/600/21px style. Keep section titles
+  at 20px/600/28px and a clear gap above their descriptions. Remove negative
+  paragraph margins so configuration subtitles cannot overlap headings.
+- Add a 16px gap below the product bar before section content. Keep native
+  disclosure and button focus outlines visible, using the green accent.
+- Preserve existing controls and page navigation.
   Reject a duplicate hit-rate tile, an always-open prose block, decorative
   charts without data, and extra libraries for a two-segment distribution.
 
