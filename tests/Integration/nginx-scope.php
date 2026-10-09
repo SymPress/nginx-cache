@@ -40,6 +40,11 @@ error_log $root/error.log;
 events { worker_connections 32; }
 http {
     access_log off;
+    client_body_temp_path $root/body;
+    proxy_temp_path $root/proxy-temp;
+    fastcgi_temp_path $root/fastcgi-temp;
+    uwsgi_temp_path $root/uwsgi-temp;
+    scgi_temp_path $root/scgi-temp;
     proxy_cache_path $root/cache levels=1:2 keys_zone=fixture:1m inactive=10m;
     server {
         listen $front;
