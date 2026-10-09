@@ -6,6 +6,7 @@ namespace SymPress\NginxCache\Layer;
 
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Value\PurgeResult;
+use SymPress\NginxCache\Value\PurgeScope;
 
 final readonly class CacheLayerCoordinator
 {
@@ -46,6 +47,10 @@ final readonly class CacheLayerCoordinator
         $responses = [];
 
         foreach ($layers as $layer) {
+            if (in_array($layer, ['object-cache', 'opcache'], true) && function_exists('is_multisite') && is_multisite() && ($result->scope ?? PurgeScope::Site) === PurgeScope::Site) {
+                $responses[] = ['layer' => $layer, 'flushed' => false, 'message' => 'Global cache layers require explicit network scope in Multisite.'];
+                continue;
+            }
             $response = match ($layer) {
                 'object-cache' => $this->flushObjectCache(),
                 'opcache' => $this->flushOpcache(),

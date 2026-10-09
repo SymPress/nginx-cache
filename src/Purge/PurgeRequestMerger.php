@@ -6,6 +6,7 @@ namespace SymPress\NginxCache\Purge;
 
 use SymPress\NginxCache\Value\PurgeMode;
 use SymPress\NginxCache\Value\PurgeRequest;
+use SymPress\NginxCache\Value\PurgeScope;
 
 final readonly class PurgeRequestMerger
 {
@@ -16,6 +17,17 @@ final readonly class PurgeRequestMerger
      * @return list<PurgeRequest>
      */
     public function merge(array $items): array
+    {
+        $site = array_values(array_filter($items, static fn (PurgeRequest $request): bool => $request->scope === PurgeScope::Site));
+        $network = array_values(array_filter($items, static fn (PurgeRequest $request): bool => $request->scope === PurgeScope::Network));
+        return [...$this->mergeScope($site, PurgeScope::Site), ...$this->mergeScope($network, PurgeScope::Network)];
+    }
+
+    /**
+     * @param list<PurgeRequest> $items
+     * @return list<PurgeRequest>
+     */
+    private function mergeScope(array $items, PurgeScope $scope): array
     {
         $urls = [];
         $tags = [];
@@ -47,14 +59,14 @@ final readonly class PurgeRequestMerger
         $tags = array_values(array_unique($tags));
 
         if ($requiresFull || count($urls) > self::MAX_URLS) {
-            return [PurgeRequest::full($reasons, $sources, $dryRun, $prewarm)];
+            return [PurgeRequest::full($reasons, $sources, $dryRun, $prewarm, $scope)];
         }
 
         if ($urls === []) {
             return [];
         }
 
-        return [PurgeRequest::urls($urls, $reasons, $sources, $dryRun, $prewarm, $tags)];
+        return [PurgeRequest::urls($urls, $reasons, $sources, $dryRun, $prewarm, $tags, $scope)];
     }
 
     /** @param list<string> $values */

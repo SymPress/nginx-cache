@@ -9,6 +9,7 @@ use SymPress\NginxCache\Remote\CloudflarePurgeDispatcher;
 use SymPress\NginxCache\Remote\RemotePurgeDispatcher;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Support\MutationLockUnavailable;
+use SymPress\NginxCache\Surrogate\TagIndexRepository;
 use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
 use SymPress\NginxCache\Value\PurgeResult;
@@ -28,6 +29,11 @@ final readonly class PurgeSideEffectProcessor
         private RemotePurgeDispatcher $remote,
         private CloudflarePurgeDispatcher $cloudflare,
         private CacheClock $clock,
+        private ?CachePurger $purger = null,
+        private ?SiteScopeResolver $scope = null,
+        private ?TagIndexRepository $tagIndex = null,
+        private ?PurgeHistoryRepository $history = null,
+        private ?PurgeEventEmitter $events = null,
     ) {
     }
 
@@ -43,8 +49,8 @@ final readonly class PurgeSideEffectProcessor
         try {
             if ($this->attentionReason() === 'storage-error') {
                 // A full invalidation covers work that could not previously be enqueued.
-                $request = PurgeRequest::full('side-effect-recovery', 'queue', prewarm: $request->prewarm);
-                $result = PurgeResult::success($result->path, 0, 0.0, reason: 'side-effect-recovery', source: 'queue');
+                $request = PurgeRequest::full('side-effect-recovery', 'queue', prewarm: $request->prewarm, scope: $request->scope);
+                $result = PurgeResult::success($result->path, 0, 0.0, reason: 'side-effect-recovery', source: 'queue')->withScope($request->scope)->withScan($result->partial, $result->unmatched, $result->cursor);
             }
             if ($this->queue->push($result, $request)) {
                 $this->signal('coalesced');
@@ -62,14 +68,18 @@ final readonly class PurgeSideEffectProcessor
         return $tasks;
     }
 
-    public function process(): void
+    public function process(): int
     {
+        $attempted = 0;
         try {
-            $this->queue->process($this->executeTask(...), limit: 1);
+            $this->queue->process(function (array $task) use (&$attempted): bool|SideEffectOutcome {
+                ++$attempted;
+                return $this->executeTask($task);
+            }, limit: 1);
         } catch (MutationLockUnavailable) {
             // Another connection owns normal queue work; retain its scope and retry.
             $this->schedule(60);
-            return;
+            return $attempted;
         } catch (\Throwable) {
             // Leave the stored task for retry, without logging provider credentials.
             $this->signal('storage-error');
@@ -78,7 +88,7 @@ final readonly class PurgeSideEffectProcessor
             if ($this->attentionReason() !== 'storage-error' && function_exists('delete_option')) {
                 delete_option(self::HEALTH_OPTION);
             }
-            return;
+            return $attempted;
         }
 
         foreach ($this->queue->inspect() as $task) {
@@ -89,6 +99,7 @@ final readonly class PurgeSideEffectProcessor
         }
 
         $this->schedule();
+        return $attempted;
     }
 
     public function schedule(int $minimumDelay = 1): void
@@ -108,6 +119,11 @@ final readonly class PurgeSideEffectProcessor
     public function count(): int
     {
         return $this->queue->count();
+    }
+
+    public function nextAttemptAt(): ?int
+    {
+        return $this->queue->nextAttemptAt();
     }
 
     /** @return list<array<string, mixed>> */
@@ -152,6 +168,40 @@ final readonly class PurgeSideEffectProcessor
         $request = PurgeRequest::fromArray($task['request']);
         if ($result->dryRun || !$result->successful) {
             return true;
+        }
+        if ($result->partial) {
+            $snapshots = $this->completed($task, 'site-scan:');
+            if ($snapshots !== []) {
+                $snapshot = json_decode($snapshots[array_key_last($snapshots)], true, flags: JSON_THROW_ON_ERROR);
+                if (!is_array($snapshot)) {
+                    return false;
+                }
+                $result = PurgeResult::fromArray($snapshot);
+            }
+            if ($result->partial) {
+                if ($this->purger === null || $this->scope === null) {
+                    return false;
+                }
+                $next = $this->purger->purgeSite($result->path, $request, $this->scope->matcher(), $result->cursor);
+                if (!$next->successful) {
+                    return false;
+                }
+                $result = $next->withScan($next->partial, $result->unmatched + $next->unmatched, $next->cursor, $result->removedEntries + $next->removedEntries);
+                // Keep one durable scan snapshot; successful chunks do not spend the retry budget.
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Internal bounded queue checkpoint.
+                $this->queue->checkpoint($task['id'], 'site-scan:' . json_encode($result->toArray(), JSON_THROW_ON_ERROR));
+                if ($result->partial) {
+                    return SideEffectOutcome::Continue;
+                }
+            }
+            if (!in_array('site-scan-finalized', $task['completed'], true)) {
+                if ($this->settings->tagIndexEnabled()) {
+                    $this->tagIndex?->clear();
+                }
+                $this->history?->record($result);
+                $this->events?->emit($result);
+                $this->queue->checkpoint($task['id'], 'site-scan-finalized');
+            }
         }
         $sideEffects = [];
         $prewarmPending = false;
@@ -247,6 +297,10 @@ final readonly class PurgeSideEffectProcessor
         }
 
         $tasks = [];
+
+        if ($result->partial) {
+            $tasks[] = 'site-scan';
+        }
 
         if ($this->shouldPrewarm($result, $request)) {
             $tasks[] = 'prewarm';

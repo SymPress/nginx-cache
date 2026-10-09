@@ -30,6 +30,7 @@ final readonly class PurgeQueueRepository
 
         if (($GLOBALS['wpdb'] ?? null) instanceof \wpdb) {
             $this->pushInbox($request);
+            (new NetworkPendingRepository($this->mutex))->mark();
             return;
         }
 
@@ -42,6 +43,7 @@ final readonly class PurgeQueueRepository
                 }
             },
         );
+        (new NetworkPendingRepository($this->mutex))->mark();
     }
 
     /** @return list<PurgeRequest> */
@@ -103,9 +105,9 @@ final readonly class PurgeQueueRepository
     }
 
     /** @param callable(PurgeRequest): bool $purge */
-    public function process(callable $purge): bool
+    public function process(callable $purge, int $limit = PHP_INT_MAX): bool
     {
-        return $this->mutex->synchronized(self::OPTION_QUEUE . '.process', function () use ($purge): bool {
+        return $this->mutex->synchronized(self::OPTION_QUEUE . '.process', function () use ($purge, $limit): bool {
             $snapshot = $this->mutex->synchronized(self::OPTION_QUEUE, function (): array {
                 $this->ingestInbox();
                 $requests = $this->all();
@@ -120,7 +122,7 @@ final readonly class PurgeQueueRepository
                 }
                 return [$requests, $generation];
             });
-            foreach ($snapshot[0] as $request) {
+            foreach (array_slice($snapshot[0], 0, max(0, $limit)) as $request) {
                 try {
                     $successful = $purge($request);
                 } catch (\Throwable) {
@@ -139,7 +141,7 @@ final readonly class PurgeQueueRepository
                     foreach ($pending as $index => $current) {
                         if ($current->toArray() === $request->toArray()) {
                             unset($pending[$index]);
-                            return $this->persist(array_values($pending), $this->retryState(), $snapshot[1]);
+                            return $this->persist(array_values($pending), new QueueRetryState(), $snapshot[1]);
                         }
                     }
                     // A concurrent producer merged new work into this item. Retain that work.
@@ -149,7 +151,7 @@ final readonly class PurgeQueueRepository
                     return false;
                 }
             }
-            return $this->count() === 0;
+            return true;
         });
     }
 
@@ -253,12 +255,12 @@ final readonly class PurgeQueueRepository
     {
         $db = $GLOBALS['wpdb'];
         $slot = hexdec(substr(hash('sha256', maybe_serialize($request->toArray())), 0, 4)) % self::INBOX_SLOTS;
-        $name = self::OPTION_QUEUE . '_inbox_slot_' . $slot;
+        $name = self::OPTION_QUEUE . '_inbox_slot_' . $request->scope->value . '_' . $slot;
         for ($attempt = 0; $attempt < 3; ++$attempt) {
             $previous = $db->get_var($db->prepare('SELECT option_value FROM %i WHERE option_name = %s', $db->options, $name));
             $oldRequest = is_string($previous) ? $this->decodeInbox($previous) : null;
             $merged = is_string($previous) && $oldRequest === null
-                ? PurgeRequest::full('Invalid inbox payload', 'queue', $request->dryRun, $request->prewarm)
+                ? PurgeRequest::full('Invalid inbox payload', 'queue', $request->dryRun, $request->prewarm, $request->scope)
                 : ($this->merger->merge([$request, ...($oldRequest !== null ? [$oldRequest] : [])])[0] ?? $request);
             $value = maybe_serialize([...$merged->toArray(), '_id' => bin2hex(random_bytes(16))]);
             $query = $previous === null
@@ -275,8 +277,8 @@ final readonly class PurgeQueueRepository
         }
         // Bounded contention fallback: an atomic full-purge marker covers all
         // affected URLs. Separate flags preserve dry-run and prewarm semantics.
-        $name = self::OPTION_QUEUE . '_inbox_overflow_' . (int) $request->dryRun . (int) $request->prewarm;
-        $full = PurgeRequest::full('Inbox contention', 'queue', $request->dryRun, $request->prewarm);
+        $name = self::OPTION_QUEUE . '_inbox_overflow_' . $request->scope->value . '_' . (int) $request->dryRun . (int) $request->prewarm;
+        $full = PurgeRequest::full('Inbox contention', 'queue', $request->dryRun, $request->prewarm, $request->scope);
         $value = maybe_serialize([...$full->toArray(), '_id' => bin2hex(random_bytes(16))]);
         if ($db->query($db->prepare('INSERT INTO %i (option_name, option_value, autoload) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE option_value = VALUES(option_value)', $db->options, $name, $value, 'off')) === false) {
             throw new \RuntimeException('Unable to persist the purge overflow marker.');

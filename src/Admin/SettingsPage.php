@@ -11,6 +11,7 @@ use SymPress\NginxCache\Inspection\Diagnostics;
 use SymPress\NginxCache\Purge\CacheManager;
 use SymPress\NginxCache\Purge\PurgeQueueProcessor;
 use SymPress\NginxCache\Purge\PurgeSideEffectProcessor;
+use SymPress\NginxCache\Security\Capabilities;
 use SymPress\NginxCache\Settings\CachePolicy;
 use SymPress\NginxCache\Settings\CompatibilitySettings;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
@@ -20,7 +21,7 @@ use WP_Admin_Bar;
 
 final readonly class SettingsPage
 {
-    private const string CAPABILITY = 'manage_options';
+    private const string CAPABILITY = Capabilities::MANAGE;
     private const string PAGE_SLUG = 'sympress-nginx-cache';
     private const string LEGACY_MESSAGE_QUERY_VAR = 'edge-cache-message';
     private const string NOTICE_TRANSIENT_PREFIX = 'sympress_nginx_cache_notice_';
@@ -142,7 +143,7 @@ final readonly class SettingsPage
 
         check_admin_referer(self::PURGE_ACTION);
 
-        if (!current_user_can(self::CAPABILITY)) {
+        if (!current_user_can(Capabilities::PURGE_SITE)) {
             wp_die(esc_html__('You are not allowed to purge this cache.', WordPressCacheSettings::TEXT_DOMAIN));
         }
 
@@ -157,7 +158,7 @@ final readonly class SettingsPage
     {
         check_admin_referer(self::PURGE_ACTION);
 
-        if (!current_user_can(self::CAPABILITY)) {
+        if (!current_user_can(Capabilities::PURGE_SITE)) {
             wp_die(esc_html__('You are not allowed to purge this cache.', WordPressCacheSettings::TEXT_DOMAIN));
         }
 

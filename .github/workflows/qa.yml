@@ -76,6 +76,7 @@ jobs:
         run: |
           php tests/Integration/run.php
           php tests/Integration/query-contention.php
+          php tests/Integration/multisite.php
 
   nginx-config:
     name: Native Nginx config integration

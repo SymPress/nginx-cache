@@ -28,9 +28,12 @@ final readonly class CacheManager
         $request ??= PurgeRequest::full(prewarm: $this->settings->prewarmEnabled());
         $result = $this->alternative?->purge($request)
             ?? $this->purger->purgeRequest($this->settings->cachePath(), $request);
+        $result = $result->withScope($request->scope);
 
         if ($result->successful && !$result->dryRun) {
-            $this->syncTagIndex($result);
+            if (!$result->partial) {
+                $this->syncTagIndex($result);
+            }
             $queuedSideEffects = $this->sideEffects->enqueue($result, $request);
 
             $warning = $this->sideEffects->attentionReason();

@@ -18,6 +18,7 @@ final readonly class PurgeRequest
         public bool $dryRun = false,
         public bool $prewarm = false,
         public array $tags = [],
+        public PurgeScope $scope = PurgeScope::Site,
     ) {
     }
 
@@ -26,9 +27,10 @@ final readonly class PurgeRequest
         string $source = 'runtime',
         bool $dryRun = false,
         bool $prewarm = false,
+        PurgeScope $scope = PurgeScope::Site,
     ): self {
 
-        return new self(PurgeMode::Full, [], $reason, $source, $dryRun, $prewarm);
+        return new self(PurgeMode::Full, [], $reason, $source, $dryRun, $prewarm, scope: $scope);
     }
 
     /**
@@ -42,6 +44,7 @@ final readonly class PurgeRequest
         bool $dryRun = false,
         bool $prewarm = false,
         array $tags = [],
+        PurgeScope $scope = PurgeScope::Site,
     ): self {
 
         $urls = array_values(
@@ -61,6 +64,7 @@ final readonly class PurgeRequest
             $dryRun,
             $prewarm,
             $tags,
+            $scope,
         );
     }
 
@@ -79,6 +83,7 @@ final readonly class PurgeRequest
             $this->dryRun,
             $enabled,
             $this->tags,
+            $this->scope,
         );
     }
 
@@ -92,6 +97,7 @@ final readonly class PurgeRequest
             $enabled,
             $this->prewarm,
             $this->tags,
+            $this->scope,
         );
     }
 
@@ -106,6 +112,7 @@ final readonly class PurgeRequest
             'dry_run' => $this->dryRun,
             'prewarm' => $this->prewarm,
             'tags'    => $this->tags,
+            'scope'   => $this->scope->value,
         ];
     }
 
@@ -140,6 +147,7 @@ final readonly class PurgeRequest
             (bool) ($data['dry_run'] ?? false),
             (bool) ($data['prewarm'] ?? false),
             $tags,
+            ($data['scope'] ?? '') === PurgeScope::Network->value ? PurgeScope::Network : PurgeScope::Site,
         );
     }
 }

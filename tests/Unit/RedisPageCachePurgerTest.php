@@ -13,6 +13,7 @@ use SymPress\NginxCache\Settings\CompatibilitySettings;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
+use SymPress\NginxCache\Value\SiteKeyMatcher;
 use Symfony\Component\Clock\MockClock;
 
 final class RedisPageCachePurgerTest extends TestCase
@@ -60,5 +61,24 @@ final class RedisPageCachePurgerTest extends TestCase
         });
         self::assertTrue($this->purger($store)->purge(PurgeRequest::urls(['https://example.test/post/']))->successful);
         self::assertFalse($this->purger($store)->purge(PurgeRequest::urls(['https://foreign.test/post/']))->successful);
+    }
+
+    public function testSiteScanParsesKeysAndKeepsNestedSitesAndUnknownKeys(): void
+    {
+        $store = $this->createMock(RedisPageCacheStore::class);
+        $store->expects(self::exactly(8))->method('scan')->willReturn(['0', [
+            'nginx-cache:https|GET|example.test|/shop/product/',
+            'nginx-cache:httpsGETexample.test/shop/item/',
+            'nginx-cache:httpsGETexample.test/shop/child/',
+            'nginx-cache:httpsGETexample.test/',
+            'nginx-cache:unknown',
+            'object-cache:other',
+        ]]);
+        $store->expects(self::exactly(8))->method('delete')->willReturnCallback(static function (array $keys): int {
+            self::assertSame(['nginx-cache:https|GET|example.test|/shop/product/', 'nginx-cache:httpsGETexample.test/shop/item/'], $keys);
+            return count($keys);
+        });
+        $matcher = new SiteKeyMatcher(['example.test' => '/shop/'], ['example.test' => ['/', '/shop/', '/shop/child/']]);
+        self::assertTrue($this->purger($store)->purgeSite(PurgeRequest::full(), $matcher)->successful);
     }
 }

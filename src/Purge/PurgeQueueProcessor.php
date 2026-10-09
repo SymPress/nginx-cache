@@ -26,23 +26,30 @@ final readonly class PurgeQueueProcessor
         $this->schedule();
     }
 
-    public function process(): void
+    public function process(int $limit = PHP_INT_MAX): int
     {
+        $attempted = 0;
         try {
             $successful = $this->queue->process(
-                fn (PurgeRequest $request): bool => $this->cache->purgeConfiguredPath($request)->successful,
+                function (PurgeRequest $request) use (&$attempted): bool {
+                    ++$attempted;
+                    return $this->cache->purgeConfiguredPath($request)->successful;
+                },
+                $limit,
             );
         } catch (\Throwable) {
             $successful = false;
         }
 
         if ($successful) {
-            return;
+            $this->schedule();
+            return $attempted;
         }
 
         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- credential-free retry signal.
         error_log('SymPress cache purge failed; pending requests are retained for retry.');
         $this->schedule(60);
+        return $attempted;
     }
 
     public function schedule(int $minimumDelay = 0): void
@@ -62,6 +69,11 @@ final readonly class PurgeQueueProcessor
     public function count(): int
     {
         return $this->queue->count();
+    }
+
+    public function nextAttemptAt(): ?int
+    {
+        return $this->queue->nextAttemptAt();
     }
 
     /** @return list<array<string, mixed>> */

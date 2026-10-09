@@ -10,10 +10,12 @@ use SymPress\NginxCache\Inspection\Diagnostics;
 use SymPress\NginxCache\Layer\CacheLayerCoordinator;
 use SymPress\NginxCache\Purge\CacheManager;
 use SymPress\NginxCache\Purge\PurgeQueueProcessor;
+use SymPress\NginxCache\Security\Capabilities;
 use SymPress\NginxCache\Security\UrlPolicy;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Surrogate\TagIndexRepository;
 use SymPress\NginxCache\Value\PurgeRequest;
+use SymPress\NginxCache\Value\PurgeScope;
 use WP_REST_Request;
 use WP_REST_Response;
 
@@ -83,9 +85,27 @@ final readonly class CacheRestController
         ]);
     }
 
-    public function permission(): bool
+    public function permission(?WP_REST_Request $request = null): bool
     {
-        return current_user_can('manage_options');
+        $capability = Capabilities::MANAGE;
+        if ($request !== null && $request->get_method() !== 'GET') {
+            // Cookie clients need a REST nonce. Core authenticates application passwords separately.
+            if (
+                !(($GLOBALS['wp_rest_application_password_status'] ?? null) instanceof \WP_User)
+                && !wp_verify_nonce($request->get_header('X-WP-Nonce') ?? '', 'wp_rest')
+            ) {
+                return false;
+            }
+            if ($request->get_route() === '/' . self::NAMESPACE . '/purge') {
+                try {
+                    $purge = $this->requestFromRest($request);
+                } catch (\InvalidArgumentException) {
+                    return false;
+                }
+                $capability = $purge->scope === PurgeScope::Network ? Capabilities::PURGE_NETWORK : ($purge->requiresFullPurge() ? Capabilities::PURGE_SITE : Capabilities::PURGE_URL);
+            }
+        }
+        return current_user_can($capability);
     }
 
     public function status(WP_REST_Request $request): WP_REST_Response
@@ -184,16 +204,21 @@ final readonly class CacheRestController
         $dryRun = (bool) $request->get_param('dry_run');
         $prewarm = (bool) $request->get_param('prewarm');
         $mode = $this->stringParam($request->get_param('mode'), $urls === [] ? 'full' : 'urls');
+        $scope = $this->stringParam($request->get_param('scope'), 'site');
+        if (!in_array($scope, ['site', 'network'], true) || !in_array($mode, ['urls', 'full'], true)) {
+            throw new \InvalidArgumentException('Invalid purge scope or mode.');
+        }
+        $scope = $scope === 'network' ? PurgeScope::Network : PurgeScope::Site;
 
         if (($mode === 'urls' || $this->hasProvidedUrls($rawUrls)) && $urls === []) {
             throw new \InvalidArgumentException('At least one same-origin URL is required for URL purge.');
         }
 
         if ($mode === 'urls' && $urls !== []) {
-            return PurgeRequest::urls($urls, $reason, 'rest', $dryRun, $prewarm);
+            return PurgeRequest::urls($urls, $reason, 'rest', $dryRun, $prewarm, scope: $scope);
         }
 
-        return PurgeRequest::full($reason, 'rest', $dryRun, $prewarm);
+        return PurgeRequest::full($reason, 'rest', $dryRun, $prewarm, $scope);
     }
 
     /** @return list<string> */
