@@ -1,0 +1,35 @@
+name: V1 formatting preview
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    if: github.head_ref == 'release/v1.0.0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240
+        with:
+          php-version: '8.5'
+          tools: composer:2.10.3
+          coverage: none
+      - run: composer install --no-interaction --no-progress --no-scripts
+      - name: Produce reviewable formatting patch
+        shell: bash
+        run: |
+          composer cs:fix || true
+          mkdir -p build
+          git diff --src-prefix=a/ --dst-prefix=b/ -- src > build/style.patch
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: v1-style-preview
+          path: build/style.patch
+          retention-days: 1
