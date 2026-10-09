@@ -112,6 +112,7 @@ try {
     $index->remember('https://example.test/rollback-expired/', ['rollback-expired']);
     $wpdb->query($wpdb->prepare("UPDATE {$wpdb->prefix}sympress_cache_tags SET touched=%d WHERE tag='rollback-expired'", time() - 604801));
     $cursorBefore = get_option($maintenance::CURSOR, '');
+    wp_clear_scheduled_hook($maintenance::HOOK);
     $fault = static function (string $query): string {
         if (str_starts_with($query, 'DELETE FROM') && str_contains($query, 'sympress_cache_tags') && str_contains($query, 'WHERE tag IN')) {
             return 'DELETE FROM `' . $GLOBALS['wpdb']->prefix . 'sympress_cache_tags` WHERE fixture_missing_column=1';
@@ -125,6 +126,7 @@ try {
     finally { remove_filter('query', $fault); $wpdb->suppress_errors($previousErrors); }
     check($rolledBack && (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}sympress_cache_tags WHERE tag='rollback-expired'") === 1, 'failed global maintenance rolls back preceding TTL deletion');
     check(get_option($maintenance::CURSOR, '') === $cursorBefore && (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}sympress_cache_tags WHERE tag='bounded'") === 55, 'failed maintenance restores retention rows and cached cursor');
+    check(wp_next_scheduled($maintenance::HOOK) !== false, 'failed maintenance reschedules a consumed cron event');
     for ($tick = 0; $tick < 200 && $index->stats()['tags'] > 1000; ++$tick) {
         check($maintenance->prune() <= 500, 'maintenance tick deletes at most 500 rows');
     }

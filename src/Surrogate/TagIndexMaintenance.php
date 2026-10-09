@@ -39,6 +39,11 @@ final readonly class TagIndexMaintenance
         } catch (MutationLockUnavailable) {
             $this->schedule();
             return 0;
+        } catch (\Throwable $error) {
+            // WP-Cron removes the due event before invoking its callback.
+            // Keep transient failures retryable after rolling back the batch.
+            $this->schedule();
+            throw $error;
         }
     }
 

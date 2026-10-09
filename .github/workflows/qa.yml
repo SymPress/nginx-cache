@@ -185,6 +185,7 @@ jobs:
           tar -xzf "$RUNNER_TEMP/wordpress.tar.gz" --directory "$RUNNER_TEMP/nginx-wordpress" --strip-components=1
       - name: Measure large site, tag index and network worker
         env:
+          NGINX_TEST_SCALE_BUFFER_POOL_MB: '512'
           NGINX_TEST_DB_NAME: sympress_review_nginx_scale_ci
           NGINX_TEST_DB_HOST: 127.0.0.1:3306
           NGINX_TEST_DB_PASSWORD: sympress-db-test-only
