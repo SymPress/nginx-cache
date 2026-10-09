@@ -29,6 +29,12 @@ function collectQueryMaximum(float &$maximum): void
             $GLOBALS['scale_max_transaction_ms'] = max($GLOBALS['scale_max_transaction_ms'] ?? 0.0, $milliseconds);
             continue;
         }
+        $slowest = $GLOBALS['scale_slow_index_queries'] ?? [];
+        if (count($slowest) < 10 || $milliseconds > $slowest[array_key_last($slowest)]['ms']) {
+            $slowest[] = ['ms' => $milliseconds, 'sql' => substr($query[0], 0, 250)];
+            usort($slowest, static fn (array $a, array $b): int => $b['ms'] <=> $a['ms']);
+            $GLOBALS['scale_slow_index_queries'] = array_slice($slowest, 0, 10);
+        }
         if ($query[1] * 1000 > $maximum) {
             $maximum = $query[1] * 1000;
             $GLOBALS['scale_slowest_query'] = substr($query[0], 0, 250);
@@ -119,6 +125,7 @@ try {
     verifyScale($stats['tags'] <= 1000 && $tooLarge === 0, '100000 indexed URLs converge to both configured limits');
     $report['tag_index'] = ['inserted_urls' => 100000, 'inserted_rows' => 200000, 'prune_ticks' => $ticks, 'final' => $stats, 'max_index_query_ms' => $maxIndexQuery, 'max_transaction_ms' => $GLOBALS['scale_max_transaction_ms'] ?? 0.0, 'max_statement_ms' => $GLOBALS['scale_max_statement_ms'] ?? 0.0];
     $report['tag_index']['slowest_index_query'] = $GLOBALS['scale_slowest_query'] ?? '';
+    $report['tag_index']['slow_index_queries'] = $GLOBALS['scale_slow_index_queries'] ?? [];
     echo 'Index maximum query: ' . $maxIndexQuery . ' ms; ' . ($GLOBALS['scale_slowest_query'] ?? '') . PHP_EOL;
     $wpdb->queries = [];
 
@@ -183,4 +190,6 @@ try {
     file_put_contents($output . '/scale-report.json', json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL);
     echo json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
     verifyScale($maxIndexQuery < 200, 'index data queries stay below 200 ms (measured ' . round($maxIndexQuery, 2) . ' ms); transaction I/O latency is reported separately');
+    verifyScale($report['targets']['save_post_p95_under_30_ms'], 'queued save_post overhead p95 stays below 30 ms');
+    verifyScale($report['targets']['scan_at_least_5000_files_per_second'], 'site scan processes at least 5000 files per second');
 } finally { $fs->remove($root); }

@@ -19,8 +19,10 @@ request to local deletion and follow-up work.
 
 ## Tag retention, setup and translated requests
 
-Tag retention no longer prunes on each insertion. Maintenance uses the current
-site's table and limits; global tag age is its newest URL timestamp. The
+Tag retention no longer prunes on each insertion. Maintenance commits the
+bounded batch in one transaction and rolls back its rows and metadata on
+failure, invalidating WordPress option caches. It uses the current site's
+table and limits; global tag age is its newest URL timestamp. The
 `sympress_nginx_cache_prune_tags` event runs independently of purge work and is
 cleared on explicit data-deleting uninstall. Dry runs never invoke maintenance.
 With WP-Cron disabled, idle sites require an external cron runner for due events.
