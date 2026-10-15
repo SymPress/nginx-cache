@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## Unreleased
+
+- Export settings from every advanced tab and save imported values together, preserving checkbox fallbacks, role selections, managed fields and target-site secrets.
+
 ## 1.0.0 — 2026-10-09
 
 - Default every purge to the current site, preserving nested and mapped-site cache entries on shared Multisite roots. Continue budgeted scans durably and recover interrupted continuation storage without widening scope.
