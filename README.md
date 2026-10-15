@@ -159,6 +159,13 @@ requests. Prewarm requests are included in the percentage.
 
 ### Cache limits and background prewarm
 
+The advanced settings export includes editable settings from every tab. Import
+fills the complete form; save once to apply the imported values together.
+Secrets and their clear actions are excluded, so target-site credentials remain
+unchanged. Review cache paths and URLs for the target environment before importing.
+Settings are stored in each site's database; deploying plugin code does not
+transfer them between environments.
+
 The Cache tab configures these generated Nginx limits. All profiles preserve the
 same defaults; changing a profile does not silently increase cache lifetime.
 

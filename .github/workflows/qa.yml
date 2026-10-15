@@ -16,6 +16,15 @@ permissions:
   contents: read
 
 jobs:
+  settings-transfer:
+    name: Settings export and import
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - run: node --test tests/JavaScript/settings-transfer.test.cjs
+
   workflows:
     uses: sympress/workflows/.github/workflows/lint-workflows.yml@78d083a9a0176cf0252318b0c69fc64938a727d6
 

@@ -1779,14 +1779,19 @@ final readonly class SettingsPage
                     form.addEventListener('change', (event) => syncDuplicateFields(event.target));
 
                     form.addEventListener('submit', () => {
-                        panels.forEach((panel) => {
-                            if (panel.classList.contains('is-active')) {
+                        const owners = new Map();
+                        const fields = [...form.elements].filter((field) => field.name && !field.disabled);
+                        fields.forEach((field) => {
+                            const panel = field.closest('[data-sympress-panel]');
+                            if (!owners.has(field.name) || panel?.classList.contains('is-active')) {
+                                owners.set(field.name, panel);
+                            }
+                        });
+                        fields.forEach((field) => {
+                            if (owners.get(field.name) === field.closest('[data-sympress-panel]')) {
                                 return;
                             }
-
-                            panel.querySelectorAll('input, select, textarea, button').forEach((field) => {
-                                field.disabled = true;
-                            });
+                            field.disabled = true;
                         });
                     });
                 }
@@ -1810,6 +1815,10 @@ final readonly class SettingsPage
                 const exportButton = root.querySelector('[data-sympress-export-settings]');
                 const importButton = root.querySelector('[data-sympress-import-settings-trigger]');
                 const importInput = root.querySelector('[data-sympress-import-settings]');
+                const portableField = (field) => !field.disabled
+                    && (field.name === 'nginx_cache_path' || field.name === 'nginx_auto_purge' || field.name?.startsWith('sympress_nginx_cache_'))
+                    && !field.name.endsWith('_clear')
+                    && !['password', 'submit', 'button', 'file'].includes(field.type);
                 const collectSettings = () => {
                     const settings = {};
                     if (!form) {
@@ -1817,12 +1826,15 @@ final readonly class SettingsPage
                     }
 
                     [...form.elements].forEach((field) => {
-                        if (!field.name || field.disabled || field.name.startsWith('_') || field.type === 'submit' || field.type === 'file') {
+                        if (!portableField(field)) {
                             return;
                         }
 
-                        const panel = field.closest('[data-sympress-panel]');
-                        if (panel && !panel.classList.contains('is-active')) {
+                        if (field.name.endsWith('[]')) {
+                            settings[field.name] ??= [];
+                            if (field.type !== 'hidden' && (field.type !== 'checkbox' || field.checked)) {
+                                settings[field.name].push(field.value);
+                            }
                             return;
                         }
 
@@ -1844,15 +1856,20 @@ final readonly class SettingsPage
                     return settings;
                 };
                 const applySettings = (settings) => {
-                    if (!form || !settings || typeof settings !== 'object') {
+                    if (!form || !settings || typeof settings !== 'object' || Array.isArray(settings)) {
                         return;
                     }
 
                     Object.entries(settings).forEach(([name, value]) => {
-                        const fields = [...form.querySelectorAll(`[name="${CSS.escape(name)}"]`)];
+                        const fields = [...form.querySelectorAll(`[name="${CSS.escape(name)}"]`)].filter(portableField);
                         fields.forEach((field) => {
+                            if (field.type === 'hidden' && fields.some((other) => other.type === 'checkbox')) {
+                                return;
+                            }
                             if (field.type === 'checkbox') {
-                                field.checked = String(value) === '1' || value === true;
+                                field.checked = name.endsWith('[]')
+                                    ? Array.isArray(value) && value.map(String).includes(field.value)
+                                    : String(value) === '1' || value === true;
                             } else if (field.type === 'radio') {
                                 field.checked = field.value === String(value);
                             } else {
