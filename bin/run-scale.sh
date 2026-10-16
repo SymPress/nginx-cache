@@ -138,9 +138,9 @@ stage 'Preparing private source, dependencies and verified WordPress 7.1.2' "$ru
         composer install --no-interaction --no-progress --prefer-dist --no-scripts --no-plugins
         php -r '\''foreach (["dom", "mysqli", "pdo_mysql", "sodium"] as $extension) { if (!extension_loaded($extension)) { throw new RuntimeException("Missing PHP extension: " . $extension); } }'\''
         curl --fail --silent --show-error --location https://wordpress.org/wordpress-7.1.2.tar.gz --output /tmp/wordpress.tar.gz
-        echo "c0c666689d66b870d8825500bb8e402ed04de52602c61a6f516c6236b8c9ac67  /tmp/wordpress.tar.gz" | sha256sum --check
+        echo "c0c666689d66b870d8825500bb8e402ed04de52602c61a6f516c6236b8c9ac67  /tmp/wordpress.tar.gz" | sha256sum -c
         mkdir /wordpress
-        tar -xzf /tmp/wordpress.tar.gz --directory /wordpress --strip-components=1
+        tar -xzf /tmp/wordpress.tar.gz -C /wordpress --strip-components=1
         rm /tmp/wordpress.tar.gz
         php --version
         composer --version
