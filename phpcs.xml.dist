@@ -10,8 +10,8 @@
 
     <config name="testVersion" value="8.5-" />
     <config name="text_domain" value="nginx-cache" />
-    <!-- Support plugin-free Canary installs; these paths are relative to PHPCS. -->
-    <config name="installed_paths" value="../../automattic/vipwpcs,../../phpcompatibility/php-compatibility,../../phpcsstandards/phpcsextra,../../phpcsstandards/phpcsutils,../../sirbrillig/phpcs-variable-analysis,../../slevomat/coding-standard,../../sympress/coding-standards,../../wp-coding-standards/wpcs" />
+    <!-- Project-root-relative standards for plugin-free Canary installs. -->
+    <config name="installed_paths" value="vendor/automattic/vipwpcs,vendor/phpcompatibility/php-compatibility,vendor/phpcsstandards/phpcsextra,vendor/phpcsstandards/phpcsutils,vendor/sirbrillig/phpcs-variable-analysis,vendor/slevomat/coding-standard,vendor/sympress/coding-standards,vendor/wp-coding-standards/wpcs" />
 
     <file>nginx-cache.php</file>
     <file>uninstall.php</file>
