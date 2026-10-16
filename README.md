@@ -240,14 +240,37 @@ FastCGI caching or create that directory.
 
 ## Tested scale
 
-Reproduce with `composer tests:scale` and the same disposable database/core
-environment variables as the integration harness. The opt-in QA dispatch input
-`scale=true` runs both MariaDB and MySQL and uploads `build/scale-report.json`.
-CI gives both disposable database engines a fixed 512 MiB InnoDB buffer pool;
-the report records effective memory, durability settings and the ten slowest
-data queries. CI supplies the budget when starting its dedicated Docker
-container. The harness never changes database server settings; local runs use
-the server configuration prepared by the operator.
+Run the full benchmarks locally from a repository checkout:
+
+```bash
+./bin/run-scale.sh
+```
+
+The runner requires Bash and Docker Engine; PHP, Composer and a local WordPress
+installation are not required on the host. It prepares its own PHP 8.5 environment,
+Composer dependencies and checksum-verified WordPress 7.1.2, then runs the unchanged
+benchmarks sequentially on MariaDB and MySQL. Each database gets a fixed 512 MiB
+InnoDB buffer pool with its normal durability settings. The report records
+effective memory, durability settings and the ten slowest data queries.
+
+Each invocation writes separate engine reports and logs under
+`build/scale/<run-id>/<engine>/`, including `scale-report.json`. It exits successfully
+only when both selected engine runs pass. The default overall timeout is 3,600
+seconds, including setup. Use `./bin/run-scale.sh --engine=mariadb` or
+`--engine=mysql` to select one engine, `--timeout=SECONDS` to change the timeout,
+and `--help` for usage.
+
+The source checkout is mounted read-only and copied into a private container;
+host dependencies and lock files are preserved. Databases use a dedicated Docker
+network without publishing host ports. The runner removes its own containers,
+database volumes and network on completion, failure or interruption, while
+retaining reports and logs. Coding agents should inspect the command's exit status
+and the reports from that invocation. These benchmarks are no longer part of
+GitHub Actions.
+
+`composer tests:scale` remains the lower-level PHP entry point for a separately
+prepared disposable database/core environment using the integration harness's
+environment variables. The harness itself never changes database server settings.
 
 Measured locally on 2026-10-09: native Linux, PHP 8.5.4, WordPress 7.1.2,
 MariaDB 11.8.6 with a 64 MiB buffer pool; warm filesystem cache, zero external HTTP.
@@ -275,7 +298,7 @@ Earlier default-sized MySQL runs also recorded isolated insert/delete spikes
 of 303/413 ms and one 98.9 ms hook p95. The index alone allocated about 136 MB,
 exceeding MySQL's [128 MiB default buffer pool](https://dev.mysql.com/doc/refman/8.4/en/innodb-parameters.html#sysvar_innodb_buffer_pool_size).
 Memory pressure is a possible contributor; these results remain limitations,
-not a universal 200 ms latency guarantee. Final CI uses the explicit memory
+not a universal 200 ms latency guarantee. The local runner uses the explicit memory
 budget above, with the same latency targets and full durability.
 
 ## Nginx Helper compatibility

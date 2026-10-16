@@ -14,6 +14,12 @@ composer cs
 The package uses PHP 8.5, Symfony components, WordPress APIs, PHPUnit, PHPStan
 and PHPCS through the shared SymPress QA tooling.
 
+For large-site purge, tag-index or network-worker changes, also run the local
+benchmarks with `./bin/run-scale.sh`. This requires Bash and Docker Engine and
+prepares isolated PHP, WordPress, MariaDB and MySQL environments. See
+[Tested scale](README.md#tested-scale) for reports, timeouts and selecting one
+database engine. The scale benchmarks run locally rather than in GitHub Actions.
+
 ## Pull Requests
 
 - Keep pull requests focused on one behavior or documentation change.

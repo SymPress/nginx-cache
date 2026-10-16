@@ -16,6 +16,17 @@ layer side effects. Read `docs/side-effects.md` before changing purge flow.
 
 - Focused: `vendor/bin/phpunit --configuration phpunit.xml.dist --filter <TestName>`
 - Full: `composer qa`
+- Local scale benchmarks on MariaDB and MySQL: `./bin/run-scale.sh`
+
+Scale benchmarks run locally, outside GitHub Actions. The runner needs Bash and
+Docker Engine (`DOCKER_HOST=unix:///var/run/docker.sock` on this Ubuntu host), and
+prepares its own PHP, dependencies, WordPress core and disposable databases.
+Run it for changes affecting large-site purging, tag-index retention or network
+workers. Keep the full default workload and durability settings. Inspect the exit
+status and the new `build/scale/<run-id>/<engine>/scale-report.json` files; report
+any failed gates with the retained logs. Use `--engine=mariadb` or `--engine=mysql`
+only when deliberately checking one engine. Never substitute an existing project
+database or cache directory for these generated fixtures.
 
 Use `--dry-run` for manual probes. Never run a real purge against a user path or
 remote endpoint unless that side effect is explicitly in scope.
