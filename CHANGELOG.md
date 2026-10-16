@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## 1.0.2 — 2026-10-16
+
+- Restore scheduled dependency compatibility checks by discovering project-local PHPCS standards and PHPStan extensions when Composer plugins are disabled, while preserving normal installation support.
+
 ## 1.0.1 — 2026-10-16
 
 - Export settings from every advanced tab and save imported values together, preserving checkbox fallbacks, role selections, managed fields and target-site secrets.
