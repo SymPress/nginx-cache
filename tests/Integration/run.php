@@ -607,6 +607,7 @@ try {
     remove_filter('sympress_nginx_cache_path', $invalidRoot);
     require __DIR__ . '/compatibility.php';
     require __DIR__ . '/optimization.php';
+    require __DIR__ . '/settings-checks.php';
     // Default retention and explicit data removal, without filesystem operations.
     $index->remember('https://example.test/retention-fixture/', ['retained']);
     wp_schedule_single_event(time() + 120, 'fixture_unrelated_cron');
