@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## 1.0.3 — 2026-10-16
+
+### Fixed
+
+- Exclude internal and unpublished WordPress content from affected prewarm targets, preventing invalid form, shared-block, template and internal-taxonomy URLs from exhausting the follow-up queue.
+- Invalidate the current site when internal content changes, including deleted internal terms, while preserving selective invalidation for public posts and taxonomies.
+
+### Changed
+
+- Run full MariaDB/MySQL scale benchmarks locally through an isolated Docker runner with retained reports and portable checksum verification instead of GitHub Actions.
+
+Existing frozen or exhausted prewarm plans require operator recovery after updating; this release does not rewrite queued work.
+
 ## 1.0.2 — 2026-10-16
 
 - Restore scheduled dependency compatibility checks by discovering project-local PHPCS standards and PHPStan extensions when Composer plugins are disabled, while preserving normal installation support.
