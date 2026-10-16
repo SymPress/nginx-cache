@@ -39,6 +39,13 @@ purge. The same URL validation, capability, queue and dry-run boundaries apply.
 Prewarm planning orders affected URLs before home, archives and sitemap entries;
 the configured rate limit applies within each site's bounded worker task.
 
+Changes to non-public post types or taxonomies, such as stored contact forms
+or block pattern categories, request a full site invalidation because their
+own permalinks cannot identify the public pages that embed them.
+These internal permalinks and unpublished posts are excluded
+from affected prewarm URLs. The full request still warms configured public URLs
+and sitemap entries, without attempting to fetch the internal object itself.
+
 ## Purge ownership and network settings
 
 Requests default to `site` scope, including legacy queue records. Site and

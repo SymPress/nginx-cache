@@ -58,6 +58,16 @@ namespace {
         }
     }
 
+    if (!function_exists('is_post_publicly_viewable')) {
+        function is_post_publicly_viewable(mixed $post = 0): bool
+        {
+            $post = is_object($post) ? $post : get_post((int) $post);
+
+            return $post !== null && $post->post_status === 'publish'
+                && get_post_type_object($post->post_type)->publicly_queryable;
+        }
+    }
+
     if (!function_exists('get_post_type')) {
         function get_post_type(int $postId): string|false
         {
@@ -71,12 +81,20 @@ namespace {
         function get_post_type_object(string $postType): object
         {
             return (object) [
+                'publicly_queryable' => in_array($postType, ['post', 'page', 'product'], true),
                 'rest_base' => match ($postType) {
                     'page' => 'pages',
                     'product' => 'products',
                     default => 'posts',
                 },
             ];
+        }
+    }
+
+    if (!function_exists('is_post_type_viewable')) {
+        function is_post_type_viewable(string $postType): bool
+        {
+            return get_post_type_object($postType)->publicly_queryable;
         }
     }
 
@@ -135,7 +153,15 @@ namespace {
     if (!function_exists('get_term')) {
         function get_term(int $termId): object
         {
-            return (object) ['term_id' => $termId, 'taxonomy' => 'category', 'slug' => 'news'];
+            return $GLOBALS['sympress_nginx_cache_test_terms'][$termId]
+                ?? (object) ['term_id' => $termId, 'taxonomy' => 'category', 'slug' => 'news'];
+        }
+    }
+
+    if (!function_exists('is_taxonomy_viewable')) {
+        function is_taxonomy_viewable(string $taxonomy): bool
+        {
+            return $taxonomy !== 'wp_pattern_category';
         }
     }
 
@@ -210,6 +236,7 @@ namespace SymPress\NginxCache\Tests\Unit {
                 42 => 'https://example.test/hello-world/',
                 100 => 'https://example.test/product/hat/',
             ];
+            $GLOBALS['sympress_nginx_cache_test_terms'] = [];
         }
 
         public function testItCollectsPostsPageDateFeedPagedAndAmpUrls(): void
@@ -230,6 +257,74 @@ namespace SymPress\NginxCache\Tests\Unit {
             self::assertContains('https://example.test/2026/06/20/', $urls);
             self::assertContains('https://example.test/author/5/page/2/', $urls);
             self::assertContains('https://example.test/wp-json/wp/v2/posts/42', $urls);
+        }
+
+        public function testItInvalidatesInternalPostsWithoutPrewarmingTheirPermalinks(): void
+        {
+            $GLOBALS['sympress_nginx_cache_test_posts'][5] = (object) ['ID' => 5, 'post_type' => 'wpcf7_contact_form', 'post_author' => 1, 'post_status' => 'publish'];
+            $GLOBALS['sympress_nginx_cache_test_permalinks'][5] = 'https://example.test/?post_type=wpcf7_contact_form&p=5';
+            $collector = $this->collector();
+
+            self::assertContains('https://example.test/?post_type=wpcf7_contact_form&p=5', $collector->collect('save_post', [5]));
+            self::assertTrue($collector->requiresFullPurge('save_post', [5]));
+            self::assertSame([], $collector->affectedUrls('save_post', [5]));
+        }
+
+        public function testItDoesNotPrewarmUnpublishedPosts(): void
+        {
+            $collector = $this->collector();
+
+            foreach (['draft', 'private', 'trash'] as $status) {
+                $GLOBALS['sympress_nginx_cache_test_posts'][42]->post_status = $status;
+
+                self::assertSame([], $collector->affectedUrls('save_post', [42]), $status);
+            }
+        }
+
+        public function testItPreservesPublicPrewarmTargets(): void
+        {
+            self::assertFalse($this->collector()->requiresFullPurge('save_post', [42]));
+            self::assertSame(['https://example.test/hello-world/'], $this->collector()->affectedUrls('save_post', [42]));
+            self::assertSame(['https://example.test/product/hat/'], $this->collector()->affectedUrls('save_post', [100]));
+        }
+
+        public function testItPreservesSelectivePurgingWhenPublicPostsBecomeUnpublished(): void
+        {
+            foreach (['draft', 'private', 'trash'] as $status) {
+                $post = $GLOBALS['sympress_nginx_cache_test_posts'][42];
+                $post->post_status = $status;
+
+                self::assertFalse($this->collector()->requiresFullPurge('transition_post_status', [$status, 'publish', $post]), $status);
+            }
+        }
+
+        public function testItPreservesSelectivePurgingAfterAPublicPostIsDeleted(): void
+        {
+            $post = $GLOBALS['sympress_nginx_cache_test_posts'][42];
+            unset($GLOBALS['sympress_nginx_cache_test_posts'][42]);
+
+            self::assertFalse($this->collector()->requiresFullPurge('deleted_post', [42, $post]));
+        }
+
+        public function testItInvalidatesInternalTaxonomiesWithoutPrewarmingTheirArchives(): void
+        {
+            $GLOBALS['sympress_nginx_cache_test_terms'][8] = (object) ['term_id' => 8, 'taxonomy' => 'wp_pattern_category', 'slug' => 'patterns'];
+            $collector = $this->collector();
+
+            self::assertTrue($collector->requiresFullPurge('clean_term_cache', [[8]]));
+            self::assertSame([], $collector->affectedUrls('clean_term_cache', [[8]]));
+            self::assertFalse($collector->requiresFullPurge('edited_term', [7]));
+            self::assertSame(['https://example.test/term/7/'], $collector->affectedUrls('edited_term', [7]));
+        }
+
+        public function testItUsesTheHookTaxonomyAfterAnInternalTermIsDeleted(): void
+        {
+            $collector = $this->collector();
+
+            self::assertTrue($collector->requiresFullPurge('clean_term_cache', [[8], 'wp_pattern_category']));
+            self::assertTrue($collector->requiresFullPurge('delete_term', [8, 8, 'wp_pattern_category']));
+            self::assertSame([], $collector->affectedUrls('delete_term', [8, 8, 'wp_pattern_category']));
+            self::assertFalse($collector->requiresFullPurge('delete_term', [7, 7, 'category']));
         }
 
         public function testItCollectsWooCommerceOrderProductUrls(): void
