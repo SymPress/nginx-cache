@@ -6,9 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
-## Unreleased
+## 1.0.1 — 2026-10-16
 
 - Export settings from every advanced tab and save imported values together, preserving checkbox fallbacks, role selections, managed fields and target-site secrets.
+- Persist manual Prewarm changes when saving from another advanced tab, including unchecked switches.
+- Preserve backslashes in saved bypass rules and keep additional purge URLs on separate lines when saving or importing settings.
 
 ## 1.0.0 — 2026-10-09
 

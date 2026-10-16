@@ -752,10 +752,6 @@ final readonly class WordPressCacheSettings
     {
         $path = is_string($value) ? $value : '';
 
-        if (function_exists('wp_unslash')) {
-            $path = (string) wp_unslash($path);
-        }
-
         if (function_exists('sanitize_text_field')) {
             return (string) sanitize_text_field($path);
         }
@@ -766,10 +762,6 @@ final readonly class WordPressCacheSettings
     public function sanitizeTextarea(mixed $value): string
     {
         $text = is_string($value) ? $value : '';
-
-        if (function_exists('wp_unslash')) {
-            $text = (string) wp_unslash($text);
-        }
 
         if (function_exists('sanitize_textarea_field')) {
             return (string) sanitize_textarea_field($text);
@@ -792,10 +784,6 @@ final readonly class WordPressCacheSettings
     public function sanitizeSecret(mixed $value): string
     {
         $secret = is_string($value) ? $value : '';
-
-        if (function_exists('wp_unslash')) {
-            $secret = (string) wp_unslash($secret);
-        }
 
         if (function_exists('wp_strip_all_tags')) {
             return trim(wp_strip_all_tags($secret));

@@ -74,6 +74,9 @@ final readonly class CompatibilitySettings
         if (is_int($this->defaults()[$name] ?? null)) {
             return max(0, (int) $value);
         }
+        if ($name === 'additional_purge_urls') {
+            return $this->settings->sanitizeTextarea($value);
+        }
         return is_string($value) ? trim(sanitize_text_field($value)) : '';
     }
 
