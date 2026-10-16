@@ -1,3 +1,6 @@
+includes:
+    - bin/phpstan-extensions.php
+
 parameters:
     level: 8
     paths:
