@@ -147,6 +147,9 @@ final readonly class PurgeUrlCollector
         $post = $this->postId($hook, $arguments);
         $ids = array_values(array_unique([...($post !== null ? [$post] : []), ...$this->publicProductIds($hook, $arguments), ...$this->commentPostIds($hook, $arguments)]));
         foreach ($ids as $id) {
+            if (function_exists('is_post_publicly_viewable') && !is_post_publicly_viewable($id)) {
+                continue;
+            }
             $url = function_exists('get_permalink') ? get_permalink($id) : false;
             if (!is_string($url)) {
                 continue;
@@ -155,6 +158,9 @@ final readonly class PurgeUrlCollector
             $urls[] = $url;
         }
         foreach ($this->termIds($hook, $arguments) as $id) {
+            if ($this->hasNonPublicTaxonomy($id, $hook, $arguments)) {
+                continue;
+            }
             $url = function_exists('get_term_link') ? get_term_link($id) : false;
             if (!is_string($url)) {
                 continue;
@@ -171,6 +177,17 @@ final readonly class PurgeUrlCollector
     /** @param array<mixed> $arguments */
     public function requiresFullPurge(string $hook, array $arguments = []): bool
     {
+        $postId = $this->postId($hook, $arguments);
+        $postType = $postId !== null && function_exists('get_post_type') ? get_post_type($postId) : false;
+        if (is_string($postType) && function_exists('is_post_type_viewable') && !is_post_type_viewable($postType)) {
+            return true;
+        }
+        foreach ($this->termIds($hook, $arguments) as $termId) {
+            if ($this->hasNonPublicTaxonomy($termId, $hook, $arguments)) {
+                return true;
+            }
+        }
+
         $fullHooks = [
             'switch_theme',
             'customize_save_after',
@@ -371,6 +388,18 @@ final readonly class PurgeUrlCollector
             return [];
         }
         return array_values(array_filter(array_map('intval', (array) ($arguments[0] ?? [])), static fn (int $id): bool => $id > 0));
+    }
+
+    /** @param array<mixed> $arguments */
+    private function hasNonPublicTaxonomy(int $termId, string $hook, array $arguments): bool
+    {
+        $taxonomy = $arguments[$hook === 'clean_term_cache' ? 1 : 2] ?? null;
+        if (!is_string($taxonomy)) {
+            $term = function_exists('get_term') ? get_term($termId) : null;
+            $taxonomy = is_object($term) && isset($term->taxonomy) ? $term->taxonomy : null;
+        }
+
+        return is_string($taxonomy) && function_exists('is_taxonomy_viewable') && !is_taxonomy_viewable($taxonomy);
     }
 
     /** @return list<string> */
