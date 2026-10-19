@@ -1,5 +1,38 @@
 # Migrating cache plugins
 
+## Upgrading the SymPress plugin slug
+
+The SymPress plugin now appears as **NS Nginx Cache** with the plugin basename
+`ns-nginx-cache/ns-nginx-cache.php`. The Composer package remains
+`sympress/nginx-cache`; settings, stored credentials, queues, tag-index tables,
+cron hooks, REST routes, translation domain and `wp nginx-cache` commands retain
+their existing identifiers.
+
+1. Deactivate the old **SymPress** installation before changing its directory.
+   Verify its author and source; the unrelated WordPress.org plugin may also
+   appear as Nginx Cache.
+2. For Composer installations, update `sympress/nginx-cache`. Remove any explicit
+   root-project installer-path override that forces this package into the old
+   `nginx-cache` folder; the package's `installer-name` is `ns-nginx-cache`.
+   For archive installations, install the new release under
+   `wp-content/plugins/ns-nginx-cache/` and retain the deactivated old files
+   outside the plugins directory as a backup. Do not use WordPress's Delete
+   action for this migration: an enabled delete-on-uninstall setting can remove
+   the stored configuration and queues.
+3. Activate **NS Nginx Cache** again, using the previous per-site or network
+   activation scope. WordPress stores activation by plugin basename, so the old
+   activation does not follow the renamed entry file. Update any deployment
+   allowlist or explicit kernel entry to `ns-nginx-cache/ns-nginx-cache.php`.
+4. Open Dashboard → Updates and choose **Check again** to refresh a previously
+   cached update notice. Verify the plugin settings and Site Health version.
+
+The main file includes the GitHub `Update URI`, which tells WordPress.org to
+exclude this plugin from its update responses even while it is inactive.
+Installations still running an older release without that header need the new
+files before this protection applies. No GitHub update client is added.
+
+## Importing settings from another cache plugin
+
 Preview Nginx Helper settings before importing:
 
 ```sh

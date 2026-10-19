@@ -96,10 +96,11 @@
         }
     },
     "extra": {
+        "installer-name": "ns-nginx-cache",
         "wordpress-install-dir": "vendor/wordpress/wordpress",
         "kernel": {
             "bundle": "SymPress\\NginxCache\\NginxCacheBundle",
-            "entry": "nginx-cache/nginx-cache.php"
+            "entry": "ns-nginx-cache/ns-nginx-cache.php"
         }
     },
     "minimum-stability": "stable",

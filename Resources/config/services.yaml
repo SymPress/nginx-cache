@@ -122,7 +122,7 @@ services:
             - { name: kernel.hook, hook: 'admin_post_sympress_nginx_cache_purge', method: handlePurgeAction }
             - { name: kernel.hook, hook: 'admin_post_sympress_nginx_cache_flush_queue', method: handleQueueAction }
             - { name: kernel.hook, hook: 'admin_bar_menu', method: addAdminBarNode, accepted_args: 1, priority: 100 }
-            - { name: kernel.hook, hook: 'plugin_action_links_nginx-cache/nginx-cache.php', method: addPluginActionLinks, type: filter, accepted_args: 1 }
+            - { name: kernel.hook, hook: 'plugin_action_links_ns-nginx-cache/ns-nginx-cache.php', method: addPluginActionLinks, type: filter, accepted_args: 1 }
 
     SymPress\NginxCache\Admin\NetworkAdminPage:
         tags:

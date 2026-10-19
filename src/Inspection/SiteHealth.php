@@ -86,7 +86,7 @@ final readonly class SiteHealth
      */
     public function debug(array $information): array
     {
-        $data = get_file_data(__DIR__ . '/../../nginx-cache.php', ['version' => 'Version']);
+        $data = get_file_data(__DIR__ . '/../../ns-nginx-cache.php', ['version' => 'Version']);
         $values = ['version' => $data['version'], 'backend' => $this->backend->string('purge_backend'), 'profile' => $this->settings->profile()->value, 'path' => $this->settings->cachePath(), 'pending_purges' => $this->queue->count(), 'pending_follow_up' => $this->effects->count(), 'scope' => $this->scope->isIsolated() ? 'isolated-site-root' : 'shared-root-site-key-scan', 'worker_heartbeat' => (int) get_option(CacheWorker::HEARTBEAT, 0), 'tag_index' => wp_json_encode($this->tags->stats())];
         $fields = [];
         foreach ($values as $name => $value) {

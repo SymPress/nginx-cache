@@ -105,6 +105,7 @@ wp_set_current_user($admin);
 update_option(CompatibilitySettings::REDIS_PASSWORD, (new SecretCipher())->encrypt('fixture-debug-redis', CompatibilitySettings::REDIS_PASSWORD));
 update_option($settings::OPTION_CLOUDFLARE_API_TOKEN, (new SecretCipher())->encrypt('fixture-debug-cloudflare', $settings::OPTION_CLOUDFLARE_API_TOKEN));
 $health = new SiteHealth($settings, new CompatibilitySettings($settings), new \SymPress\NginxCache\Filesystem\CachePathValidator($fs), $queue, $effects, $scope, $clock, $index);
+check($health->debug([])[$settings::TEXT_DOMAIN]['fields']['version']['value'] === get_file_data(dirname(__DIR__, 2) . '/ns-nginx-cache.php', ['version' => 'Version'])['version'], 'Site Health reads the version from the renamed plugin entry');
 $debug = serialize($health->debug([]));
 check(!str_contains($debug, 'fixture-debug-redis') && !str_contains($debug, 'fixture-debug-cloudflare') && !str_contains($debug, SecretCipher::PREFIX) && !str_contains($debug, 'redis_password'), 'Site Health export whitelists fields and omits credentials');
 check(count($health->tests([])['direct']) === 6 && $health->check('worker')['status'] === 'good', 'direct Site Health checks recognize the recent worker heartbeat');
