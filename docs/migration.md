@@ -2,8 +2,8 @@
 
 ## Upgrading the SymPress plugin slug
 
-The SymPress plugin now appears as **NS Nginx Cache** with the plugin basename
-`ns-nginx-cache/ns-nginx-cache.php`. The Composer package remains
+The SymPress plugin keeps the display name **Nginx Cache**. Its new plugin
+basename is `ns-nginx-cache/ns-nginx-cache.php`. The Composer package remains
 `sympress/nginx-cache`; settings, stored credentials, queues, tag-index tables,
 cron hooks, REST routes, translation domain and `wp nginx-cache` commands retain
 their existing identifiers.
@@ -19,7 +19,7 @@ their existing identifiers.
    outside the plugins directory as a backup. Do not use WordPress's Delete
    action for this migration: an enabled delete-on-uninstall setting can remove
    the stored configuration and queues.
-3. Activate **NS Nginx Cache** again, using the previous per-site or network
+3. Activate **Nginx Cache** again, using the previous per-site or network
    activation scope. WordPress stores activation by plugin basename, so the old
    activation does not follow the renamed entry file. Update any deployment
    allowlist or explicit kernel entry to `ns-nginx-cache/ns-nginx-cache.php`.

@@ -15,7 +15,7 @@ use Symfony\Component\Yaml\Yaml;
     $mainFile = $root . '/' . basename($basename);
     check($slug === 'ns-nginx-cache' && dirname($basename) === $slug && is_file($mainFile), 'Composer install name resolves the real plugin entry');
     $headers = get_plugin_data($mainFile, false, false);
-    check($headers['Name'] === 'NS Nginx Cache' && $headers['UpdateURI'] === 'https://github.com/SymPress/nginx-cache', 'WordPress reads the distinct plugin name and external Update URI');
+    check($headers['Name'] === 'Nginx Cache' && $headers['UpdateURI'] === 'https://github.com/SymPress/nginx-cache', 'WordPress preserves the display name and reads the external Update URI');
     $workflow = Yaml::parseFile($root . '/.github/workflows/archive.yml');
     $archive = $workflow['jobs']['archive']['with'];
     check($archive['package_name'] === $slug && $archive['package_folder'] === $slug && $archive['main_file'] === basename($basename) && $workflow['jobs']['archive-check']['with']['package_folder'] === $slug, 'release archive and archive check use the Composer plugin basename');
