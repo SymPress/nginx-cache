@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Plugin Name:       NS Nginx Cache
+ * Plugin Name:       Nginx Cache
  * Plugin URI:        https://github.com/SymPress/nginx-cache
  * Update URI:        https://github.com/SymPress/nginx-cache
  * Description:       Kernel-integrated purge controls for Nginx FastCGI, proxy and uWSGI cache zones.

@@ -14,7 +14,7 @@ where applicable.
 
 ### Changed
 
-- Use `ns-nginx-cache/ns-nginx-cache.php` as the WordPress plugin basename and **NS Nginx Cache** as its display name. Composer installation metadata, release archive names and folders, plugin settings links, asset URLs and version lookups follow the new entry. Existing installations require the [documented activation and directory migration](docs/migration.md#upgrading-the-sympress-plugin-slug).
+- Use `ns-nginx-cache/ns-nginx-cache.php` as the WordPress plugin basename while preserving the **Nginx Cache** display name. Composer installation metadata, release archive names and folders, plugin settings links, asset URLs and version lookups follow the new entry. Existing installations require the [documented activation and directory migration](docs/migration.md#upgrading-the-sympress-plugin-slug).
 
 ## 1.0.3 — 2026-10-16
 

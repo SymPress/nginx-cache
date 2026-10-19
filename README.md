@@ -1,4 +1,4 @@
-# NS Nginx Cache
+# SymPress Nginx Cache
 
 [![PHP: ^8.5](https://img.shields.io/badge/php-%5E8.5-777bb4.svg)](composer.json) [![License: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](composer.json)
 
@@ -32,7 +32,8 @@ The package is discoverable by `sympress/kernel` through Composer metadata:
 }
 ```
 
-The WordPress plugin slug is `ns-nginx-cache`; release archives use the same
+The display name remains **Nginx Cache**. The WordPress plugin slug is
+`ns-nginx-cache`; release archives use the same
 folder and `ns-nginx-cache.php` entry file. The Composer package remains
 `sympress/nginx-cache`. Its `installer-name` sets the folder when using
 [composer/installers](https://github.com/composer/installers#custom-install-names).
