@@ -264,7 +264,7 @@ final readonly class SettingsPage
         $lastPurge = is_array($diagnostics['last_purge'] ?? null) ? $diagnostics['last_purge'] : null;
         $metrics = is_array($diagnostics['metrics'] ?? null) ? $diagnostics['metrics'] : [];
         $scanUsable = $status->exists && $status->directory && $status->error === null;
-        $pluginData = get_file_data(__DIR__ . '/../../nginx-cache.php', ['version' => 'Version']);
+        $pluginData = get_file_data(__DIR__ . '/../../ns-nginx-cache.php', ['version' => 'Version']);
         $configMissing = $diagnostics['nginx_config']['missing_directives'];
         $environment = $diagnostics['environment'];
         $queueCount = (int) $diagnostics['queue']['pending'];

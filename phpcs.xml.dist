@@ -13,7 +13,7 @@
     <!-- Project-root-relative standards for plugin-free Canary installs. -->
     <config name="installed_paths" value="vendor/automattic/vipwpcs,vendor/phpcompatibility/php-compatibility,vendor/phpcsstandards/phpcsextra,vendor/phpcsstandards/phpcsutils,vendor/sirbrillig/phpcs-variable-analysis,vendor/slevomat/coding-standard,vendor/sympress/coding-standards,vendor/wp-coding-standards/wpcs" />
 
-    <file>nginx-cache.php</file>
+    <file>ns-nginx-cache.php</file>
     <file>uninstall.php</file>
     <file>src</file>
 

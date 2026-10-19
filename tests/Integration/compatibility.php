@@ -30,6 +30,9 @@ $container->set(HttpClientInterface::class, new MockHttpClient(static function (
     throw new RuntimeException('Unexpected consumer HTTP request.');
 }));
 $container->get(HookLoader::class)->register();
+check(has_filter('plugin_action_links_ns-nginx-cache/ns-nginx-cache.php') !== false, 'compiled kernel registers settings links for the new plugin basename');
+check(str_contains(implode('', apply_filters('plugin_action_links_ns-nginx-cache/ns-nginx-cache.php', [])), 'page=sympress-nginx-cache'), 'plugin-list settings link opens the existing settings page');
+require __DIR__ . '/plugin-identity-checks.php';
 do_action('admin_init');
 $registered = get_registered_settings();
 check(isset($registered[CompatibilitySettings::PREFIX . 'purge_backend'], $registered[CompatibilitySettings::PREFIX . 'prewarm_sitemap'], $registered[CompatibilitySettings::REDIS_PASSWORD]), 'compiled kernel hooks register compatibility settings');

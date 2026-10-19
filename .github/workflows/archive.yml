@@ -32,7 +32,9 @@ jobs:
         /phpcs.xml /phpcs.xml.dist /phpstan.neon /phpstan.neon.dist
         /phpunit*.xml* /.php-cs-fixer* /.gitignore /.gitattributes
         /composer.review*.json /composer.review*.lock
-      main_file: nginx-cache.php
+      package_name: ns-nginx-cache
+      package_folder: ns-nginx-cache
+      main_file: ns-nginx-cache.php
       package_version: ${{ github.event.inputs.version }}
     secrets:
       COMPOSER_AUTH_JSON: ${{ secrets.COMPOSER_AUTH_JSON }}
@@ -42,5 +44,6 @@ jobs:
     uses: sympress/workflows/.github/workflows/wordpress-archive-check.yml@78d083a9a0176cf0252318b0c69fc64938a727d6
     with:
       artifact_name: ${{ needs.archive.outputs.artifact }}
+      package_folder: ns-nginx-cache
     secrets:
       COMPOSER_AUTH_JSON: ${{ secrets.COMPOSER_AUTH_JSON }}

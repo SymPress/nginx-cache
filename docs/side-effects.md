@@ -17,6 +17,10 @@ request to local deletion and follow-up work.
 | Anonymous cacheable response | `SurrogateTagSubscriber` → `TagIndexRepository` | Registers canonical URL/tag mappings; fresh identical mappings issue no writes | Schedules tag maintenance |
 | Tag-maintenance cron / side-effect tick | `TagIndexMaintenance` | Deletes at most 500 index rows per call under the index mutation lock, enforcing TTL and retention limits | Schedules another maintenance event; no filesystem deletion or HTTP |
 
+The plugin-list settings link is registered through
+`plugin_action_links_ns-nginx-cache/ns-nginx-cache.php`, matching the Composer
+and archive entry. It only links to the settings page and triggers no purge.
+
 ## Tag retention, setup and translated requests
 
 Tag retention no longer prunes on each insertion. Maintenance commits the

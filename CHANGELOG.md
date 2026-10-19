@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## Unreleased
+
+### Fixed
+
+- Add a GitHub `Update URI` header so WordPress.org cannot offer updates for an unrelated plugin with a similar name, including while this plugin is inactive.
+
+### Changed
+
+- Use `ns-nginx-cache/ns-nginx-cache.php` as the WordPress plugin basename and **NS Nginx Cache** as its display name. Composer installation metadata, release archive names and folders, plugin settings links, asset URLs and version lookups follow the new entry. Existing installations require the [documented activation and directory migration](docs/migration.md#upgrading-the-sympress-plugin-slug).
+
 ## 1.0.3 — 2026-10-16
 
 ### Fixed

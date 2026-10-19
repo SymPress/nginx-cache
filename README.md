@@ -1,4 +1,4 @@
-# SymPress Nginx Cache
+# NS Nginx Cache
 
 [![PHP: ^8.5](https://img.shields.io/badge/php-%5E8.5-777bb4.svg)](composer.json) [![License: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](composer.json)
 
@@ -23,13 +23,25 @@ The package is discoverable by `sympress/kernel` through Composer metadata:
 ```json
 {
   "extra": {
+    "installer-name": "ns-nginx-cache",
     "kernel": {
       "bundle": "SymPress\\NginxCache\\NginxCacheBundle",
-      "entry": "nginx-cache/nginx-cache.php"
+      "entry": "ns-nginx-cache/ns-nginx-cache.php"
     }
   }
 }
 ```
+
+The WordPress plugin slug is `ns-nginx-cache`; release archives use the same
+folder and `ns-nginx-cache.php` entry file. The Composer package remains
+`sympress/nginx-cache`. Its `installer-name` sets the folder when using
+[composer/installers](https://github.com/composer/installers#custom-install-names).
+The [Update URI header](https://make.wordpress.org/core/2021/06/29/introducing-update-uri-plugin-header-in-wordpress-5-8/)
+identifies this GitHub-distributed plugin and prevents WordPress.org from
+offering updates for an unrelated plugin, including while this plugin is inactive.
+This header does not install a GitHub updater; updates still use Composer or
+the release archive. See [upgrading an existing installation](docs/migration.md#upgrading-the-sympress-plugin-slug)
+before switching from the old `nginx-cache` folder.
 
 ## WP-CLI
 
