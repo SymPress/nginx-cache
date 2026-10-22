@@ -146,6 +146,11 @@ services:
         tags:
             - { name: kernel.hook, hook: 'sympress_nginx_cache_prune_tags', method: prune }
 
+    SymPress\NginxCache\Purge\KeepWarmRefresher:
+        tags:
+            - { name: kernel.hook, hook: 'init', method: schedule, priority: 30 }
+            - { name: kernel.hook, hook: 'sympress_nginx_cache_keep_warm', method: process }
+
     SymPress\NginxCache\Hook\AutomaticPurgeSubscriber:
         tags:
             - { name: kernel.hook, hook: 'init', method: register, priority: 20 }

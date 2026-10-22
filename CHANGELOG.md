@@ -8,6 +8,10 @@ where applicable.
 
 ## Unreleased
 
+### Added
+
+- Keep prewarmed pages warm by default: a bounded background refresh requests prewarm targets inside the inactivity window. Inactivity eviction for those targets is available as the `evict_inactive` retention mode. Upgrades with a changed inactivity timeout keep eviction. Failures appear in diagnostics and Site Health.
+
 ### Fixed
 
 - Retain safe local purge queue failure details for CLI and diagnostics, including exception class and source location. Preserve the evidence across retries and prevent contending workers from replacing it.

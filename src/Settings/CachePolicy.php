@@ -12,6 +12,9 @@ final readonly class CachePolicy
         'max_size_mb'      => ['default' => 256, 'min' => 16, 'max' => 65536],
         'keys_zone_mb'     => ['default' => 100, 'min' => 1, 'max' => 1024],
     ];
+    public const string RETENTION_OPTION = 'sympress_nginx_cache_retention_mode';
+    public const string KEEP_WARM = 'keep_warm';
+    public const string EVICT_INACTIVE = 'evict_inactive';
 
     public static function register(): void
     {
@@ -22,16 +25,40 @@ final readonly class CachePolicy
                 'default'           => $bounds['default'],
             ]);
         }
+        register_setting('sympress_nginx_cache', self::RETENTION_OPTION, [
+            'type'              => 'string',
+            'sanitize_callback' => static fn (mixed $value): string => in_array($value, [self::KEEP_WARM, self::EVICT_INACTIVE], true) ? $value : self::KEEP_WARM,
+            'default'           => self::KEEP_WARM,
+        ]);
     }
 
-    /** @return array<string, int> */
+    /** @return array<string, int|string> */
     public static function defaults(): array
     {
         $defaults = [];
         foreach (self::LIMITS as $name => $bounds) {
             $defaults['sympress_nginx_cache_' . $name] = $bounds['default'];
         }
+        $defaults[self::RETENTION_OPTION] = self::KEEP_WARM;
         return $defaults;
+    }
+
+    public static function retention(): string
+    {
+        $options = new OptionSource();
+        $mode = $options->value(self::RETENTION_OPTION, null);
+        if (in_array($mode, [self::KEEP_WARM, self::EVICT_INACTIVE], true)) {
+            return $mode;
+        }
+        // Upgrades: a deliberately changed inactivity timeout keeps its previous eviction behavior.
+        $inactive = filter_var($options->value('sympress_nginx_cache_inactive_seconds', null), FILTER_VALIDATE_INT);
+        return $inactive !== false && $inactive !== self::LIMITS['inactive_seconds']['default'] ? self::EVICT_INACTIVE : self::KEEP_WARM;
+    }
+
+    /** Refresh well inside the inactivity window so each cache lookup renews retention. */
+    public static function keepWarmInterval(): int
+    {
+        return max(60, intdiv(self::values()['inactive_seconds'], 2));
     }
 
     /** @return array<string, int> */

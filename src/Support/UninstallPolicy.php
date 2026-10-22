@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Support;
 
+use SymPress\NginxCache\Purge\KeepWarmRefresher;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Surrogate\TagIndexMaintenance;
 use SymPress\NginxCache\Surrogate\TagIndexRepository;
@@ -29,7 +30,7 @@ final readonly class UninstallPolicy
         if ($query === null || $database->query($query) === false) {
             throw new \RuntimeException('Unable to remove the tag index.');
         }
-        foreach (['sympress_nginx_cache_process_queue', 'sympress_nginx_cache_process_side_effects', TagIndexMaintenance::HOOK] as $hook) {
+        foreach (['sympress_nginx_cache_process_queue', 'sympress_nginx_cache_process_side_effects', TagIndexMaintenance::HOOK, KeepWarmRefresher::HOOK] as $hook) {
             wp_clear_scheduled_hook($hook);
         }
     }

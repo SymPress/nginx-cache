@@ -34,6 +34,34 @@ final class CachePolicyTest extends TestCase
         self::assertStringContainsString('fastcgi_cache_valid 200 301 600s;', $generator->generate(context: 'fastcgi'));
     }
 
+    public function testRetentionDefaultsToKeepWarmAndPreservesExplicitUpgradeChoices(): void
+    {
+        self::assertSame(CachePolicy::KEEP_WARM, CachePolicy::retention());
+        self::assertSame(1800, CachePolicy::keepWarmInterval());
+        $GLOBALS['sympress_nginx_cache_test_options'] = ['sympress_nginx_cache_inactive_seconds' => '3600'];
+        self::assertSame(CachePolicy::KEEP_WARM, CachePolicy::retention());
+        $GLOBALS['sympress_nginx_cache_test_options'] = ['sympress_nginx_cache_inactive_seconds' => 86400];
+        self::assertSame(CachePolicy::EVICT_INACTIVE, CachePolicy::retention());
+        self::assertSame(43200, CachePolicy::keepWarmInterval());
+        $GLOBALS['sympress_nginx_cache_test_options'][CachePolicy::RETENTION_OPTION] = CachePolicy::KEEP_WARM;
+        self::assertSame(CachePolicy::KEEP_WARM, CachePolicy::retention());
+        $GLOBALS['sympress_nginx_cache_test_options'][CachePolicy::RETENTION_OPTION] = 'forever';
+        self::assertSame(CachePolicy::EVICT_INACTIVE, CachePolicy::retention());
+        $GLOBALS['sympress_nginx_cache_test_options'] = ['sympress_nginx_cache_inactive_seconds' => 60];
+        self::assertSame(60, CachePolicy::keepWarmInterval());
+        // Retention never changes the generated eviction window or freshness.
+        $generator = new NginxConfigGenerator(new WordPressCacheSettings('/fixture'), new BypassRuleProvider(), new CacheKeyStrategy());
+        self::assertStringContainsString('inactive=60s', $generator->generate(context: 'http'));
+    }
+
+    #[RunInSeparateProcess]
+    public function testRetentionConstantOverridesStoredChoice(): void
+    {
+        define('SYMPRESS_NGINX_CACHE_RETENTION_MODE', CachePolicy::EVICT_INACTIVE);
+        $GLOBALS['sympress_nginx_cache_test_options'][CachePolicy::RETENTION_OPTION] = CachePolicy::KEEP_WARM;
+        self::assertSame(CachePolicy::EVICT_INACTIVE, CachePolicy::retention());
+    }
+
     #[RunInSeparateProcess]
     public function testConstantsOverrideOptionsAndNginxLevelsAreRestricted(): void
     {
