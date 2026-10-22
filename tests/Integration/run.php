@@ -558,6 +558,57 @@ try {
     check($remoteCalls[$firstRemote] === 1 && $remoteCalls[$secondRemote] === 2 && $side->count() === 0, 'retry skips successful remote endpoint and only repeats the failed endpoint');
     update_option($settings::OPTION_REMOTE_ENDPOINTS, '');
     delete_option($settings::OPTION_REMOTE_SECRET);
+    // Issue #28: a stored plan with outdated targets must not block valid targets.
+    $side->drain();
+    delete_option($remoteEffects::HEALTH_OPTION);
+    delete_option(\SymPress\NginxCache\Purge\PurgeSideEffectProcessor::PREWARM_ISSUES_OPTION);
+    update_option($settings::OPTION_PREWARM_ENABLED, 1);
+    $prewarmCalls = [];
+    $flakyCalls = 0;
+    $prewarmMock = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url) use (&$prewarmCalls, &$flakyCalls): \Symfony\Component\HttpClient\Response\MockResponse {
+        $prewarmCalls[] = $url;
+        [$status, $location] = match ((string) wp_parse_url($url, PHP_URL_PATH)) {
+            '/stale-external/' => [301, 'https://foreign.example/stale-external/'],
+            '/stale-loop-a/' => [302, '/stale-loop-b/'],
+            '/stale-loop-b/' => [302, '/stale-loop-a/'],
+            '/stale-removed/' => [404, null],
+            '/stale-gone/' => [410, null],
+            '/stale-moved/' => [301, '/current-moved/'],
+            '/flaky/' => [++$flakyCalls === 1 ? 503 : 200, null],
+            default => [200, null],
+        };
+        return new \Symfony\Component\HttpClient\Response\MockResponse('', ['http_code' => $status, 'response_headers' => $location === null ? [] : ['Location: ' . $location]]);
+    });
+    $prewarmEffects = new \SymPress\NginxCache\Purge\PurgeSideEffectProcessor($settings, $side,
+        new \SymPress\NginxCache\Purge\Prewarmer($prewarmMock, $settings, $policy, $clock), new \SymPress\NginxCache\Layer\CacheLayerCoordinator($settings),
+        new \SymPress\NginxCache\Remote\RemotePurgeDispatcher($prewarmMock, $settings, $policy, $clock),
+        new \SymPress\NginxCache\Remote\CloudflarePurgeDispatcher($prewarmMock, $settings, new \SymPress\NginxCache\Surrogate\CacheTagResolver(), $policy), $clock);
+    $stalePlan = array_map(static fn (string $path): string => home_url($path), ['/stale-external/', '/stale-loop-a/', '/stale-removed/', '/stale-gone/', '/stale-moved/', '/flaky/', '/valid-a/', '/valid-b/']);
+    $side->push($result, $request);
+    $side->checkpoint($side->all()[0]['id'], 'prewarm-plan:' . wp_json_encode($stalePlan));
+    $prewarmEffects->process();
+    $state = $side->inspect()[0];
+    $issueUrls = array_column(\SymPress\NginxCache\Purge\PurgeSideEffectProcessor::prewarmIssues(), 'url');
+    check($state['attempts'] === 0 && count(array_filter($state['completed'], static fn (string $item): bool => str_starts_with($item, 'prewarm-url:'))) === 5, 'outdated prewarm targets settle without spending the retry budget');
+    check($issueUrls === array_slice($stalePlan, 0, 4) && !in_array('https://foreign.example/stale-external/', $prewarmCalls, true) && in_array(home_url('/current-moved/'), $prewarmCalls, true), 'stale targets are reported and only same-origin redirects are followed');
+    $sideClock->sleep(2);
+    $prewarmEffects->process();
+    $state = $side->inspect()[0];
+    $flakyIssue = array_values(array_filter(\SymPress\NginxCache\Purge\PurgeSideEffectProcessor::prewarmIssues(), static fn (array $issue): bool => $issue['url'] === home_url('/flaky/')));
+    check($state['attempts'] === 1 && !$state['exhausted'] && in_array(home_url('/valid-b/'), $prewarmCalls, true), 'valid targets behind stale ones are warmed while a transient failure keeps bounded retry');
+    check(count($flakyIssue) === 1 && $flakyIssue[0]['stale'] === false && $flakyIssue[0]['reason'] === 'HTTP 503.' && $flakyIssue[0]['at'] > 0 && $flakyIssue[0]['at'] <= $clock->timestamp(), 'transient prewarm failure records URL, safe reason and time');
+    $sideCommand = new \Symfony\Component\Console\Tester\CommandTester(new \SymPress\NginxCache\Cli\Command\SideEffectsCommand($prewarmEffects));
+    $sideCommand->execute(['action' => 'details']);
+    $details = json_decode($sideCommand->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+    check(count($details[0]['prewarm_issues']) === 5 && !str_contains($sideCommand->getDisplay(), 'foreign.example'), 'side-effect details expose prewarm issues without redirect targets');
+    $warmedValid = count(array_keys($prewarmCalls, home_url('/valid-a/'), true));
+    $sideClock->sleep(60);
+    $prewarmEffects->process();
+    $remainingIssues = array_column(\SymPress\NginxCache\Purge\PurgeSideEffectProcessor::prewarmIssues(), 'url');
+    check($side->count() === 0 && $flakyCalls === 2 && count(array_keys($prewarmCalls, home_url('/valid-a/'), true)) === $warmedValid, 'retry warms only the transient target and completes the task');
+    check(!in_array(home_url('/flaky/'), $remainingIssues, true) && count($remainingIssues) === 4 && $remoteEffects->attentionReason() === '', 'recovered target clears its issue while stale reports remain');
+    update_option($settings::OPTION_PREWARM_ENABLED, 0);
+    delete_option(\SymPress\NginxCache\Purge\PurgeSideEffectProcessor::PREWARM_ISSUES_OPTION);
     $calls = 0;
     update_option($settings::OPTION_FULL_PURGE_ENDPOINT, 'https://example.test/__purge');
     $endpoint = new \SymPress\NginxCache\Purge\FullPurgeEndpointDispatcher($mock, $settings, $policy, $clock);

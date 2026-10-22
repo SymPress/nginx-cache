@@ -229,13 +229,18 @@ Enable automatic purge, selective purge, the queue and prewarm together for
 targeted invalidation followed by warming affected pages. Each side-effect tick
 handles at most one task and five prewarm URLs. Target discovery is checkpointed
 once; each successful URL is checkpointed individually. Successful continuations
-are scheduled again without spending the five-failure retry budget. Failed HTTP
-responses (including redirects) remain retryable; acknowledged URLs and other
-providers are not repeated. Delivery remains at least once around a crash before
-a checkpoint. Same-origin checks, no redirects and five-second request limits
-remain enforced. Initial opt-in sitemap discovery retains its separate bounded
-20-map budget. Explicit CLI prewarm remains synchronous and reports failure with
-a nonzero exit code.
+are scheduled again without spending the five-failure retry budget. Same-origin
+redirects are followed for at most three hops, revalidating every hop. Outdated
+targets (other 3xx/4xx responses, external redirects, loops, longer chains or a
+changed site origin) are skipped and settled so they cannot block later targets;
+they are never counted as warmed. Timeouts, 408/425/429 and 5xx responses remain
+retryable within the budget; acknowledged URLs and other providers are not
+repeated. The last 20 prewarm issues (URL, HTTP status or safe reason, time) appear
+in `wp nginx-cache side-effects details` and the diagnostic report. Delivery
+remains at least once around a crash before a checkpoint. Same-origin checks and
+five-second request limits remain enforced. Initial opt-in sitemap discovery
+retains its separate bounded 20-map budget. Explicit CLI prewarm remains
+synchronous and reports failed or skipped targets with a nonzero exit code.
 
 Run `wp cron event run --due-now` once per minute through an external scheduler
 under the site's normal user. Cached visitors do not execute WordPress and cannot

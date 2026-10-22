@@ -63,7 +63,10 @@ final class PrewarmCommand extends AbstractCacheCommand
         foreach ($result->errors as $error) {
             $this->warning($error, $output);
         }
+        foreach ($result->stale() as $url) {
+            $this->warning(sprintf('%s: Skipped, %s', $url, $result->issues[$url]['reason']), $output);
+        }
 
-        return $result->failed() === 0 ? Command::SUCCESS : Command::FAILURE;
+        return $result->failed() === 0 && $result->stale() === [] ? Command::SUCCESS : Command::FAILURE;
     }
 }

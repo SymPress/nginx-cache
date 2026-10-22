@@ -15,7 +15,7 @@ request to local deletion and follow-up work.
 | Side-effect hook/CLI | `PurgeSideEffectProcessor` | Resumes partial site scans through the validated `CachePurger` lock | Prewarm, cache-layer sync, signed remote dispatch, Cloudflare dispatch after the scan finishes |
 | CLI `nginx-cache:work` | `CacheWorker` → queue processors | Runtime/task-bounded processing; network mode visits only durable pending site IDs | Same scoped side-effect queue; worker heartbeat |
 | Anonymous cacheable response | `SurrogateTagSubscriber` → `TagIndexRepository` | Registers canonical URL/tag mappings; fresh identical mappings issue no writes | Schedules tag maintenance |
-| Keep-warm cron (`sympress_nginx_cache_keep_warm`), scheduled on `init` | `KeepWarmRefresher` → `Prewarmer` | Only with prewarm enabled and retention `keep_warm`: same-origin, redirect-free, five-second GET requests for at most five planned prewarm targets per tick; no purge, filesystem deletion, queue or tag-index mutation | Schedules the next batch after one second, or the next cycle at half the inactivity timeout; records `keep_warm` diagnostics |
+| Keep-warm cron (`sympress_nginx_cache_keep_warm`), scheduled on `init` | `KeepWarmRefresher` → `Prewarmer` | Only with prewarm enabled and retention `keep_warm`: same-origin, five-second GET requests (same-origin redirects revalidated, at most three hops) for at most five planned prewarm targets per tick; no purge, filesystem deletion, queue or tag-index mutation | Schedules the next batch after one second, or the next cycle at half the inactivity timeout; records `keep_warm` diagnostics |
 | Tag-maintenance cron / side-effect tick | `TagIndexMaintenance` | Deletes at most 500 index rows per call under the index mutation lock, enforcing TTL and retention limits | Schedules another maintenance event; no filesystem deletion or HTTP |
 
 The plugin-list settings link is registered through
@@ -252,7 +252,19 @@ processing later providers. Successful prewarm and Cloudflare work are also
 checkpointed. A failing provider therefore does not replay acknowledged actions.
 The worker processes at most one due task per tick and five prewarm URLs per
 batch. Its `prewarm-plan:` checkpoint retains a bounded JSON target list, and
-`prewarm-url:` checkpoints retain hashes of successful URLs. Ordinary successful
+`prewarm-url:` checkpoints retain hashes of settled URLs: warmed targets and
+outdated targets that are skipped rather than retried. The prewarmer sends every
+request with `max_redirects: 0` and follows a same-origin `Location` itself for at
+most three hops, revalidating each hop with `UrlPolicy`; external targets, loops
+and longer chains are skipped. Other 3xx and 4xx responses (except 408, 425 and
+429) and plan entries outside the current site origin are skipped as outdated.
+Timeouts, 408/425/429 and 5xx responses stay failures. Each batch replaces the
+attempted URLs' entries in the non-autoloaded `sympress_nginx_cache_prewarm_issues`
+option (at most 20: URL, fixed reason with HTTP status, timestamp, stale flag),
+exposed as `prewarm_issues` in side-effect details and `prewarm.issues` in
+diagnostics. Redirect targets, response bodies and exception messages are never
+stored. Uninstall removes the option with the `sympress_nginx_cache_` prefix.
+Ordinary successful
 continuations undo their reservation and resume after at least one second without
 resetting previous failures. Failed batches keep their reserved backoff and retry
 only unacknowledged URLs. The five-attempt budget still bounds actual failures and
@@ -266,7 +278,7 @@ planned prewarm targets every `max(60, inactive_seconds / 2)` seconds; each
 cache lookup renews that entry's inactivity timer, and stale entries refresh
 through the generated background update, so retention never extends validity.
 A cycle snapshots its target plan once, attempts every target once in batches of
-five, reports failed or undiscoverable targets in `last_failure` without
+five, reports failed, skipped (outdated) or undiscoverable targets in `last_failure` without
 retrying them within the cycle, and logs a URL-free signal. A successful cycle
 clears the evidence. `overdue` and Site Health report a missing cycle once a full
 inactivity window has elapsed. Other entries, and all entries in

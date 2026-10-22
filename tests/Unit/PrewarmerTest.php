@@ -33,7 +33,7 @@ final class PrewarmerTest extends TestCase
         }
     }
 
-    public function testHttpErrorsAndRedirectsAreFailuresAndEmptyBatchesDoNotWarmHome(): void
+    public function testTransientErrorsFailWhileOutdatedTargetsAreSkippedAndEmptyBatchesDoNotWarmHome(): void
     {
         $calls = [];
         $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$calls): MockResponse {
@@ -45,14 +45,56 @@ final class PrewarmerTest extends TestCase
         self::assertSame([], $calls);
         $result = $prewarmer->prewarm(['https://example.test/good/', 'https://example.test/error/', 'https://example.test/redirect/', 'https://foreign.test/']);
         self::assertSame(3, $result->attempted());
-        self::assertSame(1, $result->successful());
-        self::assertSame(2, $result->failed());
+        self::assertSame(['https://example.test/good/' => 200], $result->responses);
+        self::assertSame(['https://example.test/error/: HTTP 503.'], $result->errors);
+        self::assertSame(['https://example.test/redirect/'], $result->stale());
         self::assertCount(3, $calls);
         foreach ($calls as $options) {
             self::assertSame(0, $options['max_redirects']);
             self::assertSame(5.0, $options['max_duration']);
         }
-        self::assertSame(1, $prewarmer->warmUrls(['https://foreign.test/'])->failed());
+        $foreign = $prewarmer->warmUrls(['https://foreign.test/']);
+        self::assertSame([0, ['https://foreign.test/']], [$foreign->failed(), $foreign->stale()]);
+        self::assertCount(3, $calls);
+    }
+
+    public function testRedirectsAreRevalidatedPerHopAndRemovedTargetsAreStale(): void
+    {
+        $requested = [];
+        $routes = [
+            '/moved/'   => [301, '/new/'],
+            '/new/'     => [200, null],
+            '/sibling/' => [302, 'target/'],
+            '/sibling/target/' => [200, null],
+            '/escape/'  => [301, 'https://foreign.test/'],
+            '/loop-a/'  => [302, 'https://example.test/loop-b/'],
+            '/loop-b/'  => [302, '/loop-a/'],
+            '/chain-1/' => [301, '/chain-2/'],
+            '/chain-2/' => [301, '/chain-3/'],
+            '/chain-3/' => [301, '/chain-4/'],
+            '/chain-4/' => [301, '/chain-5/'],
+            '/chain-5/' => [200, null],
+            '/removed/' => [404, null],
+            '/gone/'    => [410, null],
+            '/limited/' => [429, null],
+        ];
+        $http = new MockHttpClient(static function (string $method, string $url) use (&$requested, $routes): MockResponse {
+            $requested[] = $url;
+            [$status, $location] = $routes[(string) parse_url($url, PHP_URL_PATH)];
+            return new MockResponse('', ['http_code' => $status, 'response_headers' => $location === null ? [] : ['Location: ' . $location]]);
+        });
+        $prewarmer = new Prewarmer($http, new WordPressCacheSettings('/fixture'), new UrlPolicy(), new CacheClock(new MockClock()));
+        $urls = array_map(static fn (string $path): string => 'https://example.test' . $path, ['/moved/', '/sibling/', '/escape/', '/loop-a/', '/chain-1/', '/removed/', '/gone/', '/limited/']);
+        $result = $prewarmer->warmUrls($urls);
+
+        self::assertSame(['https://example.test/moved/' => 200, 'https://example.test/sibling/' => 200], $result->responses);
+        self::assertSame([$urls[2], $urls[3], $urls[4], $urls[5], $urls[6]], $result->stale());
+        self::assertSame(['https://example.test/limited/: HTTP 429.'], $result->errors);
+        self::assertStringContainsString('HTTP 404', $result->issues[$urls[5]]['reason']);
+        self::assertStringNotContainsString('foreign', implode(' ', array_column($result->issues, 'reason')));
+        self::assertNotContains('https://foreign.test/', $requested);
+        self::assertNotContains('https://example.test/chain-5/', $requested);
+        self::assertSame(2, count(array_keys($requested, 'https://example.test/loop-a/', true)) + count(array_keys($requested, 'https://example.test/loop-b/', true)));
     }
 
     public function testCliReturnsFailureForAnUnsuccessfulHttpResponse(): void

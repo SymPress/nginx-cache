@@ -15,6 +15,7 @@ where applicable.
 ### Fixed
 
 - Retain safe local purge queue failure details for CLI and diagnostics, including exception class and source location. Preserve the evidence across retries and prevent contending workers from replacing it.
+- Keep outdated prewarm targets from blocking a stored prewarm plan. Same-origin redirects are followed for up to three revalidated hops; removed, rejected, externally redirected or looping targets are skipped and reported instead of exhausting the retry budget, while timeouts, rate limits and 5xx responses keep bounded retries. Side-effect details and diagnostics show the affected URL, HTTP status or safe reason and time.
 
 ## 1.0.4 — 2026-10-19
 
