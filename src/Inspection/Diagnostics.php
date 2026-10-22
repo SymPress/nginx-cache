@@ -55,7 +55,8 @@ final readonly class Diagnostics
                 'error'         => $status->error,
             ],
             'queue'        => [
-                'pending' => $this->queue->count(),
+                'pending'      => $this->queue->count(),
+                'last_failure' => $this->queue->lastFailure(),
             ],
             'tag_index'    => $this->tags->stats(),
             'metrics'      => $this->metrics->read(CacheMetricsReader::logPath(), is_string($host) ? $host : ''),
