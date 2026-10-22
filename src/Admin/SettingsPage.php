@@ -529,6 +529,18 @@ final readonly class SettingsPage
                             <div class="sympress-card sympress-form-card">
                                 <h3><?php echo esc_html__('Nginx-Cache-Grenzen', WordPressCacheSettings::TEXT_DOMAIN); ?></h3>
                                 <p><?php echo esc_html__('Diese Werte gelten nach Übernahme der generierten HTTP-/FastCGI-Konfiguration und geprüftem Nginx-Neuladen. Alle Profile haben dieselben Standardwerte. Gültigkeit nur bei zuverlässigem automatischem Purge erhöhen; Cache-Header der Anwendung können sie überschreiben.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+                                <div class="sympress-radio-stack" role="radiogroup" aria-label="<?php echo esc_attr__('Aufbewahrung vorgewärmter Seiten', WordPressCacheSettings::TEXT_DOMAIN); ?>">
+                                    <?php foreach ([CachePolicy::KEEP_WARM => [__('Vorgewärmte Seiten warm halten (Standard)', WordPressCacheSettings::TEXT_DOMAIN), sprintf(__('Ein begrenzter Hintergrundjob ruft die Prewarm-Ziele alle %d Sekunden erneut ab, bevor die Inaktivitätsfrist abläuft. Erfordert aktiviertes Prewarm und einen minütlichen Cron-Runner; Fehler erscheinen in der Diagnose.', WordPressCacheSettings::TEXT_DOMAIN), CachePolicy::keepWarmInterval())], CachePolicy::EVICT_INACTIVE => [__('Nach Inaktivität entfernen', WordPressCacheSettings::TEXT_DOMAIN), __('Kein Hintergrund-Refresh: Nginx entfernt auch vorgewärmte Seiten, die während der Inaktivitätsfrist nicht abgerufen wurden. Sinnvoll für große Sites mit vielen selten besuchten URLs oder knappem Speicher.', WordPressCacheSettings::TEXT_DOMAIN)]] as $mode => [$label, $description]) : ?>
+                                        <label class="sympress-radio-row">
+                                            <input type="radio" name="<?php echo esc_attr(CachePolicy::RETENTION_OPTION); ?>" value="<?php echo esc_attr($mode); ?>" <?php checked(CachePolicy::retention(), $mode); ?>  <?php FieldOwnership::attributes(CachePolicy::RETENTION_OPTION); ?>/>
+                                            <span>
+                                                <strong><?php echo esc_html($label); ?></strong>
+                                                <small><?php echo esc_html($description); ?></small>
+                                            </span>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
+                                <p><?php echo esc_html__('Gültigkeit bestimmt, wie lange eine Antwort frisch ist; danach liefert Nginx sie einmal veraltet aus und aktualisiert sie im Hintergrund. Die Inaktivitätsfrist entfernt Einträge, die so lange nicht abgerufen wurden – im Warmhalte-Modus gilt sie für alle Seiten außer den Prewarm-Zielen. Unabhängig davon verdrängt Nginx bei Erreichen des maximalen Plattenspeichers die am längsten nicht genutzten Einträge. Manuelle und – falls aktiviert – automatische Purges bei Inhaltsänderungen entfernen Einträge in jedem Modus sofort.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
                                 <div class="sympress-two-column">
                                 <?php foreach (['valid_seconds' => __('Gültigkeit (Sekunden)', WordPressCacheSettings::TEXT_DOMAIN), 'inactive_seconds' => __('Entfernen bei Inaktivität (Sekunden)', WordPressCacheSettings::TEXT_DOMAIN), 'max_size_mb' => __('Maximaler Plattenspeicher (MiB)', WordPressCacheSettings::TEXT_DOMAIN), 'keys_zone_mb' => __('Speicher für Cache-Schlüssel (MiB)', WordPressCacheSettings::TEXT_DOMAIN)] as $name => $label) : ?>
                                     <label class="sympress-field">

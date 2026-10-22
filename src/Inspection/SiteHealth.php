@@ -7,6 +7,7 @@ namespace SymPress\NginxCache\Inspection;
 use Predis\Client;
 use SymPress\NginxCache\Filesystem\CachePathValidator;
 use SymPress\NginxCache\Purge\CacheWorker;
+use SymPress\NginxCache\Purge\KeepWarmRefresher;
 use SymPress\NginxCache\Purge\PurgeQueueProcessor;
 use SymPress\NginxCache\Purge\PurgeSideEffectProcessor;
 use SymPress\NginxCache\Purge\SiteScopeResolver;
@@ -17,7 +18,7 @@ use SymPress\NginxCache\Time\CacheClock;
 
 final readonly class SiteHealth
 {
-    public function __construct(private WordPressCacheSettings $settings, private CompatibilitySettings $backend, private CachePathValidator $validator, private PurgeQueueProcessor $queue, private PurgeSideEffectProcessor $effects, private SiteScopeResolver $scope, private CacheClock $clock, private TagIndexRepository $tags)
+    public function __construct(private WordPressCacheSettings $settings, private CompatibilitySettings $backend, private CachePathValidator $validator, private PurgeQueueProcessor $queue, private PurgeSideEffectProcessor $effects, private SiteScopeResolver $scope, private CacheClock $clock, private TagIndexRepository $tags, private ?KeepWarmRefresher $keepWarm = null)
     {
     }
 
@@ -27,7 +28,7 @@ final readonly class SiteHealth
      */
     public function tests(array $tests): array
     {
-        foreach (['path', 'queues', 'worker', 'redis', 'metrics', 'scope'] as $check) {
+        foreach (['path', 'queues', 'worker', 'keep_warm', 'redis', 'metrics', 'scope'] as $check) {
             $tests['direct']['sympress_nginx_cache_' . $check] = ['label' => 'Nginx Cache: ' . $check, 'test' => fn (): array => $this->check($check)];
         }
         return $tests;
@@ -52,6 +53,14 @@ final readonly class SiteHealth
             $disabled = defined('DISABLE_WP_CRON') && DISABLE_WP_CRON;
             $status = $disabled && $heartbeat < $this->clock->timestamp() - 300 ? 'recommended' : 'good';
             $description = $status === 'good' ? __('Cron or a recent worker heartbeat is available.', WordPressCacheSettings::TEXT_DOMAIN) : __('WP-Cron is disabled and no worker has reported in five minutes. Schedule wp nginx-cache work.', WordPressCacheSettings::TEXT_DOMAIN);
+        } elseif ($name === 'keep_warm' && $this->keepWarm?->enabled() === true) {
+            $state = $this->keepWarm->inspect();
+            $status = $state['overdue'] ? 'critical' : ($state['last_failure'] !== null ? 'recommended' : 'good');
+            $description = match ($status) {
+                'critical' => __('No keep-warm refresh completed within the inactivity window; prewarmed pages may have been evicted. Check the cron runner.', WordPressCacheSettings::TEXT_DOMAIN),
+                'recommended' => __('The last keep-warm refresh could not warm every target. See wp nginx-cache diagnostics.', WordPressCacheSettings::TEXT_DOMAIN),
+                default => __('Prewarm targets are refreshed inside the inactivity window.', WordPressCacheSettings::TEXT_DOMAIN),
+            };
         } elseif ($name === 'redis' && $backend === 'redis') {
             try {
                 $parameters = [...$this->backend->redisConnection(), 'timeout' => 1.0, 'read_write_timeout' => 1.0];

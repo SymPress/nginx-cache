@@ -186,6 +186,7 @@ same defaults; changing a profile does not silently increase cache lifetime.
 | --- | --- | --- |
 | `valid_seconds` / `VALID_SECONDS` | 600 seconds | 60–86400 seconds |
 | `inactive_seconds` / `INACTIVE_SECONDS` | 3600 seconds | 60–604800 seconds |
+| `retention_mode` / `RETENTION_MODE` | `keep_warm` | `keep_warm`, `evict_inactive` |
 | `max_size_mb` / `MAX_SIZE_MB` | 256 MiB | 16–65536 MiB |
 | `keys_zone_mb` / `KEYS_ZONE_MB` | 100 MiB | 1–1024 MiB |
 
@@ -196,6 +197,33 @@ reloading Nginx. Saving plugin options alone does not alter the running server.
 Upstream cache headers can override validity; `inactive` can evict an entry even
 when its response remains fresh. Only extend validity with reliable automatic
 invalidation. See the [NGINX FastCGI cache directives](https://nginx.org/en/docs/http/ngx_http_fastcgi_module.html#fastcgi_cache_path).
+
+Three separate mechanisms decide what a visitor receives:
+
+- **Freshness (`valid_seconds`)**: how long a cached response is served as fresh.
+  Afterwards Nginx serves it stale once and refreshes it in the background.
+- **Inactivity eviction (`inactive_seconds`)**: Nginx removes entries that were
+  not requested within this window, even when they are still fresh.
+- **Storage pressure (`max_size_mb`)**: when the zone is full, Nginx evicts the
+  least recently used entries regardless of the other two settings.
+
+`retention_mode` controls prewarmed pages. With the default `keep_warm`, a bounded
+background job requests the prewarm targets every half inactivity window
+(1800 seconds by default, at least 60), five URLs per cron tick. Each request
+renews the entry's inactivity timer, so successfully prewarmed, cacheable targets
+stay available during idle periods while purges, content updates, bypass rules
+and storage limits still apply. It needs prewarm enabled and the per-minute
+cron runner below; with a timeout under about ten minutes, cron granularity may
+not keep up. Failures and overdue cycles appear in `wp nginx-cache diagnostics`
+(`keep_warm`) and Site Health. Choose `evict_inactive` for large sites with many
+rarely visited URLs or limited storage: no refresh runs and prewarmed pages are
+evicted like any other entry. Nginx has no `inactive=off`; neither mode makes
+retention indefinite, and other cached pages always follow `inactive_seconds`.
+
+Upgrades keep an explicit choice: without a saved `retention_mode`, a site whose
+stored `inactive_seconds` or `INACTIVE_SECONDS` constant differs from 3600
+continues with `evict_inactive`; sites on the previous default switch to
+`keep_warm`. Saving the Cache tab stores the shown mode.
 
 Enable automatic purge, selective purge, the queue and prewarm together for
 targeted invalidation followed by warming affected pages. Each side-effect tick

@@ -31,6 +31,18 @@ exclude this plugin from its update responses even while it is inactive.
 Installations still running an older release without that header need the new
 files before this protection applies. No GitHub update client is added.
 
+## Retention mode after upgrading
+
+Releases with `retention_mode` keep prewarmed pages warm by default. Without a
+saved mode, a site whose stored `sympress_nginx_cache_inactive_seconds` option
+or `SYMPRESS_NGINX_CACHE_INACTIVE_SECONDS` constant differs from 3600 seconds
+keeps the previous behavior (`evict_inactive`); a site on the previous default
+switches to `keep_warm`. The generated Nginx `inactive` value is unchanged, so no
+Nginx reload is required. With prewarm enabled, `keep_warm` adds bounded
+same-origin GET requests for the prewarm targets every half inactivity window.
+Set the mode on the Cache tab, per network, or with
+`SYMPRESS_NGINX_CACHE_RETENTION_MODE`; settings export and import include it.
+
 ## Importing settings from another cache plugin
 
 Preview Nginx Helper settings before importing:

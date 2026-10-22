@@ -597,6 +597,70 @@ try {
     update_option($settings::OPTION_PREWARM_ENABLED, 0);
     $side->drain();
     (new \Symfony\Component\Filesystem\Filesystem())->remove($cacheRoot);
+    // Keep-warm refresh: bounded batches, honest failure evidence and opt-in eviction; MockHttpClient only.
+    $warmClock = new \Symfony\Component\Clock\MockClock('2026-10-03');
+    $warmCalls = [];
+    $warmHttp = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url) use (&$warmCalls): \Symfony\Component\HttpClient\Response\MockResponse {
+        $warmCalls[] = $method . ' ' . $url;
+        return new \Symfony\Component\HttpClient\Response\MockResponse('', ['http_code' => str_contains($url, '/broken/') ? 503 : 200]);
+    });
+    $warmTime = new \SymPress\NginxCache\Time\CacheClock($warmClock);
+    $keepWarm = new \SymPress\NginxCache\Purge\KeepWarmRefresher($settings, new \SymPress\NginxCache\Purge\Prewarmer($warmHttp, $settings, $policy, $warmTime), $warmTime, testMutex());
+    $retention = \SymPress\NginxCache\Settings\CachePolicy::RETENTION_OPTION;
+    delete_option($retention);
+    delete_option('sympress_nginx_cache_inactive_seconds');
+    update_option($settings::OPTION_PREWARM_URLS, implode("\n", [...array_map(static fn (int $page): string => home_url('/warm-' . $page . '/'), range(1, 6)), home_url('/broken/')]));
+    check(!$keepWarm->enabled(), 'keep-warm refresh stays idle while prewarm is disabled');
+    update_option($settings::OPTION_PREWARM_ENABLED, 1);
+    wp_clear_scheduled_hook($keepWarm::HOOK);
+    check(\SymPress\NginxCache\Settings\CachePolicy::retention() === 'keep_warm' && $keepWarm->enabled(), 'prewarmed pages are kept warm by default');
+    $keepWarm->schedule();
+    check(wp_next_scheduled($keepWarm::HOOK) !== false, 'keep-warm refresh is scheduled for prewarm targets');
+    wp_clear_scheduled_hook($keepWarm::HOOK);
+    $started = $warmClock->now()->getTimestamp();
+    check($keepWarm->process() === 5 && $keepWarm->inspect()['pending'] === 3 && wp_next_scheduled($keepWarm::HOOK) === $warmClock->now()->getTimestamp() + 1, 'keep-warm refresh warms one bounded batch and continues promptly');
+    check(count($warmCalls) === 5 && str_starts_with($warmCalls[0], 'GET ') && $keepWarm->inspect()['last_failure'] === null, 'keep-warm uses public GET requests and reports failure only after the cycle');
+    wp_clear_scheduled_hook($keepWarm::HOOK);
+    $warmClock->sleep(1);
+    $previousLog = ini_get('error_log');
+    $warmLog = tempnam(sys_get_temp_dir(), 'sympress-keep-warm-');
+    ini_set('error_log', $warmLog);
+    try {
+        check($keepWarm->process() === 3 && count($warmCalls) === 8, 'keep-warm completes the cycle without retrying earlier targets');
+        $signal = file_get_contents($warmLog);
+    } finally {
+        ini_set('error_log', $previousLog);
+        unlink($warmLog);
+    }
+    $state = $keepWarm->inspect();
+    check($state['pending'] === 0 && $state['completed_at'] === $warmClock->now()->getTimestamp() && $state['last_failure']['failed'] === 1 && $state['last_failure']['targets'] === 8 && str_contains($state['last_failure']['errors'][0], '/broken/: HTTP 503'), 'keep-warm failure evidence names the failed target and keeps the others warm');
+    check(str_contains($signal, 'keep-warm refresh failed (1 of 8 targets)') && !str_contains($signal, 'https://'), 'keep-warm failure emits a URL-free log signal');
+    check(wp_next_scheduled($keepWarm::HOOK) === $started + \SymPress\NginxCache\Settings\CachePolicy::keepWarmInterval() && \SymPress\NginxCache\Settings\CachePolicy::keepWarmInterval() === 1800, 'next keep-warm cycle starts inside the default one-hour inactivity window');
+    check(!$state['overdue'], 'a recent keep-warm cycle is not overdue');
+    $warmClock->sleep(3601);
+    check($keepWarm->inspect()['overdue'], 'a missed inactivity window is exposed as overdue keep-warm work');
+    update_option($settings::OPTION_PREWARM_URLS, home_url('/warm-1/'));
+    wp_clear_scheduled_hook($keepWarm::HOOK);
+    $keepWarm->process();
+    check($keepWarm->inspect()['last_failure'] === null && !$keepWarm->inspect()['overdue'], 'a successful keep-warm cycle clears previous failure evidence');
+    update_option($retention, 'evict_inactive');
+    wp_clear_scheduled_hook($keepWarm::HOOK);
+    $calls = count($warmCalls);
+    $keepWarm->schedule();
+    check(!$keepWarm->enabled() && wp_next_scheduled($keepWarm::HOOK) === false, 'optional inactivity eviction does not schedule refreshes');
+    check($keepWarm->process() === 0 && count($warmCalls) === $calls && get_option($keepWarm::STATE, null) === null, 'a stale keep-warm event after opting into eviction makes no request and clears its state');
+    delete_option($retention);
+    update_option('sympress_nginx_cache_inactive_seconds', 7200);
+    check(\SymPress\NginxCache\Settings\CachePolicy::retention() === 'evict_inactive', 'upgrade keeps eviction for an explicitly changed inactivity timeout');
+    update_option('sympress_nginx_cache_inactive_seconds', 3600);
+    check(\SymPress\NginxCache\Settings\CachePolicy::retention() === 'keep_warm', 'upgrade adopts keep-warm when the stored timeout is the previous default');
+    update_option($retention, 'evict_inactive');
+    check(\SymPress\NginxCache\Settings\CachePolicy::retention() === 'evict_inactive', 'a saved retention choice wins over upgrade inference');
+    delete_option($retention);
+    delete_option('sympress_nginx_cache_inactive_seconds');
+    update_option($settings::OPTION_PREWARM_ENABLED, 0);
+    update_option($settings::OPTION_PREWARM_URLS, '');
+    wp_clear_scheduled_hook($keepWarm::HOOK);
     $subscriber = new \SymPress\NginxCache\Hook\AutomaticPurgeSubscriber($settings, $manager, $processor, $collector, new \SymPress\NginxCache\Purge\PurgeRequestMerger());
     update_option($settings::OPTION_AUTO_PURGE, 1);
     do_action('save_post', $published, get_post($published), true);
@@ -688,11 +752,13 @@ try {
     check($index->stats()['urls'] > 0 && $queue->count() === 1, 'default uninstall retains index and queue');
     check(wp_next_scheduled(\SymPress\NginxCache\Surrogate\TagIndexMaintenance::HOOK) !== false, 'default uninstall retains tag-maintenance scheduling');
     update_option($settings::OPTION_DELETE_ON_UNINSTALL, 1);
+    wp_schedule_single_event(time() + 120, \SymPress\NginxCache\Purge\KeepWarmRefresher::HOOK);
     \SymPress\NginxCache\Support\UninstallPolicy::removeCurrentSiteData();
     check(get_option($settings::OPTION_AUTO_PURGE, null) === null && get_option($index::OPTION_VERSION, null) === null, 'explicit uninstall removes owned settings');
     check($queue->lastFailure() === null, 'explicit uninstall removes private queue failure evidence');
     check($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->prefix . $index::TABLE_SUFFIX)) === null, 'explicit uninstall drops only owned index table');
     check(wp_next_scheduled(\SymPress\NginxCache\Surrogate\TagIndexMaintenance::HOOK) === false && wp_next_scheduled('fixture_unrelated_cron') !== false, 'explicit uninstall clears tag maintenance and preserves unrelated cron');
+    check(wp_next_scheduled(\SymPress\NginxCache\Purge\KeepWarmRefresher::HOOK) === false, 'explicit uninstall clears keep-warm refreshes');
     echo 'Integration complete: ' . $checks . ' assertions; real WordPress ' . $GLOBALS['wp_version'] . '/' . $pdo->query('SELECT VERSION()')->fetchColumn() . '; zero external HTTP.' . PHP_EOL;
 } finally {
     foreach ($workers ?? [] as $worker) {

@@ -8,6 +8,7 @@ use SymPress\NginxCache\Config\NginxConfigGenerator;
 use SymPress\NginxCache\Integration\Polylang\PolylangIntegration;
 use SymPress\NginxCache\Layer\CacheLayerCoordinator;
 use SymPress\NginxCache\Purge\CacheWorker;
+use SymPress\NginxCache\Purge\KeepWarmRefresher;
 use SymPress\NginxCache\Purge\PurgeHistoryRepository;
 use SymPress\NginxCache\Purge\PurgeQueueProcessor;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
@@ -27,6 +28,7 @@ final readonly class Diagnostics
         private CacheLayerCoordinator $layers,
         private CacheMetricsReader $metrics,
         private ?PolylangIntegration $polylang = null,
+        private ?KeepWarmRefresher $keepWarm = null,
     ) {
     }
 
@@ -58,6 +60,7 @@ final readonly class Diagnostics
                 'pending'      => $this->queue->count(),
                 'last_failure' => $this->queue->lastFailure(),
             ],
+            'keep_warm'    => $this->keepWarm?->inspect(),
             'tag_index'    => $this->tags->stats(),
             'metrics'      => $this->metrics->read(CacheMetricsReader::logPath(), is_string($host) ? $host : ''),
             'layers'       => [

@@ -15,6 +15,7 @@ request to local deletion and follow-up work.
 | Side-effect hook/CLI | `PurgeSideEffectProcessor` | Resumes partial site scans through the validated `CachePurger` lock | Prewarm, cache-layer sync, signed remote dispatch, Cloudflare dispatch after the scan finishes |
 | CLI `nginx-cache:work` | `CacheWorker` → queue processors | Runtime/task-bounded processing; network mode visits only durable pending site IDs | Same scoped side-effect queue; worker heartbeat |
 | Anonymous cacheable response | `SurrogateTagSubscriber` → `TagIndexRepository` | Registers canonical URL/tag mappings; fresh identical mappings issue no writes | Schedules tag maintenance |
+| Keep-warm cron (`sympress_nginx_cache_keep_warm`), scheduled on `init` | `KeepWarmRefresher` → `Prewarmer` | Only with prewarm enabled and retention `keep_warm`: same-origin, redirect-free, five-second GET requests for at most five planned prewarm targets per tick; no purge, filesystem deletion, queue or tag-index mutation | Schedules the next batch after one second, or the next cycle at half the inactivity timeout; records `keep_warm` diagnostics |
 | Tag-maintenance cron / side-effect tick | `TagIndexMaintenance` | Deletes at most 500 index rows per call under the index mutation lock, enforcing TTL and retention limits | Schedules another maintenance event; no filesystem deletion or HTTP |
 
 The plugin-list settings link is registered through
@@ -258,6 +259,23 @@ only unacknowledged URLs. The five-attempt budget still bounds actual failures a
 crashes. New tasks and overflow generations cannot inherit another task's progress.
 Sitemap discovery occurs once before the first batch and retains its existing
 20-map / five-second-per-map limits. Explicit CLI prewarm is synchronous.
+Keep-warm retention is separate from purge follow-up work. Nginx has no
+`inactive=off`; the generated `inactive` value is always the configured finite
+timeout. In the default `keep_warm` mode, `KeepWarmRefresher` re-requests the
+planned prewarm targets every `max(60, inactive_seconds / 2)` seconds; each
+cache lookup renews that entry's inactivity timer, and stale entries refresh
+through the generated background update, so retention never extends validity.
+A cycle snapshots its target plan once, attempts every target once in batches of
+five, reports failed or undiscoverable targets in `last_failure` without
+retrying them within the cycle, and logs a URL-free signal. A successful cycle
+clears the evidence. `overdue` and Site Health report a missing cycle once a full
+inactivity window has elapsed. Other entries, and all entries in
+`evict_inactive` mode, remain subject to the inactivity timeout; `max_size`
+eviction under storage pressure applies in both modes. Purges are unaffected and
+remove refreshed entries normally. A due event after opting out makes no request
+and deletes its state. The state option is non-autoloaded, removed by the
+uninstall prefix sweep, and its cron hook is cleared on explicit uninstall.
+
 Delivery remains at least once: a crash or storage failure between the external
 action and its durable checkpoint can cause a repeat, so receivers and adapters
 must accept repeated invalidation calls. Queue lock contention prevents

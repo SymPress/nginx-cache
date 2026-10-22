@@ -669,6 +669,7 @@ final readonly class WordPressCacheSettings
             'prewarm_limit'    => $this->maxPrewarmUrls(),
             'prewarm_rps'      => $this->prewarmRequestsPerSecond(),
             'cache_policy'     => CachePolicy::values(),
+            'cache_retention'  => ['mode' => CachePolicy::retention(), 'keep_warm_interval' => CachePolicy::keepWarmInterval()],
             'rest'             => $this->restEnabled(),
             'levels'           => $this->cacheLevels(),
             'tag_index'        => $this->tagIndexEnabled(),
