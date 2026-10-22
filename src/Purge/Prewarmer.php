@@ -14,6 +14,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 final readonly class Prewarmer
 {
     public const int BATCH_SIZE = 5;
+    public const int MAX_REDIRECTS = 3;
 
     public function __construct(
         private HttpClientInterface $http,
@@ -29,7 +30,7 @@ final readonly class Prewarmer
     {
         $plan = $this->plan($urls);
         $result = $this->warmUrls($plan->urls);
-        return new PrewarmResult($result->urls, $result->responses, [...$plan->errors, ...$result->errors]);
+        return new PrewarmResult($result->urls, $result->responses, [...$plan->errors, ...$result->errors], issues: $result->issues);
     }
 
     /**
@@ -88,40 +89,94 @@ final readonly class Prewarmer
     /** @param list<string> $urls */
     public function warmUrls(array $urls): PrewarmResult
     {
-        $normalized = array_map($this->urls->normalizeSameOriginHttpUrl(...), $urls);
-        $errors = in_array('', $normalized, true) ? ['A prewarm target no longer uses this site origin.'] : [];
-        $urls = array_values(array_unique(array_filter($normalized, static fn (string $url): bool => $url !== '')));
+        $errors = [];
+        $issues = [];
+        $targets = [];
+        foreach ($urls as $url) {
+            $normalized = $this->urls->normalizeSameOriginHttpUrl($url);
+            if ($normalized === '') {
+                // Plan entries are already validated URLs; an origin change makes them permanently stale.
+                $issues[$url] = ['reason' => 'Target no longer uses this site origin.', 'stale' => true];
+                continue;
+            }
+            $targets[$normalized] = true;
+        }
+        $urls = array_keys($targets);
         $responses = [];
 
         foreach ($urls as $url) {
+            $target = $url;
+            $visited = [];
             try {
-                $response = $this->http->request('GET', $url, [
-                    'headers'       => [
-                        'User-Agent' => 'SymPress Nginx Cache Prewarmer',
-                    ],
-                    'max_redirects' => 0,
-                    'timeout'       => 5,
-                    'max_duration'  => 5,
-                ]);
-                $status = $response->getStatusCode();
-                if ($status < 200 || $status >= 300) {
-                    $errors[] = sprintf('%s: HTTP %d.', $url, $status);
-                } else {
-                    $responses[$url] = $status;
+                while (true) {
+                    $visited[$target] = true;
+                    try {
+                        $response = $this->http->request('GET', $target, [
+                            'headers'       => [
+                                'User-Agent' => 'SymPress Nginx Cache Prewarmer',
+                            ],
+                            'max_redirects' => 0,
+                            'timeout'       => 5,
+                            'max_duration'  => 5,
+                        ]);
+                        $status = $response->getStatusCode();
+                        $location = $status >= 300 && $status < 400 ? (string) ($response->getHeaders(false)['location'][0] ?? '') : '';
+                    } finally {
+                        $this->delay();
+                    }
+                    if ($location === '') {
+                        break;
+                    }
+                    // Each hop is re-validated; external, looping or long chains are stale targets.
+                    $next = $this->urls->normalizeSameOriginHttpUrl($this->absoluteUrl($target, $location));
+                    if ($next === '' || isset($visited[$next]) || count($visited) > self::MAX_REDIRECTS) {
+                        $issues[$url] = ['reason' => sprintf('HTTP %d: redirect leaves the site, loops or exceeds %d hops.', $status, self::MAX_REDIRECTS), 'stale' => true];
+                        continue 2;
+                    }
+                    $target = $next;
                 }
             } catch (\Throwable) {
                 $errors[] = sprintf('%s: Prewarm request failed.', $url);
-            }
-
-            $delay = $this->settings->prewarmDelayMilliseconds();
-
-            if ($delay <= 0) {
+                $issues[$url] = ['reason' => 'Prewarm request failed.', 'stale' => false];
                 continue;
             }
-
-            $this->clock->sleepMicroseconds($delay * 1000);
+            if ($status >= 200 && $status < 300) {
+                $responses[$url] = $status;
+            } elseif ($status >= 300 && $status < 500 && !in_array($status, [408, 425, 429], true)) {
+                $issues[$url] = ['reason' => sprintf('HTTP %d: target is outdated, removed or rejected.', $status), 'stale' => true];
+            } else {
+                $errors[] = sprintf('%s: HTTP %d.', $url, $status);
+                $issues[$url] = ['reason' => sprintf('HTTP %d.', $status), 'stale' => false];
+            }
         }
 
-        return new PrewarmResult($urls, $responses, $errors);
+        return new PrewarmResult($urls, $responses, $errors, issues: $issues);
+    }
+
+    private function delay(): void
+    {
+        $delay = $this->settings->prewarmDelayMilliseconds();
+        if ($delay <= 0) {
+            return;
+        }
+        $this->clock->sleepMicroseconds($delay * 1000);
+    }
+
+    private function absoluteUrl(string $base, string $location): string
+    {
+        if (preg_match('#^[a-z][a-z0-9+.-]*:#i', $location) === 1) {
+            return $location;
+        }
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Parse the already validated URL without requiring WordPress in unit tests.
+        $parts = parse_url($base) ?: [];
+        $origin = ($parts['scheme'] ?? 'https') . '://' . ($parts['host'] ?? '') . (isset($parts['port']) ? ':' . $parts['port'] : '');
+        if (str_starts_with($location, '//')) {
+            return ($parts['scheme'] ?? 'https') . ':' . $location;
+        }
+        if (str_starts_with($location, '/')) {
+            return $origin . $location;
+        }
+        $path = $parts['path'] ?? '/';
+        return $origin . substr($path, 0, (int) strrpos($path, '/') + 1) . $location;
     }
 }

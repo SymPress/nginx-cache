@@ -99,8 +99,9 @@ final readonly class KeepWarmRefresher
         $result = $this->prewarmer->warmUrls($batch);
         // Failed targets are reported, not retried within the cycle, so one bad URL cannot stall the others.
         $state['done'] = [...$state['done'], ...array_map(static fn (string $url): string => hash('sha256', $url), $batch)];
-        $state['errors'] = array_slice([...$state['errors'], ...$result->errors], 0, self::MAX_ERRORS);
-        $state['failed'] += $result->failed();
+        $skipped = array_map(static fn (string $url): string => sprintf('%s: Skipped, %s', $url, $result->issues[$url]['reason']), $result->stale());
+        $state['errors'] = array_slice([...$state['errors'], ...$result->errors, ...$skipped], 0, self::MAX_ERRORS);
+        $state['failed'] += $result->failed() + count($skipped);
         if (count($pending) > count($batch)) {
             update_option(self::STATE, $state, false);
             $this->scheduleAt($now + 1);

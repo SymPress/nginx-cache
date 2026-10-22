@@ -23,6 +23,8 @@ final readonly class PurgeSideEffectProcessor
     public const string HOOK = 'sympress_nginx_cache_process_side_effects';
     public const string HEALTH_OPTION = 'sympress_nginx_cache_side_effect_health';
     public const string SCAN_RECOVERY_PREFIX = 'sympress_nginx_cache_scan_recovery_';
+    public const string PREWARM_ISSUES_OPTION = 'sympress_nginx_cache_prewarm_issues';
+    private const int MAX_PREWARM_ISSUES = 20;
 
     public function __construct(
         private WordPressCacheSettings $settings,
@@ -141,7 +143,15 @@ final readonly class PurgeSideEffectProcessor
     /** @return list<array<string, mixed>> */
     public function inspect(): array
     {
-        return $this->queue->inspect();
+        $issues = self::prewarmIssues();
+        return array_map(static fn (array $task): array => [...$task, 'prewarm_issues' => $issues], $this->queue->inspect());
+    }
+
+    /** @return list<array{url: string, reason: string, stale: bool, at: int}> */
+    public static function prewarmIssues(): array
+    {
+        $issues = function_exists('get_option') ? get_option(self::PREWARM_ISSUES_OPTION, []) : [];
+        return is_array($issues) ? array_values(array_filter($issues, static fn (mixed $issue): bool => is_array($issue) && is_string($issue['url'] ?? null) && is_string($issue['reason'] ?? null) && is_bool($issue['stale'] ?? null) && is_int($issue['at'] ?? null))) : [];
     }
 
     public function retry(): void
@@ -185,6 +195,27 @@ final readonly class PurgeSideEffectProcessor
         }
         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Fixed credential-free operational signal, deduplicated in persistent state.
         error_log('SymPress Nginx Cache: external follow-up queue requires attention (' . $reason . '); local purges remain active.');
+    }
+
+    /**
+     * @param list<string> $batch
+     * @param array<string, array{reason: string, stale: bool}> $issues
+     */
+    private function recordPrewarmIssues(array $batch, array $issues): void
+    {
+        if (!function_exists('update_option')) {
+            return;
+        }
+        $now = $this->clock->timestamp();
+        $recorded = array_map(static fn (string $url, array $issue): array => ['url' => $url, ...$issue, 'at' => $now], array_keys($issues), $issues);
+        // Attempted URLs replace their older entries, so a later success clears a transient issue.
+        $kept = array_filter(self::prewarmIssues(), static fn (array $issue): bool => !in_array($issue['url'], $batch, true));
+        $current = array_slice([...$recorded, ...$kept], 0, self::MAX_PREWARM_ISSUES);
+        try {
+            update_option(self::PREWARM_ISSUES_OPTION, $current, false);
+        } catch (\Throwable) {
+            // Diagnostics must never undo checkpointed prewarm progress.
+        }
     }
 
     /** @param QueueTask $task */
@@ -253,15 +284,20 @@ final readonly class PurgeSideEffectProcessor
             }
             $completed = $this->completed($task, 'prewarm-url:');
             $pending = array_values(array_filter($urls, static fn (string $url): bool => !in_array(hash('sha256', $url), $completed, true)));
-            $prewarm = $this->prewarmer->warmUrls(array_slice($pending, 0, Prewarmer::BATCH_SIZE));
-            foreach (array_keys($prewarm->responses) as $url) {
+            $batch = array_slice($pending, 0, Prewarmer::BATCH_SIZE);
+            $prewarm = $this->prewarmer->warmUrls($batch);
+            // Stale targets are settled without warming so they cannot exhaust the retry budget.
+            $settled = [...array_keys($prewarm->responses), ...$prewarm->stale()];
+            foreach ($settled as $url) {
                 $this->queue->checkpoint($task['id'], 'prewarm-url:' . hash('sha256', $url));
             }
-            $prewarmPending = count($pending) > $prewarm->successful();
+            $this->recordPrewarmIssues($batch, $prewarm->issues);
+            $prewarmPending = count($pending) > count($settled);
             $sideEffects['prewarm'] = [
-                'attempted' => $prewarm->attempted(),
-            'successful'    => $prewarm->successful(),
-            'failed'        => $prewarm->failed(),
+                'attempted'  => $prewarm->attempted(),
+                'successful' => $prewarm->successful(),
+                'failed'     => $prewarm->failed(),
+                'skipped'    => count($prewarm->stale()),
             ];
             if (!$prewarmPending && $prewarm->failed() === 0) {
                 $this->queue->checkpoint($task['id'], 'prewarm');
