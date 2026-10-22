@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## Unreleased
+
+### Fixed
+
+- Retain safe local purge queue failure details for CLI and diagnostics, including exception class and source location. Preserve the evidence across retries and prevent contending workers from replacing it.
+
 ## 1.0.4 — 2026-10-19
 
 ### Fixed

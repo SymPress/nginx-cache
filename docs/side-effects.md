@@ -232,6 +232,20 @@ work and reports failure if anything remains pending. The WP-CLI equivalents are
 `wp nginx-cache side-effects details` and `wp nginx-cache side-effects retry`.
 Retry preserves the request payload and successful side-effect checkpoints.
 
+Local purge queue details also include `last_failure`: the failure timestamp,
+processing phase (`purge`, `acknowledge` or `queue`) and the existing safe purge
+result message. Caught exceptions retain only their class, numeric code, source
+basename and line; raw exception messages, absolute paths and traces are omitted
+because they may contain provider credentials. The same record appears under
+`queue.last_failure` in the existing capability-gated diagnostic report. It is
+stored as one non-autoloaded option per site, preserved across explicit retry,
+and cleared when the queue drains successfully or is explicitly drained.
+Failure recording never changes the request, retry reservation, lock or generation.
+Only the worker holding the process lock writes or clears the retained diagnosis;
+contenders emit a log signal without overwriting the owner's failure evidence.
+A credential-free structured log signal remains available if diagnostic storage
+is unavailable; result messages are deliberately excluded from that log signal.
+
 Successful cache layers and individual remote endpoints are checkpointed before
 processing later providers. Successful prewarm and Cloudflare work are also
 checkpointed. A failing provider therefore does not replay acknowledged actions.

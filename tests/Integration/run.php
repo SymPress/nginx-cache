@@ -171,13 +171,19 @@ try {
     wp_cache_set('sympress_nginx_cache_queue', [], 'options');
     check($queue->count() === 1, 'stale option cache cannot hide pending work');
     check(!$queue->process(static fn (): bool => false) && $queue->count() === 1, 'failed purge stays queued');
+    $failure = $queue->inspect()[0]['last_failure'] ?? null;
+    check(is_array($failure) && $failure['failed_at'] === $queueClock->now()->getTimestamp() && $failure['phase'] === 'purge', 'failed callback retains its time and processing phase');
     $queueClock->sleep(60);
+    $fixtureException = new RuntimeException('fixture-private-password https://user:secret@example.test/?token=private', 37);
     try {
-        $queue->process(static function (): bool { throw new RuntimeException('fixture failure'); });
+        $queue->process(static function () use ($fixtureException): bool { throw $fixtureException; });
     } catch (RuntimeException) {
     }
     check($queue->count() === 1, 'exception leaves purge queued');
     check($queue->inspect()[0]['attempts'] === 2, 'purge exception consumes a persisted retry attempt');
+    $failure = $queue->inspect()[0]['last_failure'];
+    check($failure['exception'] === ['type' => RuntimeException::class, 'code' => 37, 'file' => basename($fixtureException->getFile()), 'line' => $fixtureException->getLine()], 'exception diagnostics identify the throwing code');
+    check(!str_contains(serialize($failure), 'fixture-private-password') && !str_contains(serialize($failure), 'https://') && !str_contains(serialize($failure), dirname(__DIR__)), 'exception diagnostics omit raw messages, URLs, stack traces and absolute paths');
     $queueClock->sleep(120);
     $queue->process(static function () use ($queue): bool {
         $queue->push(\SymPress\NginxCache\Value\PurgeRequest::urls(['https://example.test/arrived-during-purge/']));
@@ -186,6 +192,7 @@ try {
     check(in_array('https://example.test/arrived-during-purge/', $queue->all()[0]->urls, true), 'producer during acknowledgement is retained');
     $queueClock->sleep(240);
     check($queue->process(static fn (): bool => true) && $queue->count() === 0, 'successful retry acknowledges work');
+    check($queue->lastFailure() === null, 'drained queue clears its previous failure');
     $identical = \SymPress\NginxCache\Value\PurgeRequest::urls(['https://example.test/same-event/']);
     $queue->push($identical);
     $queue->process(static function () use ($queue, $identical): bool { $queue->push($identical); return true; });
@@ -209,8 +216,48 @@ try {
     $queue->process(static function () use (&$failedCalls): bool { ++$failedCalls; return true; });
     check($failedCalls === 5 && $queue->count() === 1 && $queue->inspect()[0]['exhausted'] && $queue->nextAttemptAt() === null, 'exhausted purge work survives new producers without automatic retries');
     check(in_array('https://example.test/retained-after-exhaustion/', $queue->all()[0]->urls, true), 'exhausted purge retains concurrent new URLs');
+    $failure = $queue->inspect()[0]['last_failure'];
     $queue->retry();
+    check($queue->inspect()[0]['last_failure'] === $failure, 'operator retry preserves failure evidence until successful recovery');
     check($queue->process(static fn (): bool => true) && $queue->count() === 0, 'explicit purge retry resets exhaustion and acknowledges retained work');
+    $queue->push($identical);
+    $failedResult = \SymPress\NginxCache\Value\PurgeResult::failure('/tmp/disposable-cache', 'Could not acquire cache purge lock.');
+    check(!$queue->process(static fn (): \SymPress\NginxCache\Value\PurgeResult => $failedResult), 'failed purge results retain pending work');
+    check($queue->inspect()[0]['last_failure']['message'] === $failedResult->message, 'purge result diagnostics retain the existing safe failure explanation');
+    check($wpdb->get_var($wpdb->prepare('SELECT autoload FROM %i WHERE option_name = %s', $wpdb->options, 'sympress_nginx_cache_queue_failure')) === 'off', 'failure evidence is not autoloaded on public requests');
+    $queue->retry();
+    check($queue->process(static fn (): \SymPress\NginxCache\Value\PurgeResult => \SymPress\NginxCache\Value\PurgeResult::success('/tmp/disposable-cache', 0, 0.0)) && $queue->lastFailure() === null, 'successful purge results acknowledge work and clear failure evidence');
+    $queue->push($identical);
+    $denyAcknowledgement = static fn (mixed $value, mixed $old): mixed => $old;
+    try {
+        $acknowledged = $queue->process(static function () use ($denyAcknowledgement): bool {
+            add_filter('pre_update_option_sympress_nginx_cache_queue', $denyAcknowledgement, 10, 2);
+            return true;
+        });
+    } finally {
+        remove_filter('pre_update_option_sympress_nginx_cache_queue', $denyAcknowledgement);
+    }
+    check(!$acknowledged && $queue->count() === 1 && $queue->lastFailure()['phase'] === 'acknowledge', 'successful purge with failed acknowledgement retains work and identifies the acknowledgement failure');
+    $queue->retry();
+    $queue->process(static fn (): bool => true);
+    $queue->push($identical);
+    $diagnosticLog = tempnam(sys_get_temp_dir(), 'sympress-diagnostic-');
+    $previousLog = ini_get('error_log');
+    $denyDiagnostics = static function (): never { throw new RuntimeException('fixture-private-diagnostic-storage'); };
+    ini_set('error_log', $diagnosticLog);
+    add_filter('pre_update_option_sympress_nginx_cache_queue_failure', $denyDiagnostics);
+    try {
+        $processed = $queue->process(static function () use ($fixtureException): bool { throw $fixtureException; });
+        $signal = file_get_contents($diagnosticLog);
+    } finally {
+        remove_filter('pre_update_option_sympress_nginx_cache_queue_failure', $denyDiagnostics);
+        ini_set('error_log', $previousLog);
+        unlink($diagnosticLog);
+    }
+    check(!$processed && $queue->count() === 1 && $queue->inspect()[0]['attempts'] === 1, 'diagnostic storage exception cannot drop work or change its retry reservation');
+    check(str_contains($signal, 'queue failure') && str_contains($signal, 'RuntimeException') && !str_contains($signal, 'fixture-private') && !str_contains($signal, 'https://'), 'credential-free log evidence survives unavailable diagnostic storage');
+    $queue->retry();
+    $queue->process(static fn (): bool => true);
     // Upgrade legacy queue records without losing their first acknowledgement.
     update_option('sympress_nginx_cache_queue', [$identical->toArray()], false);
     check($queue->process(static fn (): bool => true) && $queue->count() === 0, 'legacy purge queue gains metadata and still acknowledges');
@@ -583,6 +630,8 @@ try {
         $queueClock->sleep($delay);
     }
     check($queue->inspect()[0]['exhausted'] && wp_next_scheduled($processor::HOOK) === false, 'purge processor stops scheduling exhausted work');
+    $failure = $processor->lastFailure();
+    check($failure['phase'] === 'purge' && $failure['message'] === $history->last()['message'], 'processor preserves the actual safe purge failure instead of reducing it to a boolean');
     for ($event = 0; $event < 2000; ++$event) {
         $queue->push(\SymPress\NginxCache\Value\PurgeRequest::urls(['https://example.test/exhausted/' . $event . '/']));
     }
@@ -601,9 +650,33 @@ try {
     $queueCommand->execute(['action' => 'details']);
     $details = json_decode($queueCommand->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
     check($details[0]['attempts'] === 5 && $details[0]['exhausted'], 'purge CLI details exposes retained requests and retry state');
+    check($details[0]['last_failure'] === $failure, 'purge CLI details exposes the retained failure diagnosis');
     check($queueCommand->execute(['action' => 'flush']) === 1, 'purge CLI flush reports retained exhausted work');
     $queueCommand->execute(['action' => 'retry']);
     check($queue->inspect()[0]['attempts'] === 0 && wp_next_scheduled($processor::HOOK) !== false, 'purge operator retry schedules preserved work without filesystem execution');
+    $statement = $pdo->prepare('SELECT GET_LOCK(?, 0)');
+    $statement->execute([$heldQueueKey]);
+    try {
+        $processor->process();
+        check($processor->lastFailure()['phase'] === 'queue' && $processor->lastFailure()['exception']['type'] === \SymPress\NginxCache\Support\MutationLockUnavailable::class, 'processor records exceptions before the purge callback is reached');
+        check($queue->inspect()[0]['attempts'] === 0, 'diagnosing queue lock contention cannot consume an unreserved retry');
+    } finally {
+        $statement = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+        $statement->execute([$heldQueueKey]);
+    }
+    $failure = $processor->lastFailure();
+    $queueClock->sleep(1);
+    $processScope = $wpdb->get_var('SELECT DATABASE()') . ':' . $wpdb->prefix . ':sympress_nginx_cache_queue.process';
+    $processLock = 'sympress-cache:' . substr(hash('sha256', $processScope), 0, 40);
+    $statement = $pdo->prepare('SELECT GET_LOCK(?, 0)');
+    $statement->execute([$processLock]);
+    try {
+        check($processor->process() === 0, 'process-lock contender cannot execute a purge');
+        check($processor->lastFailure() === $failure, 'contending worker cannot overwrite the owner failure outside the process lock');
+    } finally {
+        $statement = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+        $statement->execute([$processLock]);
+    }
     remove_filter('sympress_nginx_cache_path', $invalidRoot);
     require __DIR__ . '/compatibility.php';
     require __DIR__ . '/optimization.php';
@@ -617,6 +690,7 @@ try {
     update_option($settings::OPTION_DELETE_ON_UNINSTALL, 1);
     \SymPress\NginxCache\Support\UninstallPolicy::removeCurrentSiteData();
     check(get_option($settings::OPTION_AUTO_PURGE, null) === null && get_option($index::OPTION_VERSION, null) === null, 'explicit uninstall removes owned settings');
+    check($queue->lastFailure() === null, 'explicit uninstall removes private queue failure evidence');
     check($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->prefix . $index::TABLE_SUFFIX)) === null, 'explicit uninstall drops only owned index table');
     check(wp_next_scheduled(\SymPress\NginxCache\Surrogate\TagIndexMaintenance::HOOK) === false && wp_next_scheduled('fixture_unrelated_cron') !== false, 'explicit uninstall clears tag maintenance and preserves unrelated cron');
     echo 'Integration complete: ' . $checks . ' assertions; real WordPress ' . $GLOBALS['wp_version'] . '/' . $pdo->query('SELECT VERSION()')->fetchColumn() . '; zero external HTTP.' . PHP_EOL;

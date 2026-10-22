@@ -7,11 +7,13 @@ namespace SymPress\NginxCache\Purge;
 use SymPress\NginxCache\Support\OptionMutex;
 use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
+use SymPress\NginxCache\Value\PurgeResult;
 use SymPress\NginxCache\Value\QueueRetryState;
 
 final readonly class PurgeQueueRepository
 {
     private const string OPTION_QUEUE = 'sympress_nginx_cache_queue';
+    private const string OPTION_FAILURE = 'sympress_nginx_cache_queue_failure';
     private const int INBOX_SLOTS = 64;
     private const int INBOX_BATCH = self::INBOX_SLOTS + 4;
 
@@ -92,6 +94,7 @@ final readonly class PurgeQueueRepository
 
                 if (function_exists('delete_option')) {
                     delete_option(self::OPTION_QUEUE);
+                    delete_option(self::OPTION_FAILURE);
                 }
 
                 return $queue;
@@ -104,55 +107,72 @@ final readonly class PurgeQueueRepository
         return count($this->all());
     }
 
-    /** @param callable(PurgeRequest): bool $purge */
+    /** @param callable(PurgeRequest): (bool|PurgeResult) $purge */
     public function process(callable $purge, int $limit = PHP_INT_MAX): bool
     {
         return $this->mutex->synchronized(self::OPTION_QUEUE . '.process', function () use ($purge, $limit): bool {
-            $snapshot = $this->mutex->synchronized(self::OPTION_QUEUE, function (): array {
-                $this->ingestInbox();
-                $requests = $this->all();
-                $retry = $this->retryState();
-                if ($requests === [] || !$retry->ready($this->clock->timestamp())) {
-                    return [[], null];
-                }
-                $generation = $this->generation() ?? bin2hex(random_bytes(16));
-                // Reserve before side effects so a crash also consumes this attempt.
-                if (!$this->persist($requests, $retry->reserve($this->clock->timestamp()), $generation)) {
-                    throw new \RuntimeException('Unable to reserve the purge attempt.');
-                }
-                return [$requests, $generation];
-            });
-            foreach (array_slice($snapshot[0], 0, max(0, $limit)) as $request) {
-                try {
-                    $successful = $purge($request);
-                } catch (\Throwable) {
-                    $successful = false;
-                }
-                if (!$successful) {
-                    return false;
-                }
-                $acknowledged = $this->mutex->synchronized(self::OPTION_QUEUE, function () use ($request, $snapshot): bool {
-                    $this->ingestInbox();
-                    $pending = $this->all();
-                    if ($this->generation() !== $snapshot[1]) {
-                        // The purge succeeded; new concurrent work gets a fresh budget.
-                        return $this->persist($pending, new QueueRetryState(), $this->generation());
-                    }
-                    foreach ($pending as $index => $current) {
-                        if ($current->toArray() === $request->toArray()) {
-                            unset($pending[$index]);
-                            return $this->persist(array_values($pending), new QueueRetryState(), $snapshot[1]);
-                        }
-                    }
-                    // A concurrent producer merged new work into this item. Retain that work.
-                    return true;
-                });
-                if (!$acknowledged) {
-                    return false;
-                }
+            try {
+                return $this->processLocked($purge, $limit);
+            } catch (\Throwable $error) {
+                $this->recordFailure('queue', $error);
+                throw $error;
             }
-            return true;
         });
+    }
+
+    /** @param callable(PurgeRequest): (bool|PurgeResult) $purge */
+    private function processLocked(callable $purge, int $limit): bool
+    {
+        $snapshot = $this->mutex->synchronized(self::OPTION_QUEUE, function (): array {
+            $this->ingestInbox();
+            $requests = $this->all();
+            $retry = $this->retryState();
+            if ($requests === [] || !$retry->ready($this->clock->timestamp())) {
+                return [[], null];
+            }
+            $generation = $this->generation() ?? bin2hex(random_bytes(16));
+            // Reserve before side effects so a crash also consumes this attempt.
+            if (!$this->persist($requests, $retry->reserve($this->clock->timestamp()), $generation)) {
+                throw new \RuntimeException('Unable to reserve the purge attempt.');
+            }
+            return [$requests, $generation];
+        });
+        foreach (array_slice($snapshot[0], 0, max(0, $limit)) as $request) {
+            try {
+                $result = $purge($request);
+            } catch (\Throwable $error) {
+                $this->recordFailure('purge', $error);
+                return false;
+            }
+            if ($result instanceof PurgeResult ? !$result->successful : !$result) {
+                $this->recordFailure('purge', $result instanceof PurgeResult ? $result : null);
+                return false;
+            }
+            $acknowledged = $this->mutex->synchronized(self::OPTION_QUEUE, function () use ($request, $snapshot): bool {
+                $this->ingestInbox();
+                $pending = $this->all();
+                if ($this->generation() !== $snapshot[1]) {
+                    // The purge succeeded; new concurrent work gets a fresh budget.
+                    return $this->persist($pending, new QueueRetryState(), $this->generation());
+                }
+                foreach ($pending as $index => $current) {
+                    if ($current->toArray() === $request->toArray()) {
+                        unset($pending[$index]);
+                        return $this->persist(array_values($pending), new QueueRetryState(), $snapshot[1]);
+                    }
+                }
+                // A concurrent producer merged new work into this item. Retain that work.
+                return true;
+            });
+            if (!$acknowledged) {
+                $this->recordFailure('acknowledge');
+                return false;
+            }
+        }
+        if ($this->all() === [] && function_exists('delete_option')) {
+            delete_option(self::OPTION_FAILURE);
+        }
+        return true;
     }
 
     public function nextAttemptAt(): ?int
@@ -171,11 +191,53 @@ final readonly class PurgeQueueRepository
     {
         $requests = $this->all();
         $retry = $this->retryState();
+        $failure = $this->lastFailure();
         return array_map(static fn (PurgeRequest $request): array => [
-            'request'   => $request->toArray(),
+            'request'      => $request->toArray(),
             ...$retry->toArray(),
-            'exhausted' => $retry->exhausted(),
+            'exhausted'    => $retry->exhausted(),
+            'last_failure' => $failure,
         ], $requests);
+    }
+
+    /** @return array<string, mixed>|null */
+    public function lastFailure(): ?array
+    {
+        $failure = function_exists('get_option') ? get_option(self::OPTION_FAILURE, null) : null;
+        return is_array($failure) ? $failure : null;
+    }
+
+    public function recordFailure(string $phase, \Throwable|PurgeResult|null $error = null, bool $persist = true): void
+    {
+        $failure = [
+            'failed_at' => $this->clock->timestamp(),
+            'phase'     => $phase,
+            'message'   => $error instanceof PurgeResult ? $error->message : match ($phase) {
+                'acknowledge' => 'The completed purge could not be acknowledged.',
+                'queue' => 'Queue processing threw an exception.',
+                default => $error instanceof \Throwable ? 'The purge callback threw an exception.' : 'The purge callback reported failure.',
+            },
+            'exception' => $error instanceof \Throwable ? [
+                'type' => get_debug_type($error),
+                'code' => (int) $error->getCode(),
+                'file' => basename($error->getFile()),
+                'line' => $error->getLine(),
+            ] : null,
+        ];
+        // Provider exception messages, traces and result text may contain secrets.
+        $signal = ['failed_at' => $failure['failed_at'], 'phase' => $phase, 'exception' => $failure['exception']];
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Credential-free fallback when diagnostic storage fails.
+        error_log('SymPress Nginx Cache: queue failure ' . wp_json_encode($signal));
+        if (!$persist) {
+            return;
+        }
+        try {
+            if (function_exists('update_option')) {
+                update_option(self::OPTION_FAILURE, $failure, false);
+            }
+        } catch (\Throwable) {
+            // Diagnostics must never prevent the original request from being retried.
+        }
     }
 
     public function retry(): void

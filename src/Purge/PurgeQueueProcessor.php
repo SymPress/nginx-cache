@@ -7,6 +7,7 @@ namespace SymPress\NginxCache\Purge;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PurgeRequest;
+use SymPress\NginxCache\Value\PurgeResult;
 
 final readonly class PurgeQueueProcessor
 {
@@ -34,13 +35,15 @@ final readonly class PurgeQueueProcessor
         $attempted = 0;
         try {
             $successful = $this->queue->process(
-                function (PurgeRequest $request) use (&$attempted): bool {
+                function (PurgeRequest $request) use (&$attempted): PurgeResult {
                     ++$attempted;
-                    return $this->cache->purgeConfiguredPath($request)->successful;
+                    return $this->cache->purgeConfiguredPath($request);
                 },
                 $limit,
             );
-        } catch (\Throwable) {
+        } catch (\Throwable $error) {
+            // Without the process lock, a contender must not replace the owner's evidence.
+            $this->queue->recordFailure('queue', $error, persist: false);
             $successful = false;
         }
 
@@ -49,8 +52,6 @@ final readonly class PurgeQueueProcessor
             return $attempted;
         }
 
-        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- credential-free retry signal.
-        error_log('SymPress cache purge failed; pending requests are retained for retry.');
         $this->schedule(60);
         return $attempted;
     }
@@ -83,6 +84,12 @@ final readonly class PurgeQueueProcessor
     public function inspect(): array
     {
         return $this->queue->inspect();
+    }
+
+    /** @return array<string, mixed>|null */
+    public function lastFailure(): ?array
+    {
+        return $this->queue->lastFailure();
     }
 
     public function retry(): void
