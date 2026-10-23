@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use SymPress\Kernel\Hook\HookCompilerPass;
 use SymPress\Kernel\Hook\HookLoader;
+use SymPress\NginxCache\Admin\SettingsPage;
 use SymPress\NginxCache\Purge\CacheManager;
 use SymPress\NginxCache\Purge\PurgeUrlCollector;
+use SymPress\NginxCache\Settings\CachePolicy;
 use SymPress\NginxCache\Settings\CompatibilitySettings;
+use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Value\PurgeRequest;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -19,7 +22,7 @@ $container = new ContainerBuilder();
 (new YamlFileLoader($container, new FileLocator(dirname(__DIR__, 2) . '/Resources/config')))->load('services.yaml');
 $container->register(HookLoader::class, HookLoader::class)->setPublic(true);
 $container->addCompilerPass(new HookCompilerPass());
-foreach ([CacheManager::class, PurgeUrlCollector::class, CompatibilitySettings::class] as $service) {
+foreach ([CacheManager::class, PurgeUrlCollector::class, CompatibilitySettings::class, SettingsPage::class] as $service) {
     $container->getDefinition($service)->setPublic(true);
 }
 $container->register(HttpClientInterface::class)->setSynthetic(true)->setPublic(true);
@@ -37,6 +40,20 @@ do_action('admin_init');
 $registered = get_registered_settings();
 check(isset($registered[CompatibilitySettings::PREFIX . 'purge_backend'], $registered[CompatibilitySettings::PREFIX . 'prewarm_sitemap'], $registered[CompatibilitySettings::REDIS_PASSWORD]), 'compiled kernel hooks register compatibility settings');
 check(has_action('shutdown') !== false && has_action('wp_update_site') !== false, 'compiled kernel installs stamp and multisite hooks');
+
+// Every preload setting is configured in exactly one place: the Preload tab.
+wp_set_current_user(1);
+ob_start();
+$container->get(SettingsPage::class)->render();
+$adminMarkup = (string) ob_get_clean();
+$adminDocument = new DOMDocument();
+@$adminDocument->loadHTML($adminMarkup);
+$adminXpath = new DOMXPath($adminDocument);
+foreach ([WordPressCacheSettings::OPTION_PREWARM_ENABLED, WordPressCacheSettings::OPTION_PREWARM_URLS, CompatibilitySettings::PREFIX . 'prewarm_sitemap', CompatibilitySettings::PREFIX . 'prewarm_sitemap_url', CompatibilitySettings::PREFIX . 'prewarm_affected_only', CachePolicy::RETENTION_OPTION] as $preloadOption) {
+    $preloadFields = $adminXpath->query(sprintf('//*[@name="%s"]', $preloadOption))->length;
+    check($preloadFields > 0 && $preloadFields === $adminXpath->query(sprintf('//section[@data-sympress-panel="preload"]//*[@name="%s"]', $preloadOption))->length, 'preload setting is only rendered in the Preload tab: ' . $preloadOption);
+}
+check($adminXpath->query('//section[@data-sympress-panel="dashboard"]//*[@data-sympress-tab-jump="preload"]')->length === 1, 'dashboard links to the central preload configuration');
 
 update_option(CompatibilitySettings::PREFIX . 'purge_backend', 'redis');
 $dryResult = $container->get(CacheManager::class)->purgeConfiguredPath(PurgeRequest::full(dryRun: true, prewarm: true));

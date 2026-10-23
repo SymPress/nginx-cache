@@ -295,7 +295,7 @@ final readonly class SettingsPage
         if ($this->mode?->simple() && $this->simplePage !== null) {
             echo '<div class="wrap sympress-cache-admin sympress-simple-admin">';
             $this->renderStyles();
-            $this->simplePage->render($status, $diagnostics, $generatedConfig, $pluginData['version'], [__('Purge Cache', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeUrl(), __('Dry Run', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeActionUrl(true), __('Prewarm', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeActionUrl(false, true), __('Flush Queue', WordPressCacheSettings::TEXT_DOMAIN) => $this->queueActionUrl()]);
+            $this->simplePage->render($status, $diagnostics, $generatedConfig, $pluginData['version'], [__('Purge Cache', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeUrl(), __('Dry Run', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeActionUrl(true), __('Purge and prewarm', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeActionUrl(false, true), __('Flush Queue', WordPressCacheSettings::TEXT_DOMAIN) => $this->queueActionUrl()]);
             echo '</div>';
             return;
         }
@@ -401,7 +401,7 @@ final readonly class SettingsPage
                                 </a>
                                 <a class="button button-secondary" href="<?php echo esc_url($this->purgeActionUrl(false, true)); ?>">
                                     <span class="dashicons dashicons-controls-repeat" aria-hidden="true"></span>
-                                    <?php echo esc_html__('Prewarm', WordPressCacheSettings::TEXT_DOMAIN); ?>
+                                    <?php echo esc_html__('Purge and prewarm', WordPressCacheSettings::TEXT_DOMAIN); ?>
                                 </a>
                                 <a class="button button-secondary" href="<?php echo esc_url($this->queueActionUrl()); ?>">
                                     <span class="dashicons dashicons-list-view" aria-hidden="true"></span>
@@ -454,13 +454,22 @@ final readonly class SettingsPage
                                         </span>
                                     </label>
 
-                                    <label class="sympress-setting-row">
-                                        <span><?php echo esc_html__('Prewarm URLs', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                                    <div class="sympress-setting-row">
+                                        <span><?php echo esc_html__('Preload', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                         <span>
-                                            <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_PREWARM_URLS); ?>" rows="4" class="large-text code sympress-textarea" placeholder="<?php echo esc_attr(home_url('/important-page/')); ?>" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_PREWARM_URLS); ?>><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_PREWARM_URLS)); ?></textarea>
-                                            <small><?php echo esc_html__('Eine URL pro Zeile. Wird nach einem Purge im Hintergrund vorgewärmt.', WordPressCacheSettings::TEXT_DOMAIN); ?></small>
+                                            <?php
+                                            echo esc_html(
+                                                sprintf(
+                                                    __('%1$s · %2$d Ziel-URLs · Sitemap %3$s', WordPressCacheSettings::TEXT_DOMAIN),
+                                                    $this->settings->prewarmEnabled() ? __('Aktiv', WordPressCacheSettings::TEXT_DOMAIN) : __('Inaktiv', WordPressCacheSettings::TEXT_DOMAIN),
+                                                    count($this->settings->prewarmUrls()),
+                                                    ($this->backendSettings?->integer('prewarm_sitemap') ?? 0) !== 0 ? __('an', WordPressCacheSettings::TEXT_DOMAIN) : __('aus', WordPressCacheSettings::TEXT_DOMAIN),
+                                                ),
+                                            );
+                                            ?>
+                                            <button type="button" class="button button-secondary" data-sympress-tab-jump="preload"><?php echo esc_html__('Preload konfigurieren', WordPressCacheSettings::TEXT_DOMAIN); ?></button>
                                         </span>
-                                    </label>
+                                    </div>
 
                                     <?php $this->renderDashboardSwitch(WordPressCacheSettings::OPTION_REST_ENABLED, $this->settings->restEnabled(), __('REST API', WordPressCacheSettings::TEXT_DOMAIN), __('Öffentliche REST-API für Purge und Cache-Statistiken aktivieren.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
                                     <?php $this->renderDashboardSwitch(WordPressCacheSettings::OPTION_TAG_INDEX_ENABLED, $this->settings->tagIndexEnabled(), __('Surrogate-Tags', WordPressCacheSettings::TEXT_DOMAIN), __('Surrogate-Tags in Antworten anhängen und verarbeiten.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
@@ -529,18 +538,7 @@ final readonly class SettingsPage
                             <div class="sympress-card sympress-form-card">
                                 <h3><?php echo esc_html__('Nginx-Cache-Grenzen', WordPressCacheSettings::TEXT_DOMAIN); ?></h3>
                                 <p><?php echo esc_html__('Diese Werte gelten nach Übernahme der generierten HTTP-/FastCGI-Konfiguration und geprüftem Nginx-Neuladen. Alle Profile haben dieselben Standardwerte. Gültigkeit nur bei zuverlässigem automatischem Purge erhöhen; Cache-Header der Anwendung können sie überschreiben.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
-                                <div class="sympress-radio-stack" role="radiogroup" aria-label="<?php echo esc_attr__('Aufbewahrung vorgewärmter Seiten', WordPressCacheSettings::TEXT_DOMAIN); ?>">
-                                    <?php foreach ([CachePolicy::KEEP_WARM => [__('Vorgewärmte Seiten warm halten (Standard)', WordPressCacheSettings::TEXT_DOMAIN), sprintf(__('Ein begrenzter Hintergrundjob ruft die Prewarm-Ziele alle %d Sekunden erneut ab, bevor die Inaktivitätsfrist abläuft. Erfordert aktiviertes Prewarm und einen minütlichen Cron-Runner; Fehler erscheinen in der Diagnose.', WordPressCacheSettings::TEXT_DOMAIN), CachePolicy::keepWarmInterval())], CachePolicy::EVICT_INACTIVE => [__('Nach Inaktivität entfernen', WordPressCacheSettings::TEXT_DOMAIN), __('Kein Hintergrund-Refresh: Nginx entfernt auch vorgewärmte Seiten, die während der Inaktivitätsfrist nicht abgerufen wurden. Sinnvoll für große Sites mit vielen selten besuchten URLs oder knappem Speicher.', WordPressCacheSettings::TEXT_DOMAIN)]] as $mode => [$label, $description]) : ?>
-                                        <label class="sympress-radio-row">
-                                            <input type="radio" name="<?php echo esc_attr(CachePolicy::RETENTION_OPTION); ?>" value="<?php echo esc_attr($mode); ?>" <?php checked(CachePolicy::retention(), $mode); ?>  <?php FieldOwnership::attributes(CachePolicy::RETENTION_OPTION); ?>/>
-                                            <span>
-                                                <strong><?php echo esc_html($label); ?></strong>
-                                                <small><?php echo esc_html($description); ?></small>
-                                            </span>
-                                        </label>
-                                    <?php endforeach; ?>
-                                </div>
-                                <p><?php echo esc_html__('Gültigkeit bestimmt, wie lange eine Antwort frisch ist; danach liefert Nginx sie einmal veraltet aus und aktualisiert sie im Hintergrund. Die Inaktivitätsfrist entfernt Einträge, die so lange nicht abgerufen wurden – im Warmhalte-Modus gilt sie für alle Seiten außer den Prewarm-Zielen. Unabhängig davon verdrängt Nginx bei Erreichen des maximalen Plattenspeichers die am längsten nicht genutzten Einträge. Manuelle und – falls aktiviert – automatische Purges bei Inhaltsänderungen entfernen Einträge in jedem Modus sofort.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+                                <p><?php echo esc_html__('Gültigkeit bestimmt, wie lange eine Antwort frisch ist; danach liefert Nginx sie einmal veraltet aus und aktualisiert sie im Hintergrund. Die Inaktivitätsfrist entfernt Einträge, die so lange nicht abgerufen wurden – im Warmhalte-Modus (Tab „Preload“) gilt sie für alle Seiten außer den Prewarm-Zielen. Unabhängig davon verdrängt Nginx bei Erreichen des maximalen Plattenspeichers die am längsten nicht genutzten Einträge. Manuelle und – falls aktiviert – automatische Purges bei Inhaltsänderungen entfernen Einträge in jedem Modus sofort.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
                                 <div class="sympress-two-column">
                                 <?php foreach (['valid_seconds' => __('Gültigkeit (Sekunden)', WordPressCacheSettings::TEXT_DOMAIN), 'inactive_seconds' => __('Entfernen bei Inaktivität (Sekunden)', WordPressCacheSettings::TEXT_DOMAIN), 'max_size_mb' => __('Maximaler Plattenspeicher (MiB)', WordPressCacheSettings::TEXT_DOMAIN), 'keys_zone_mb' => __('Speicher für Cache-Schlüssel (MiB)', WordPressCacheSettings::TEXT_DOMAIN)] as $name => $label) : ?>
                                     <label class="sympress-field">
@@ -611,7 +609,7 @@ final readonly class SettingsPage
                             <div class="sympress-section-heading">
                                 <div>
                                     <h2><?php echo esc_html__('Preload', WordPressCacheSettings::TEXT_DOMAIN); ?></h2>
-                                    <p><?php echo esc_html__('Warm important URLs after purges so the first visitor gets a hot Nginx cache file.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+                                    <p><?php echo esc_html__('All preload settings live here. Preload and prewarm mean the same thing: after a purge the plugin requests the target URLs so Nginx stores fresh cache files before the first visitor arrives.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
                                 </div>
                                 <a class="button button-secondary" href="<?php echo esc_url($this->purgeActionUrl(false, true)); ?>">
                                     <?php echo esc_html__('Purge and prewarm now', WordPressCacheSettings::TEXT_DOMAIN); ?>
@@ -619,12 +617,28 @@ final readonly class SettingsPage
                             </div>
 
                             <div class="sympress-card sympress-form-card">
-                                <?php $this->renderSwitch(WordPressCacheSettings::OPTION_PREWARM_ENABLED, $this->settings->prewarmEnabled(), __('Enable prewarm', WordPressCacheSettings::TEXT_DOMAIN), __('Warm the homepage and configured same-origin URLs after successful purges.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
+                                <?php $this->renderSwitch(WordPressCacheSettings::OPTION_PREWARM_ENABLED, $this->settings->prewarmEnabled(), __('Enable prewarm', WordPressCacheSettings::TEXT_DOMAIN), __('Master switch: warm the targets below after successful purges. Fixed URLs, sitemap discovery and keep-warm only take effect while it is on.', WordPressCacheSettings::TEXT_DOMAIN)); ?>
                                 <label class="sympress-field">
-                                    <span class="sympress-field__label"><?php echo esc_html__('Prewarm URLs', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                                    <span class="sympress-field__label"><?php echo esc_html__('Fixed prewarm URLs', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                                     <textarea name="<?php echo esc_attr(WordPressCacheSettings::OPTION_PREWARM_URLS); ?>" rows="8" class="large-text code sympress-textarea" placeholder="<?php echo esc_attr(home_url('/important-page/')); ?>" <?php FieldOwnership::attributes(WordPressCacheSettings::OPTION_PREWARM_URLS); ?>><?php echo esc_textarea($option(WordPressCacheSettings::OPTION_PREWARM_URLS)); ?></textarea>
-                                    <span class="sympress-field__description"><?php echo esc_html(sprintf(__('One URL per line. The homepage is always included. Limit: %d URLs.', WordPressCacheSettings::TEXT_DOMAIN), $this->settings->maxPrewarmUrls())); ?></span>
+                                    <span class="sympress-field__description"><?php echo esc_html(sprintf(__('One same-origin URL per line. The homepage is always included. Limit: %d URLs, shared with sitemap discovery.', WordPressCacheSettings::TEXT_DOMAIN), $this->settings->maxPrewarmUrls())); ?></span>
                                 </label>
+                                <?php $this->compatibility?->renderPrewarmSitemap(); ?>
+                                <fieldset>
+                                    <legend><h3><?php echo esc_html__('Aufbewahrung vorgewärmter Seiten', WordPressCacheSettings::TEXT_DOMAIN); ?></h3></legend>
+                                    <div class="sympress-radio-stack" role="radiogroup" aria-label="<?php echo esc_attr__('Aufbewahrung vorgewärmter Seiten', WordPressCacheSettings::TEXT_DOMAIN); ?>">
+                                        <?php foreach ([CachePolicy::KEEP_WARM => [__('Vorgewärmte Seiten warm halten (Standard)', WordPressCacheSettings::TEXT_DOMAIN), sprintf(__('Ein begrenzter Hintergrundjob ruft die Prewarm-Ziele alle %d Sekunden erneut ab, bevor die Inaktivitätsfrist abläuft. Erfordert aktiviertes Prewarm und einen minütlichen Cron-Runner; Fehler erscheinen in der Diagnose.', WordPressCacheSettings::TEXT_DOMAIN), CachePolicy::keepWarmInterval())], CachePolicy::EVICT_INACTIVE => [__('Nach Inaktivität entfernen', WordPressCacheSettings::TEXT_DOMAIN), __('Kein Hintergrund-Refresh: Nginx entfernt auch vorgewärmte Seiten, die während der Inaktivitätsfrist nicht abgerufen wurden. Sinnvoll für große Sites mit vielen selten besuchten URLs oder knappem Speicher.', WordPressCacheSettings::TEXT_DOMAIN)]] as $mode => [$label, $description]) : ?>
+                                            <label class="sympress-radio-row">
+                                                <input type="radio" name="<?php echo esc_attr(CachePolicy::RETENTION_OPTION); ?>" value="<?php echo esc_attr($mode); ?>" <?php checked(CachePolicy::retention(), $mode); ?>  <?php FieldOwnership::attributes(CachePolicy::RETENTION_OPTION); ?>/>
+                                                <span>
+                                                    <strong><?php echo esc_html($label); ?></strong>
+                                                    <small><?php echo esc_html($description); ?></small>
+                                                </span>
+                                            </label>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <p><?php echo esc_html__('Die Inaktivitätsfrist wird im Tab „Cache“ unter Nginx-Cache-Grenzen festgelegt.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+                                </fieldset>
                             </div>
                         </section>
 

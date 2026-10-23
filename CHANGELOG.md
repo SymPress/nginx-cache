@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## Unreleased
+
+### Changed
+
+- Bundle every preload setting in the **Preload** tab: the prewarm switch, fixed URLs, sitemap discovery and sitemap URL, the previously hidden "prewarm only changed URLs" scope and the keep-warm retention mode. The Cache tab and dashboard no longer duplicate these fields; the dashboard shows the preload status with a link to the tab. Help texts explain that preload and prewarm are the same feature and how the options depend on the prewarm switch. Option names and stored values are unchanged.
+- Label the dashboard quick action **Purge and prewarm**, because it purges the whole cache before warming.
+
 ## 1.0.5 — 2026-10-22
 
 ### Added

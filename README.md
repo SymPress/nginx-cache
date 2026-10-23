@@ -365,7 +365,8 @@ provide that location. Protect it with an IP allowlist or signature verification
 the module does not itself authenticate signature headers. The existing protected
 full-purge endpoint is required for full HTTP purges. No redirects are followed.
 
-Enable both prewarm and sitemap discovery to preload after full purges, or run
+Enable both prewarm and sitemap discovery in the **Preload** tab, which holds
+all preload settings, to preload after full purges, or run
 `wp nginx-cache prewarm`. The default sitemap is `/wp-sitemap.xml`; custom SEO
 sitemap indexes can be configured. Discovery reads at most 20 sitemaps (2 MiB
 each) and shares the existing configurable limit of up to 200 prewarm URLs.

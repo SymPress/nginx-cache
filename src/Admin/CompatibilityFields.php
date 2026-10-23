@@ -113,20 +113,13 @@ final readonly class CompatibilityFields
     {
         ?>
         <fieldset>
-            <legend><h3><?php echo esc_html__('Preload and diagnostics', WordPressCacheSettings::TEXT_DOMAIN); ?></h3></legend>
+            <legend><h3><?php echo esc_html__('Purge URLs and diagnostics', WordPressCacheSettings::TEXT_DOMAIN); ?></h3></legend>
             <label class="sympress-field">
                 <span class="sympress-field__label"><?php echo esc_html__('Additional purge URLs', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                 <textarea class="large-text code sympress-input" rows="3" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . 'additional_purge_urls'); ?>" <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . 'additional_purge_urls'); ?>><?php echo esc_textarea($this->settings->string('additional_purge_urls')); ?></textarea>
                 <span><?php echo esc_html__('One same-origin URL or site path per line.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
             </label>
-            <?php foreach (['prewarm_sitemap' => __('Discover preload URLs from a sitemap after full purges', WordPressCacheSettings::TEXT_DOMAIN), 'html_stamp' => __('Add a rendering timestamp, query count and duration to public HTML', WordPressCacheSettings::TEXT_DOMAIN)] as $name => $label) : ?>
-                <label class="sympress-field"><input type="hidden" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="0"  <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . $name); ?>/><span><input type="checkbox" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="1" <?php checked($this->settings->integer($name) !== 0); ?>  <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . $name); ?>/> <?php echo esc_html($label); ?></span></label>
-            <?php endforeach; ?>
-            <label class="sympress-field">
-                <span class="sympress-field__label"><?php echo esc_html__('Sitemap URL (empty uses the WordPress sitemap)', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
-                <input type="url" class="regular-text code sympress-input" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . 'prewarm_sitemap_url'); ?>" value="<?php echo esc_attr($this->settings->string('prewarm_sitemap_url')); ?>" placeholder="<?php echo esc_attr(home_url('/wp-sitemap.xml')); ?>"  <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . 'prewarm_sitemap_url'); ?>/>
-            </label>
-            <p><?php echo esc_html__('Enable prewarm in the Preload tab as well. Discovery accepts only this site, rejects external XML entities and redirects, and shares the existing preload URL limit.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+            <?php $this->renderCheckbox('html_stamp', __('Add a rendering timestamp, query count and duration to public HTML', WordPressCacheSettings::TEXT_DOMAIN)); ?>
         </fieldset>
         <?php
         if ($this->maps === null || !is_multisite() || !current_user_can(Capabilities::PURGE_NETWORK)) {
@@ -142,5 +135,32 @@ final readonly class CompatibilityFields
         }
 
         echo '<p role="alert">' . esc_html($error) . '</p>';
+    }
+
+    public function renderPrewarmSitemap(): void
+    {
+        ?>
+        <fieldset>
+            <legend><h3><?php echo esc_html__('Sitemap discovery', WordPressCacheSettings::TEXT_DOMAIN); ?></h3></legend>
+            <?php $this->renderCheckbox('prewarm_sitemap', __('Discover prewarm URLs from a sitemap after full purges', WordPressCacheSettings::TEXT_DOMAIN)); ?>
+            <label class="sympress-field">
+                <span class="sympress-field__label"><?php echo esc_html__('Sitemap URL', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                <input type="url" class="regular-text code sympress-input" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . 'prewarm_sitemap_url'); ?>" value="<?php echo esc_attr($this->settings->string('prewarm_sitemap_url')); ?>" placeholder="<?php echo esc_attr(home_url('/wp-sitemap.xml')); ?>"  <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . 'prewarm_sitemap_url'); ?>/>
+                <span class="sympress-field__description"><?php echo esc_html__('Empty uses the WordPress sitemap. Requires the prewarm switch above. Discovery accepts only this site, rejects external XML entities and redirects, and fills the remaining slots of the prewarm URL limit.', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+            </label>
+        </fieldset>
+        <fieldset>
+            <legend><h3><?php echo esc_html__('Prewarm scope after purges', WordPressCacheSettings::TEXT_DOMAIN); ?></h3></legend>
+            <?php $this->renderCheckbox('prewarm_affected_only', __('Prewarm only the changed URLs', WordPressCacheSettings::TEXT_DOMAIN)); ?>
+            <p><?php echo esc_html__('Skips the homepage, the fixed prewarm URLs and sitemap discovery after purges, so full purges warm nothing. Keep-warm still refreshes the fixed targets. Recommended for large sites.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+        </fieldset>
+        <?php
+    }
+
+    private function renderCheckbox(string $name, string $label): void
+    {
+        ?>
+        <label class="sympress-field"><input type="hidden" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="0"  <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . $name); ?>/><span><input type="checkbox" name="<?php echo esc_attr(CompatibilitySettings::PREFIX . $name); ?>" value="1" <?php checked($this->settings->integer($name) !== 0); ?>  <?php FieldOwnership::attributes(CompatibilitySettings::PREFIX . $name); ?>/> <?php echo esc_html($label); ?></span></label>
+        <?php
     }
 }
