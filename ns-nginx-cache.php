@@ -7,7 +7,7 @@ declare(strict_types=1);
  * Plugin URI:        https://github.com/SymPress/nginx-cache
  * Update URI:        https://github.com/SymPress/nginx-cache
  * Description:       Kernel-integrated purge controls for Nginx FastCGI, proxy and uWSGI cache zones.
- * Version:           1.0.5
+ * Version:           1.0.6
  * Requires at least: 6.9
  * Requires PHP:      8.5
  * Author:            SymPress
