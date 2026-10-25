@@ -28,6 +28,7 @@ final readonly class CacheMetricsPanel
         $hitRate = $hasData ? max(0.0, min(100.0, (float) $metrics['hit_rate'])) : null;
         $smallSample = $hasData && !empty($metrics['small_sample']);
         $sampled = !empty($metrics['sampled']);
+        $coverageGap = !empty($metrics['coverage_gap']);
         $measuredAt = (int) ($metrics['measured_at'] ?? time());
         $windowMinutes = max(1, (int) ceil((int) ($metrics['window_seconds'] ?? 3600) / 60));
         $states = is_array($metrics['states'] ?? null) ? $metrics['states'] : [];
@@ -40,9 +41,10 @@ final readonly class CacheMetricsPanel
         ?>
         <section class="sympress-cache-performance" aria-labelledby="sympress-cache-performance-title">
             <div class="sympress-performance-heading">
-                <h2 id="sympress-cache-performance-title"><?php echo esc_html__('Cache-Trefferquote', WordPressCacheSettings::TEXT_DOMAIN); ?></h2>
+                <h2 id="sympress-cache-performance-title"><?php echo esc_html__('HTTP-Trefferquote', WordPressCacheSettings::TEXT_DOMAIN); ?></h2>
                 <span class="sympress-performance-window"><?php echo esc_html(sprintf(__('Letzte %s Minuten', WordPressCacheSettings::TEXT_DOMAIN), number_format_i18n($windowMinutes))); ?></span>
             </div>
+            <p class="sympress-performance-window"><?php echo esc_html__('Zählt einzelne HTTP-Anfragen, nicht unterschiedliche Seiten oder Besucher. Wiederholte Abrufe, Bots und Vorwärmung zählen mit; ältere Anfragen fallen laufend aus dem gleitenden Zeitfenster.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
             <div class="sympress-performance-result">
                 <strong class="sympress-performance-rate" data-sympress-hit-rate><?php echo esc_html($hitRate !== null ? number_format_i18n($hitRate, 1) . ' %' : '—'); ?></strong>
                 <p><?php echo esc_html($hasData ? sprintf(__('%1$s von %2$s Anfragen aus Cache', WordPressCacheSettings::TEXT_DOMAIN), number_format_i18n($hits), number_format_i18n($requests)) : (($metrics['log_state'] ?? '') === 'no_requests' ? __('Keine Anfragen im Messfenster', WordPressCacheSettings::TEXT_DOMAIN) : __('Keine Messdaten verfügbar', WordPressCacheSettings::TEXT_DOMAIN))); ?></p>
@@ -66,6 +68,9 @@ final readonly class CacheMetricsPanel
                 <?php if ($sampled) : ?>
                     <span class="sympress-performance-note"><?php echo esc_html__('Begrenzte Stichprobe', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
                 <?php endif; ?>
+                <?php if ($coverageGap) : ?>
+                    <span class="sympress-performance-note" data-sympress-coverage-gap><?php echo esc_html__('Messfenster unvollständig', WordPressCacheSettings::TEXT_DOMAIN); ?></span>
+                <?php endif; ?>
                 <span><?php echo esc_html__('Stand', WordPressCacheSettings::TEXT_DOMAIN); ?> <time datetime="<?php echo esc_attr((string) wp_date('c', $measuredAt)); ?>"><?php echo esc_html((string) wp_date('H:i', $measuredAt)); ?></time></span>
             </div>
             <details class="sympress-performance-details" data-sympress-metric-details>
@@ -81,6 +86,9 @@ final readonly class CacheMetricsPanel
                 <p><?php echo esc_html__('BYPASS, Admin- und angemeldete Anfragen sind ausgeschlossen. Prewarm-Abrufe zählen mit.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
                 <?php if ($smallSample) : ?>
                     <p><?php echo esc_html__('Unter 100 Anfragen: Ein einzelner MISS verändert die Quote deutlich.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
+                <?php endif; ?>
+                <?php if ($coverageGap) : ?>
+                    <p><?php echo esc_html__('Ein rotiertes Messprotokoll mit Anfragen aus dem Messfenster ist nicht lesbar, etwa weil es bereits komprimiert wurde. Anfragen und Quote decken nicht das volle Zeitfenster ab.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>
                 <?php endif; ?>
                 <?php if ($sampled) : ?>
                     <p><?php echo esc_html__('Die Quote basiert auf einem begrenzten Ausschnitt des Messprotokolls. Weitere Anfragen im Messfenster können fehlen.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>

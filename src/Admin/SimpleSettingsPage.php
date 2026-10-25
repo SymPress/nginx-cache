@@ -26,6 +26,7 @@ final readonly class SimpleSettingsPage
         $candidate = isset($_GET['preset-preview']) && is_string($_GET['preset-preview']) ? sanitize_key(wp_unslash($_GET['preset-preview'])) : '';
         $preview = in_array($candidate, ['small', 'standard', 'large'], true) ? $candidate : null;
         $metrics = is_array($diagnostics['metrics'] ?? null) ? $diagnostics['metrics'] : [];
+        $coverage = is_array($diagnostics['coverage'] ?? null) ? $diagnostics['coverage'] : [];
         $worker = is_array($diagnostics['worker'] ?? null) ? $diagnostics['worker'] : [];
         $tagStats = is_array($diagnostics['tag_index'] ?? null) ? $diagnostics['tag_index'] : [];
         ?>
@@ -42,7 +43,7 @@ final readonly class SimpleSettingsPage
         <?php endif; ?>
 
             <div class="sympress-cache-overview">
-                <?php (new CacheMetricsPanel())->render($metrics); ?>
+                <?php (new PageCoveragePanel())->render($coverage); ?>
                 <dl class="sympress-simple-stats">
                     
         <?php foreach ([__('Cache-Dateien', WordPressCacheSettings::TEXT_DOMAIN) => $status->error === null && $status->exists ? $status->files . ($status->scanComplete ? '' : '+') : '—', __('Cache-Größe', WordPressCacheSettings::TEXT_DOMAIN) => $status->error === null && $status->exists ? $status->formattedSize() : '—', __('Wartende Anfragen', WordPressCacheSettings::TEXT_DOMAIN) => $diagnostics['queue']['pending'] ?? 0, __('Tag-Index', WordPressCacheSettings::TEXT_DOMAIN) => sprintf(__('%1$d Tags · %2$d Zeilen', WordPressCacheSettings::TEXT_DOMAIN), (int) ($tagStats['tags'] ?? 0), (int) ($tagStats['rows'] ?? 0))] as $label => $value) : ?>
@@ -60,6 +61,7 @@ final readonly class SimpleSettingsPage
         <?php endforeach; ?>
 
             </div>
+            <details class="sympress-card sympress-simple-statistics"><summary class="button"><?php echo esc_html__('Technische Statistik (HTTP-Anfragen)', WordPressCacheSettings::TEXT_DOMAIN); ?></summary><?php (new CacheMetricsPanel())->render($metrics); ?></details>
             <section class="sympress-card sympress-simple-settings" aria-labelledby="sympress-simple-title">
                 <h2 id="sympress-simple-title"><?php echo esc_html__('Cache einrichten', WordPressCacheSettings::TEXT_DOMAIN); ?></h2>
                 <p><?php echo esc_html__('Pfad und automatische Aktualisierung für diese Website. Weitere Optionen findest du in den erweiterten Einstellungen.', WordPressCacheSettings::TEXT_DOMAIN); ?></p>

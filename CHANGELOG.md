@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## Unreleased
+
+### Changed
+
+- Lead the dashboard with page coverage: public page URLs, including language versions, are compared with the local cache files and shown as cached, expired, not cached, excluded by a bypass rule or unknown. The check is bounded, labelled when limited, and sends no HTTP requests, purges or prewarm requests. The HTTP hit rate moves to the Tools tab (simple mode: "Technische Statistik") and explains that it counts requests in a sliding window, not pages or visitors (#36).
+
+### Fixed
+
+- Keep still-current requests in the 60-minute hit-rate window after log rotation by also reading `<log>.1` within the existing read budget, counting bytes shared during copytruncate once. An unread recent generation, such as an already compressed archive, marks the window as incomplete (#37).
+
 ## 1.0.6 — 2026-10-23
 
 ### Changed
