@@ -8,6 +8,7 @@ use SymPress\NginxCache\Config\NginxConfigGenerator;
 use SymPress\NginxCache\Filesystem\CachePathValidator;
 use SymPress\NginxCache\Inspection\CacheStatusInspector;
 use SymPress\NginxCache\Inspection\Diagnostics;
+use SymPress\NginxCache\Inspection\PageCoverageInspector;
 use SymPress\NginxCache\Purge\CacheManager;
 use SymPress\NginxCache\Purge\PurgeQueueProcessor;
 use SymPress\NginxCache\Purge\PurgeSideEffectProcessor;
@@ -43,6 +44,7 @@ final readonly class SettingsPage
         private ?PermissionFields $permissions = null,
         private ?UiMode $mode = null,
         private ?SimpleSettingsPage $simplePage = null,
+        private ?PageCoverageInspector $coverage = null,
     ) {
     }
 
@@ -263,6 +265,7 @@ final readonly class SettingsPage
         $diagnostics = $this->diagnostics->report($status, $generatedConfig);
         $lastPurge = is_array($diagnostics['last_purge'] ?? null) ? $diagnostics['last_purge'] : null;
         $metrics = is_array($diagnostics['metrics'] ?? null) ? $diagnostics['metrics'] : [];
+        $coverage = $this->coverage?->inspect($status) ?? [];
         $scanUsable = $status->exists && $status->directory && $status->error === null;
         $pluginData = get_file_data(__DIR__ . '/../../ns-nginx-cache.php', ['version' => 'Version']);
         $configMissing = $diagnostics['nginx_config']['missing_directives'];
@@ -279,7 +282,7 @@ final readonly class SettingsPage
             ? __('Cache-Verzeichnis bereit', WordPressCacheSettings::TEXT_DOMAIN)
             : __('Cache braucht Aufmerksamkeit', WordPressCacheSettings::TEXT_DOMAIN);
         $healthDescription = $healthOk
-            ? __('Nginx-Nutzung siehe Cache-Trefferquote', WordPressCacheSettings::TEXT_DOMAIN)
+            ? __('Nginx-Nutzung siehe Cache-Abdeckung', WordPressCacheSettings::TEXT_DOMAIN)
             : __('Bitte Cache-Pfad und Nginx-Probe prüfen', WordPressCacheSettings::TEXT_DOMAIN);
         $localBackend = ($this->backendSettings?->string('purge_backend') ?? 'local_files') === 'local_files';
         if (!$localBackend) {
@@ -295,7 +298,7 @@ final readonly class SettingsPage
         if ($this->mode?->simple() && $this->simplePage !== null) {
             echo '<div class="wrap sympress-cache-admin sympress-simple-admin">';
             $this->renderStyles();
-            $this->simplePage->render($status, $diagnostics, $generatedConfig, $pluginData['version'], [__('Purge Cache', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeUrl(), __('Dry Run', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeActionUrl(true), __('Purge and prewarm', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeActionUrl(false, true), __('Flush Queue', WordPressCacheSettings::TEXT_DOMAIN) => $this->queueActionUrl()]);
+            $this->simplePage->render($status, [...$diagnostics, 'coverage' => $coverage], $generatedConfig, $pluginData['version'], [__('Purge Cache', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeUrl(), __('Dry Run', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeActionUrl(true), __('Purge and prewarm', WordPressCacheSettings::TEXT_DOMAIN) => $this->purgeActionUrl(false, true), __('Flush Queue', WordPressCacheSettings::TEXT_DOMAIN) => $this->queueActionUrl()]);
             echo '</div>';
             return;
         }
@@ -381,7 +384,7 @@ final readonly class SettingsPage
                             <?php endif; ?>
 
                             <div class="sympress-cache-overview">
-                                <?php (new CacheMetricsPanel())->render($metrics); ?>
+                                <?php (new PageCoveragePanel())->render($coverage); ?>
                                 <div class="sympress-metrics-grid">
                                     <?php $this->renderMetricCard(__('Cache-Dateien', WordPressCacheSettings::TEXT_DOMAIN), $scanUsable ? (string) $status->files . ($status->scanComplete ? '' : '+') : '—', $scanUsable ? __('Dateien', WordPressCacheSettings::TEXT_DOMAIN) : __('Nicht verfügbar', WordPressCacheSettings::TEXT_DOMAIN), 'neutral', 'media-default'); ?>
                                     <?php $this->renderMetricCard(__('Cache-Größe', WordPressCacheSettings::TEXT_DOMAIN), $scanUsable ? $status->formattedSize() . ($status->scanComplete ? '' : '+') : '—', $scanUsable ? __('Belegter Speicher', WordPressCacheSettings::TEXT_DOMAIN) : __('Nicht verfügbar', WordPressCacheSettings::TEXT_DOMAIN), 'neutral', 'database'); ?>
@@ -836,6 +839,8 @@ final readonly class SettingsPage
                                     <span><?php echo esc_html(sprintf(__('Missing directives: %s', WordPressCacheSettings::TEXT_DOMAIN), implode(', ', $configMissing))); ?></span>
                                 </div>
                             <?php endif; ?>
+
+                            <?php (new CacheMetricsPanel())->render($metrics); ?>
 
                             <div class="sympress-action-grid">
                                 <?php $this->renderActionCard($this->purgeUrl(), 'update-alt', __('Purge cache', WordPressCacheSettings::TEXT_DOMAIN), __('Delete Nginx cache files for the configured zone.', WordPressCacheSettings::TEXT_DOMAIN)); ?>

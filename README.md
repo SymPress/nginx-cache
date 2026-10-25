@@ -121,7 +121,20 @@ and query/authentication bypass maps against an isolated local Nginx instance.
 
 ### Dashboard metrics
 
-The performance panel combines the hit rate, its request denominator and a
+The dashboard leads with page coverage: public page URLs (home page, language
+home pages and published content of viewable post types, every language version
+as its own URL) are compared with the local cache files on each reload. Pages are
+counted as cached, expired (file present, validity passed; Nginx refreshes it on
+the next request), not cached, intentionally excluded by a bypass rule, or
+unknown (unparsable file). Key variants of one URL count once. At most 500
+recently modified entries are checked and a limited check is labelled; an
+unreadable cache root or an alternative purge backend shows "not determinable"
+instead of zero. The check reads only the filesystem: no HTTP request, purge or
+prewarm.
+
+The HTTP hit rate lives in the Tools tab (in simple mode under "Technische
+Statistik"). It counts individual HTTP requests, not distinct pages or visitors,
+over a sliding window. Its panel combines the hit rate, its request denominator and a
 proportional cache-served/newly-requested split. File, size, queue and tag counts
 remain alongside it. Measurement details are initially collapsed and contain
 all six Nginx status counts, eligibility rules and sample limitations. Native
@@ -152,7 +165,12 @@ requests. Existing access logging must be preserved.
 The default log is `/var/log/nginx/sympress-cache-metrics.jsonl`. Override it with
 the private `SYMPRESS_NGINX_CACHE_METRICS_LOG` PHP constant and regenerate the
 includes. Keep the absolute path outside the cache root and document root, grant
-PHP read access, and configure normal log rotation. Nginx writes only timestamp,
+PHP read access, and configure normal log rotation. The reader also reads the
+previous generation `<log>.1` within the same 1 MiB / 5,000-line budget, so both
+copytruncate and rename/create rotation keep current records; bytes still shared
+by both files during copytruncate are counted once. Keep `delaycompress` when
+compressing: an unread compressed or older generation written within the window
+marks the measurement window as incomplete. Nginx writes only timestamp,
 host and cache status, without IPs, URLs, cookies or authorization headers.
 See the [NGINX access log directives](https://nginx.org/en/docs/http/ngx_http_log_module.html#access_log).
 

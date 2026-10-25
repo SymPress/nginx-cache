@@ -28,7 +28,7 @@ final class CacheMetricsReaderTest extends TestCase
 
     protected function tearDown(): void
     {
-        $this->filesystem->remove($this->path);
+        $this->filesystem->remove([$this->path, $this->path . '.1', $this->path . '.1.gz', $this->path . '.2']);
     }
 
     public function testRatioCountsOnlyThisHostsEligibleRequestsWithinTheWindow(): void
@@ -106,6 +106,74 @@ final class CacheMetricsReaderTest extends TestCase
         self::assertNull($this->reader->read($this->path, 'example.test')['hit_rate']);
         self::assertSame('unreadable', $this->reader->read($this->path, 'example.test')['log_state']);
         self::assertSame($error, error_get_last());
+    }
+
+    public function testCopytruncateRotationKeepsCurrentRecordsInTheWindow(): void
+    {
+        $this->filesystem->dumpFile($this->path, str_repeat($this->record('MISS', time: $this->now - 120), 90) . str_repeat($this->record('HIT', time: $this->now - 60), 10));
+        self::assertSame([100, 10], $this->counts());
+
+        $this->filesystem->copy($this->path, $this->path . '.1');
+        $before = file_get_contents($this->path);
+        $this->filesystem->appendToFile($this->path, $this->record('HIT'));
+        self::assertSame([101, 11], $this->counts(), 'copied bytes still present in the active log are counted once');
+
+        $this->filesystem->dumpFile($this->path, '');
+        $result = $this->reader->read($this->path, 'example.test');
+        self::assertSame([100, 10], [$result['requests'], $result['hits']], 'an empty log after truncation keeps the archived records');
+        self::assertFalse($result['sampled']);
+        self::assertFalse($result['coverage_gap']);
+
+        $this->filesystem->dumpFile($this->path, str_repeat($this->record('HIT'), 10));
+        $result = $this->reader->read($this->path, 'example.test');
+        self::assertSame([110, 20], [$result['requests'], $result['hits']]);
+        self::assertEqualsWithDelta(18.1818, $result['hit_rate'], 0.0001);
+        self::assertSame($before, file_get_contents($this->path . '.1'));
+    }
+
+    public function testRenamedLogsCountIdenticalRealRequestsInBothFiles(): void
+    {
+        $this->filesystem->dumpFile($this->path . '.1', str_repeat($this->record('HIT'), 3) . rtrim($this->record('HIT')));
+        $this->filesystem->dumpFile($this->path, $this->record('HIT'));
+        self::assertSame([4, 4], $this->counts(), 'equal time, host and status are not a request id');
+    }
+
+    public function testRotatedRecordsStillLeaveTheWindowAndRespectTheByteBudget(): void
+    {
+        $this->filesystem->dumpFile($this->path . '.1', $this->record('MISS', time: $this->now - 3601) . $this->record('MISS', time: $this->now - 30));
+        $this->filesystem->dumpFile($this->path, $this->record('HIT'));
+        self::assertSame([2, 1], $this->counts());
+
+        $this->filesystem->dumpFile($this->path . '.1', str_repeat('x', 600_000) . "\n" . $this->record('MISS'));
+        $this->filesystem->dumpFile($this->path, str_repeat('y', 600_000) . "\n" . $this->record('HIT'));
+        $result = $this->reader->read($this->path, 'example.test');
+        self::assertSame([2, 1], [$result['requests'], $result['hits']]);
+        self::assertTrue($result['sampled'], 'the shared 1 MiB budget truncated the rotated log');
+    }
+
+    public function testUnreadableRecentGenerationsAreReportedAsACoverageGap(): void
+    {
+        $this->filesystem->dumpFile($this->path, $this->record('HIT'));
+        $this->filesystem->dumpFile($this->path . '.1.gz', 'compressed');
+        $result = $this->reader->read($this->path, 'example.test');
+        self::assertTrue($result['coverage_gap']);
+        self::assertSame(1, $result['requests']);
+
+        $this->filesystem->touch($this->path . '.1.gz', $this->now - 3700);
+        self::assertFalse($this->reader->read($this->path, 'example.test')['coverage_gap'], 'an archive older than the window cannot hold current records');
+
+        $this->filesystem->remove($this->path . '.1.gz');
+        $this->filesystem->dumpFile($this->path . '.1', $this->record('MISS'));
+        $this->filesystem->dumpFile($this->path . '.2', 'x');
+        self::assertTrue($this->reader->read($this->path, 'example.test')['coverage_gap']);
+    }
+
+    /** @return array{int, int} */
+    private function counts(): array
+    {
+        $result = $this->reader->read($this->path, 'example.test');
+
+        return [$result['requests'], $result['hits']];
     }
 
     private function record(string $state, string $host = 'example.test', ?int $time = null): string

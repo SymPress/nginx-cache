@@ -169,7 +169,7 @@ final readonly class CacheProbe
     }
 
     /** @return list<string> */
-    private function bypassReasons(string $url, string $cookieHeader): array
+    public function bypassReasons(string $url, string $cookieHeader): array
     {
         $reasons = [];
         $parts = $this->parseUrl($url);
