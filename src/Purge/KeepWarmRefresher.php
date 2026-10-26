@@ -56,7 +56,9 @@ final readonly class KeepWarmRefresher
             return 0;
         } catch (\Throwable) {
             try {
-                update_option(self::STATE, [...$this->state(), 'last_failure' => ['failed_at' => $this->clock->timestamp(), 'failed' => 0, 'targets' => 0, 'errors' => ['Keep-warm refresh could not run.']]], false);
+                $state = $this->state();
+                // A first cycle that crashes before it starts still ages from its first attempt.
+                update_option(self::STATE, [...$state, 'started_at' => $state['started_at'] ?? $this->clock->timestamp(), 'last_failure' => ['failed_at' => $this->clock->timestamp(), 'failed' => 0, 'targets' => 0, 'errors' => ['Keep-warm refresh could not run.']]], false);
             } catch (\Throwable) {
                 // The log signal below remains when diagnostic storage is unavailable.
             }
@@ -71,17 +73,21 @@ final readonly class KeepWarmRefresher
     {
         $state = $this->state();
         $enabled = $this->enabled();
+        $nextRun = function_exists('wp_next_scheduled') ? wp_next_scheduled(self::HOOK) : false;
+        $window = $this->clock->timestamp() - CachePolicy::values()['inactive_seconds'];
+        // A first cycle counts from its start; one that never started counts from its due event.
+        $since = $state['completed_at'] ?? $state['started_at'] ?? (is_int($nextRun) ? $nextRun : null);
         return [
             'mode'         => CachePolicy::retention(),
             'enabled'      => $enabled,
             'interval'     => CachePolicy::keepWarmInterval(),
-            'next_run'     => function_exists('wp_next_scheduled') ? wp_next_scheduled(self::HOOK) : false,
+            'next_run'     => $nextRun,
             'pending'      => is_array($state['urls']) ? count($state['urls']) - count($state['done']) : 0,
             'started_at'   => $state['started_at'],
             'completed_at' => $state['completed_at'],
             'last_failure' => $state['last_failure'],
             // Targets may already be cold once a full inactivity window passed without a completed cycle.
-            'overdue'      => $enabled && $state['completed_at'] !== null && $state['completed_at'] < $this->clock->timestamp() - CachePolicy::values()['inactive_seconds'],
+            'overdue'      => $enabled && $since !== null && $since < $window,
         ];
     }
 
