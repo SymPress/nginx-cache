@@ -622,14 +622,17 @@ try {
     update_option($settings::OPTION_PREWARM_URLS, implode("\n", array_map(static fn (int $page): string => home_url('/known-' . $page . '/'), range(1, 6))));
     $discoveryCalls = [];
     $sitemapCalls = 0;
-    $discoveryMock = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url) use (&$discoveryCalls, &$sitemapCalls): \Symfony\Component\HttpClient\Response\MockResponse {
+    $failingKnownCalls = 0;
+    $discoveryMock = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url) use (&$discoveryCalls, &$sitemapCalls, &$failingKnownCalls): \Symfony\Component\HttpClient\Response\MockResponse {
         if ((string) wp_parse_url($url, PHP_URL_PATH) === '/wp-sitemap.xml') {
             return ++$sitemapCalls <= 2
                 ? new \Symfony\Component\HttpClient\Response\MockResponse('unavailable', ['http_code' => 503])
                 : new \Symfony\Component\HttpClient\Response\MockResponse('<urlset><url><loc>' . home_url('/known-1/') . '</loc></url><url><loc>' . home_url('/discovered-a/') . '</loc></url><url><loc>' . home_url('/discovered-b/') . '</loc></url></urlset>');
         }
         $discoveryCalls[] = $url;
-        return new \Symfony\Component\HttpClient\Response\MockResponse('<html></html>');
+        // A known target that keeps failing must not postpone the next discovery attempt.
+        $failing = (string) wp_parse_url($url, PHP_URL_PATH) === '/known-6/' && ++$failingKnownCalls <= 2;
+        return new \Symfony\Component\HttpClient\Response\MockResponse('<html></html>', ['http_code' => $failing ? 503 : 200]);
     });
     $compatibility = new \SymPress\NginxCache\Settings\CompatibilitySettings($settings);
     $discoveryEffects = new \SymPress\NginxCache\Purge\PurgeSideEffectProcessor($settings, $side,
@@ -656,14 +659,14 @@ try {
     $sideClock->sleep(2);
     $discoveryEffects->process();
     $state = $side->inspect()[0];
-    check($sitemapCalls === 1 && $warmedKnown() === 7 && count($discoveryCalls) === 7 && $state['attempts'] === 1 && !$state['exhausted'], 'remaining known targets reuse the snapshot, then failed discovery spends one bounded retry');
+    check($sitemapCalls === 1 && $warmedKnown() === 7 && count($discoveryCalls) === 7 && $state['attempts'] === 1 && !$state['exhausted'], 'remaining known targets reuse the snapshot without repeating discovery; one failing target spends one bounded retry');
     $sideClock->sleep(61);
     $discoveryEffects->process();
     $state = $side->inspect()[0];
-    check($sitemapCalls === 2 && count($discoveryCalls) === 7 && $state['attempts'] === 2 && $side->count() === 1, 'a retry repeats only discovery and never re-requests settled known targets');
+    check($sitemapCalls === 2 && count($discoveryCalls) === 8 && end($discoveryCalls) === home_url('/known-6/') && $state['attempts'] === 2 && $side->count() === 1, 'each retry discovers again while a failing known target is retried; settled targets are never re-requested');
     $sideClock->sleep(121);
     $discoveryEffects->process();
-    check($sitemapCalls === 3 && $side->count() === 0 && count($discoveryCalls) === 9 && count(array_unique($discoveryCalls)) === 9 && in_array(home_url('/discovered-b/'), $discoveryCalls, true), 'successful discovery adds only the missing targets and completes the task');
+    check($sitemapCalls === 3 && $side->count() === 0 && count($discoveryCalls) === 11 && count(array_unique($discoveryCalls)) === 9 && in_array(home_url('/discovered-b/'), $discoveryCalls, true), 'successful discovery adds only the missing targets and completes the task');
     check(\SymPress\NginxCache\Purge\SitemapUrlProvider::lastFailure() === null && end($processed)['prewarm']['discovery_complete'] === true, 'successful discovery clears the recorded failure');
     remove_action('sympress_nginx_cache_side_effects_processed', $observeProcessed, 10);
     delete_option($sitemapOption);
