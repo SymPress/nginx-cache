@@ -11,6 +11,7 @@ where applicable.
 ### Fixed
 
 - Count a prewarmed page as warmed only after its response body arrived completely. Previously an HTTP 200 whose transfer broke or stalled after the headers was checkpointed as warmed, although Nginx had not stored the page. The body is now streamed and discarded within the existing five-second limits, without buffering it in memory. An incomplete transfer is reported as a retryable URL failure, while complete sibling URLs keep their progress (#40).
+- Keep already known prewarm targets warm when sitemap discovery fails after a purge. Previously a sitemap error, such as an HTTP 503, stopped the follow-up task before any known page (for example the home page) was requested and before cache layer, remote and Cloudflare work ran. Known targets are now warmed in batches that do not spend the retry budget, the remaining follow-up work runs, and only the missing discovery is retried with backoff. A later successful discovery adds just the missing targets. Discovery errors name the sitemap and a fixed reason (HTTP status, timeout, request failure, size or XML) and the latest failure appears as `sitemap_discovery_failure` in side-effect details and diagnostics until discovery succeeds again (#41).
 
 ## 1.0.7 — 2026-10-25
 

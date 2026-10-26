@@ -8,15 +8,32 @@ use DOMDocument;
 use DOMElement;
 use SymPress\NginxCache\Security\UrlPolicy;
 use SymPress\NginxCache\Settings\CompatibilitySettings;
+use SymPress\NginxCache\Support\SitemapDiscoveryFailure;
+use SymPress\NginxCache\Time\CacheClock;
+use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 final readonly class SitemapUrlProvider
 {
+    public const string FAILURE_OPTION = 'sympress_nginx_cache_sitemap_discovery_failure';
+    private const int MAX_REPORTED_ERRORS = 5;
+
     public function __construct(
         private HttpClientInterface $http,
         private CompatibilitySettings $settings,
         private UrlPolicy $policy,
+        private CacheClock $clock,
     ) {
+    }
+
+    /** @return array{failed_at: int, errors: list<string>}|null */
+    public static function lastFailure(): ?array
+    {
+        $failure = function_exists('get_option') ? get_option(self::FAILURE_OPTION, null) : null;
+        if (!is_array($failure) || !is_int($failure['failed_at'] ?? null) || !is_array($failure['errors'] ?? null)) {
+            return null;
+        }
+        return ['failed_at' => $failure['failed_at'], 'errors' => array_values(array_filter($failure['errors'], is_string(...)))];
     }
 
     public function enabled(): bool
@@ -49,15 +66,15 @@ final readonly class SitemapUrlProvider
             try {
                 $xml = $this->read($url);
                 if (preg_match('/<!DOCTYPE|<!ENTITY/i', $xml) === 1) {
-                    throw new \RuntimeException('External XML declarations are forbidden.');
+                    throw new SitemapDiscoveryFailure('Sitemap XML declarations are forbidden.');
                 }
                 $document = new DOMDocument();
-                if (!$document->loadXML($xml, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
-                    throw new \RuntimeException('Invalid sitemap XML.');
+                if ($xml === '' || !$document->loadXML($xml, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
+                    throw new SitemapDiscoveryFailure('Sitemap XML is invalid.');
                 }
                 $rootElement = $document->documentElement;
                 if (!$rootElement instanceof DOMElement || !in_array($rootElement->localName, ['sitemapindex', 'urlset'], true)) {
-                    throw new \RuntimeException('Invalid sitemap document.');
+                    throw new SitemapDiscoveryFailure('Sitemap XML is not a sitemap or sitemap index.');
                 }
                 foreach ($rootElement->childNodes as $entry) {
                     if (!$entry instanceof DOMElement || !in_array($entry->localName, ['url', 'sitemap'], true)) {
@@ -83,31 +100,59 @@ final readonly class SitemapUrlProvider
                         }
                     }
                 }
+            } catch (SitemapDiscoveryFailure $failure) {
+                $errors[] = $url . ': ' . $failure->getMessage();
             } catch (\Throwable) {
-                $errors[] = 'Sitemap discovery failed; check its URL, XML and server response.';
+                $errors[] = $url . ': Sitemap discovery failed.';
             }
         }
-        return ['urls' => array_keys($pages), 'errors' => array_values(array_unique($errors))];
+        $errors = array_values(array_unique($errors));
+        $this->report($errors);
+        return ['urls' => array_keys($pages), 'errors' => $errors];
     }
 
     private function read(string $url): string
     {
-        $response = $this->http->request('GET', $url, ['max_redirects' => 0, 'timeout' => 5, 'max_duration' => 5, 'buffer' => false]);
-        if ($response->getStatusCode() !== 200) {
-            throw new \RuntimeException('Sitemap request failed.');
-        }
-        $xml = '';
-        foreach ($this->http->stream($response, 5) as $chunk) {
-            if ($chunk->isTimeout()) {
-                $response->cancel();
-                throw new \RuntimeException('Sitemap request timed out.');
+        $started = $this->clock->highResolutionTimestamp();
+        try {
+            $response = $this->http->request('GET', $url, ['max_redirects' => 0, 'timeout' => 5, 'max_duration' => 5, 'buffer' => false]);
+            $status = $response->getStatusCode();
+            if ($status !== 200) {
+                throw new SitemapDiscoveryFailure(sprintf('Sitemap HTTP %d.', $status));
             }
-            $xml .= $chunk->getContent();
-            if (strlen($xml) > 2_097_152) {
-                $response->cancel();
-                throw new \RuntimeException('Sitemap exceeds the byte budget.');
+            $xml = '';
+            foreach ($this->http->stream($response, 5) as $chunk) {
+                if ($chunk->isTimeout()) {
+                    $response->cancel();
+                    throw new SitemapDiscoveryFailure('Sitemap request timed out.');
+                }
+                $xml .= $chunk->getContent();
+                if (strlen($xml) > 2_097_152) {
+                    $response->cancel();
+                    throw new SitemapDiscoveryFailure('Sitemap exceeds the 2 MiB byte budget.');
+                }
             }
+            return $xml;
+        } catch (TransportExceptionInterface) {
+            // Provider messages may echo response details; max_duration surfaces as a plain transport error.
+            throw new SitemapDiscoveryFailure($this->clock->elapsedSince($started) >= 5.0 ? 'Sitemap request timed out.' : 'Sitemap request failed.');
         }
-        return $xml;
+    }
+
+    /** @param list<string> $errors */
+    private function report(array $errors): void
+    {
+        if (!function_exists('update_option')) {
+            return;
+        }
+        try {
+            if ($errors === []) {
+                delete_option(self::FAILURE_OPTION);
+                return;
+            }
+            update_option(self::FAILURE_OPTION, ['failed_at' => $this->clock->timestamp(), 'errors' => array_slice($errors, 0, self::MAX_REPORTED_ERRORS)], false);
+        } catch (\Throwable) {
+            // Diagnostics never change the discovery result.
+        }
     }
 }
