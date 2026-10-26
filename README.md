@@ -257,7 +257,14 @@ repeated. The last 20 prewarm issues (URL, HTTP status or safe reason, time) app
 in `wp nginx-cache side-effects details` and the diagnostic report. Delivery
 remains at least once around a crash before a checkpoint. Same-origin checks and
 five-second request limits remain enforced. Initial opt-in sitemap discovery
-retains its separate bounded 20-map budget. Explicit CLI prewarm remains
+retains its separate bounded 20-map budget. If discovery fails, already known
+targets (fixed prewarm URLs, the home page and entries of maps that did load) are
+still warmed and later cache layer, remote and Cloudflare work still runs; only
+then does the missing discovery spend one retry, and a later successful discovery
+adds just the missing targets.
+The last discovery failure (sitemap URL and fixed reason: HTTP status, timeout,
+request failure, size or XML) appears as `sitemap_discovery_failure` in the same
+reports and is cleared by the next successful discovery. Explicit CLI prewarm remains
 synchronous and reports failed or skipped targets with a nonzero exit code.
 
 Run `wp cron event run --due-now` once per minute through an external scheduler

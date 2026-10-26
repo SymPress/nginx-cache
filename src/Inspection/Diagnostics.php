@@ -12,6 +12,7 @@ use SymPress\NginxCache\Purge\KeepWarmRefresher;
 use SymPress\NginxCache\Purge\PurgeHistoryRepository;
 use SymPress\NginxCache\Purge\PurgeQueueProcessor;
 use SymPress\NginxCache\Purge\PurgeSideEffectProcessor;
+use SymPress\NginxCache\Purge\SitemapUrlProvider;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Surrogate\TagIndexRepository;
 use SymPress\NginxCache\Value\CacheStatus;
@@ -63,7 +64,8 @@ final readonly class Diagnostics
             ],
             'keep_warm'    => $this->keepWarm?->inspect(),
             'prewarm'      => [
-                'issues' => PurgeSideEffectProcessor::prewarmIssues(),
+                'issues'                    => PurgeSideEffectProcessor::prewarmIssues(),
+                'sitemap_discovery_failure' => SitemapUrlProvider::lastFailure(),
             ],
             'tag_index'    => $this->tags->stats(),
             'metrics'      => $this->metrics->read(CacheMetricsReader::logPath(), is_string($host) ? $host : ''),

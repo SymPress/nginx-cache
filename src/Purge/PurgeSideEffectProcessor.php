@@ -144,7 +144,8 @@ final readonly class PurgeSideEffectProcessor
     public function inspect(): array
     {
         $issues = self::prewarmIssues();
-        return array_map(static fn (array $task): array => [...$task, 'prewarm_issues' => $issues], $this->queue->inspect());
+        $discovery = SitemapUrlProvider::lastFailure();
+        return array_map(static fn (array $task): array => [...$task, 'prewarm_issues' => $issues, 'sitemap_discovery_failure' => $discovery], $this->queue->inspect());
     }
 
     /** @return list<array{url: string, reason: string, stale: bool, at: int}> */
@@ -264,26 +265,38 @@ final readonly class PurgeSideEffectProcessor
         }
         $sideEffects = [];
         $prewarmPending = false;
+        $discoveryIncomplete = false;
         if ($this->shouldPrewarm($result, $request) && !in_array('prewarm', $task['completed'], true)) {
             $plans = $this->completed($task, 'prewarm-plan:');
-            if ($plans === []) {
-                $plan = $this->prewarmer->plan($result->requestedUrls, withRelated: true, affectedUrls: $request->affectedUrls);
-                if ($plan->errors !== []) {
-                    return false;
-                }
-                // Snapshot discovery once; later batches retain the same targets.
-                // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Private queue payload, not an HTTP response.
-                $this->queue->checkpoint($task['id'], 'prewarm-plan:' . json_encode($plan->urls, JSON_THROW_ON_ERROR));
-                $urls = $plan->urls;
-            } else {
-                $urls = json_decode($plans[0], true, flags: JSON_THROW_ON_ERROR);
-                if (!is_array($urls) || count($urls) > 200 || count(array_filter($urls, is_string(...))) !== count($urls)) {
-                    return false;
-                }
-                $urls = array_values($urls);
+            // Without a complete plan, targets already known while discovery failed are warmed first.
+            $discoveryIncomplete = $plans === [];
+            $urls = $this->snapshotTargets($plans !== [] ? [$plans[0]] : $this->completed($task, 'prewarm-known:'));
+            if ($urls === null) {
+                return false;
             }
             $completed = $this->completed($task, 'prewarm-url:');
-            $pending = array_values(array_filter($urls, static fn (string $url): bool => !in_array(hash('sha256', $url), $completed, true)));
+            $pendingOf = static fn (array $urls): array => array_values(array_filter($urls, static fn (string $url): bool => !in_array(hash('sha256', $url), $completed, true)));
+            $pending = $pendingOf($urls);
+            if ($discoveryIncomplete && $pending === []) {
+                // First run, or a retry once every known target settled: discover (again).
+                $plan = $this->prewarmer->plan($result->requestedUrls, withRelated: true, affectedUrls: $request->affectedUrls);
+                $discoveryIncomplete = $plan->errors !== [];
+                if (!$discoveryIncomplete) {
+                    // Snapshot discovery once; later batches retain the same targets.
+                    // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Private queue payload, not an HTTP response.
+                    $this->queue->checkpoint($task['id'], 'prewarm-plan:' . json_encode($plan->urls, JSON_THROW_ON_ERROR));
+                    $urls = $plan->urls;
+                } else {
+                    $known = array_slice(array_values(array_diff($plan->urls, $urls)), 0, max(0, $this->settings->maxPrewarmUrls() - count($urls)));
+                    if ($known !== []) {
+                        // Later batches reuse known targets instead of repeating failed discovery.
+                        // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Private queue payload, not an HTTP response.
+                        $this->queue->checkpoint($task['id'], 'prewarm-known:' . json_encode($known, JSON_THROW_ON_ERROR));
+                        $urls = [...$urls, ...$known];
+                    }
+                }
+                $pending = $pendingOf($urls);
+            }
             $batch = array_slice($pending, 0, Prewarmer::BATCH_SIZE);
             $prewarm = $this->prewarmer->warmUrls($batch);
             // Stale targets are settled without warming so they cannot exhaust the retry budget.
@@ -294,12 +307,13 @@ final readonly class PurgeSideEffectProcessor
             $this->recordPrewarmIssues($batch, $prewarm->issues);
             $prewarmPending = count($pending) > count($settled);
             $sideEffects['prewarm'] = [
-                'attempted'  => $prewarm->attempted(),
-                'successful' => $prewarm->successful(),
-                'failed'     => $prewarm->failed(),
-                'skipped'    => count($prewarm->stale()),
+                'attempted'          => $prewarm->attempted(),
+                'successful'         => $prewarm->successful(),
+                'failed'             => $prewarm->failed(),
+                'skipped'            => count($prewarm->stale()),
+                'discovery_complete' => !$discoveryIncomplete,
             ];
-            if (!$prewarmPending && $prewarm->failed() === 0) {
+            if (!$prewarmPending && $prewarm->failed() === 0 && !$discoveryIncomplete) {
                 $this->queue->checkpoint($task['id'], 'prewarm');
             }
         }
@@ -327,7 +341,28 @@ final readonly class PurgeSideEffectProcessor
             && $this->successfulResponses($sideEffects['layers'])
             && $this->successfulResponses($sideEffects['remote'])
             && $this->successfulResponses($sideEffects['cloudflare'] ?? []);
-        return $successful && $prewarmPending ? SideEffectOutcome::Continue : $successful;
+        if ($successful && $prewarmPending) {
+            return SideEffectOutcome::Continue;
+        }
+        // Failed discovery spends the bounded retry budget only once every known target settled.
+        return $successful && !$discoveryIncomplete;
+    }
+
+    /**
+     * @param list<string> $snapshots
+     * @return list<string>|null
+     */
+    private function snapshotTargets(array $snapshots): ?array
+    {
+        $targets = [];
+        foreach ($snapshots as $snapshot) {
+            $urls = json_decode($snapshot, true, flags: JSON_THROW_ON_ERROR);
+            if (!is_array($urls) || count($urls) > 200 || count(array_filter($urls, is_string(...))) !== count($urls)) {
+                return null;
+            }
+            $targets = [...$targets, ...array_values($urls)];
+        }
+        return $targets;
     }
 
     /**

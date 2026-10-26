@@ -615,6 +615,59 @@ try {
     $remainingIssues = array_column(\SymPress\NginxCache\Purge\PurgeSideEffectProcessor::prewarmIssues(), 'url');
     check($side->count() === 0 && $flakyCalls === 2 && $truncatedCalls === 2 && count(array_keys($prewarmCalls, home_url('/valid-a/'), true)) === $warmedValid, 'retry warms only the transient targets and completes the task');
     check(!in_array(home_url('/flaky/'), $remainingIssues, true) && !in_array(home_url('/truncated/'), $remainingIssues, true) && count($remainingIssues) === 4 && $remoteEffects->attentionReason() === '', 'recovered targets clear their issues while stale reports remain');
+    // Issue #41: failed sitemap discovery must not keep already known targets cold.
+    $side->drain();
+    $sitemapOption = \SymPress\NginxCache\Settings\CompatibilitySettings::PREFIX . 'prewarm_sitemap';
+    update_option($sitemapOption, 1);
+    update_option($settings::OPTION_PREWARM_URLS, implode("\n", array_map(static fn (int $page): string => home_url('/known-' . $page . '/'), range(1, 6))));
+    $discoveryCalls = [];
+    $sitemapCalls = 0;
+    $discoveryMock = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url) use (&$discoveryCalls, &$sitemapCalls): \Symfony\Component\HttpClient\Response\MockResponse {
+        if ((string) wp_parse_url($url, PHP_URL_PATH) === '/wp-sitemap.xml') {
+            return ++$sitemapCalls <= 2
+                ? new \Symfony\Component\HttpClient\Response\MockResponse('unavailable', ['http_code' => 503])
+                : new \Symfony\Component\HttpClient\Response\MockResponse('<urlset><url><loc>' . home_url('/known-1/') . '</loc></url><url><loc>' . home_url('/discovered-a/') . '</loc></url><url><loc>' . home_url('/discovered-b/') . '</loc></url></urlset>');
+        }
+        $discoveryCalls[] = $url;
+        return new \Symfony\Component\HttpClient\Response\MockResponse('<html></html>');
+    });
+    $compatibility = new \SymPress\NginxCache\Settings\CompatibilitySettings($settings);
+    $discoveryEffects = new \SymPress\NginxCache\Purge\PurgeSideEffectProcessor($settings, $side,
+        new \SymPress\NginxCache\Purge\Prewarmer($discoveryMock, $settings, $policy, $clock, new \SymPress\NginxCache\Purge\SitemapUrlProvider($discoveryMock, $compatibility, $policy, $clock)),
+        new \SymPress\NginxCache\Layer\CacheLayerCoordinator($settings),
+        new \SymPress\NginxCache\Remote\RemotePurgeDispatcher($discoveryMock, $settings, $policy, $clock),
+        new \SymPress\NginxCache\Remote\CloudflarePurgeDispatcher($discoveryMock, $settings, new \SymPress\NginxCache\Surrogate\CacheTagResolver(), $policy), $clock);
+    $processed = [];
+    $observeProcessed = static function (mixed $purge, mixed $purgeRequest, array $effects) use (&$processed): void { $processed[] = $effects; };
+    add_action('sympress_nginx_cache_side_effects_processed', $observeProcessed, 10, 3);
+    $known = [home_url('/'), ...array_map(static fn (int $page): string => home_url('/known-' . $page . '/'), range(1, 6))];
+    $warmedKnown = static function () use ($known, &$discoveryCalls): int { return count(array_intersect($known, $discoveryCalls)); };
+    $side->push(\SymPress\NginxCache\Value\PurgeResult::success('/tmp/disposable-cache', 0, 0.1), \SymPress\NginxCache\Value\PurgeRequest::full('discovery-fixture', 'test', prewarm: true));
+    $discoveryEffects->process();
+    $state = $side->inspect()[0];
+    $failure = \SymPress\NginxCache\Purge\SitemapUrlProvider::lastFailure();
+    check($sitemapCalls === 1 && $warmedKnown() === 5 && $state['attempts'] === 0 && !in_array('prewarm', $state['completed'], true), 'sitemap HTTP 503 still warms the first batch of known targets without spending the retry budget');
+    check(count(array_filter($state['completed'], static fn (string $item): bool => str_starts_with($item, 'prewarm-known:'))) === 1 && count(array_filter($state['completed'], static fn (string $item): bool => str_starts_with($item, 'prewarm-plan:'))) === 0, 'known targets are snapshotted while the incomplete discovery is not stored as a plan');
+    check(($processed[0]['prewarm']['discovery_complete'] ?? null) === false && array_key_exists('remote', $processed[0]) && array_key_exists('layers', $processed[0]), 'downstream layer and remote work still runs after failed discovery');
+    check($failure !== null && $failure['errors'] === [home_url('/wp-sitemap.xml') . ': Sitemap HTTP 503.'] && $failure['failed_at'] > 0 && $failure['failed_at'] <= $clock->timestamp(),'failed discovery records the sitemap URL, HTTP status and time');
+    $sideCommand = new \Symfony\Component\Console\Tester\CommandTester(new \SymPress\NginxCache\Cli\Command\SideEffectsCommand($discoveryEffects));
+    $sideCommand->execute(['action' => 'details']);
+    check(str_contains($sideCommand->getDisplay(), 'Sitemap HTTP 503.') && !str_contains($sideCommand->getDisplay(), 'unavailable'), 'side-effect details expose the safe discovery failure without the response body');
+    $sideClock->sleep(2);
+    $discoveryEffects->process();
+    $state = $side->inspect()[0];
+    check($sitemapCalls === 1 && $warmedKnown() === 7 && count($discoveryCalls) === 7 && $state['attempts'] === 1 && !$state['exhausted'], 'remaining known targets reuse the snapshot, then failed discovery spends one bounded retry');
+    $sideClock->sleep(61);
+    $discoveryEffects->process();
+    $state = $side->inspect()[0];
+    check($sitemapCalls === 2 && count($discoveryCalls) === 7 && $state['attempts'] === 2 && $side->count() === 1, 'a retry repeats only discovery and never re-requests settled known targets');
+    $sideClock->sleep(121);
+    $discoveryEffects->process();
+    check($sitemapCalls === 3 && $side->count() === 0 && count($discoveryCalls) === 9 && count(array_unique($discoveryCalls)) === 9 && in_array(home_url('/discovered-b/'), $discoveryCalls, true), 'successful discovery adds only the missing targets and completes the task');
+    check(\SymPress\NginxCache\Purge\SitemapUrlProvider::lastFailure() === null && end($processed)['prewarm']['discovery_complete'] === true, 'successful discovery clears the recorded failure');
+    remove_action('sympress_nginx_cache_side_effects_processed', $observeProcessed, 10);
+    delete_option($sitemapOption);
+    update_option($settings::OPTION_PREWARM_URLS, '');
     update_option($settings::OPTION_PREWARM_ENABLED, 0);
     delete_option(\SymPress\NginxCache\Purge\PurgeSideEffectProcessor::PREWARM_ISSUES_OPTION);
     $calls = 0;

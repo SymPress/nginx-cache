@@ -110,7 +110,17 @@ after full purges or explicit prewarm requests with no URL list. It does not run
 on dry purges. Discovery follows only same-origin index entries, prohibits HTTP
 redirects and XML DTD/entities, limits each streamed XML response to 2 MiB, visits
 at most 20 maps, and shares the configured 0..200 URL budget with explicit URLs.
-Discovery failures remain prewarm errors and retain the task for retry.
+Discovery failures remain prewarm errors and retain the task for retry, but they
+no longer block targets that are already known; see the follow-up queue below.
+Each failed map is reported as `<sitemap URL>: <fixed reason>`, distinguishing
+HTTP status, idle or five-second timeout, other request failures, the 2 MiB
+budget, invalid XML, non-sitemap documents and forbidden XML declarations; a
+configured sitemap outside the site origin is reported without its URL. Provider
+exception messages and response bodies are never stored. The newest failure (at
+most five reasons and a timestamp) is kept in the non-autoloaded
+`sympress_nginx_cache_sitemap_discovery_failure` option, exposed as
+`sitemap_discovery_failure` in side-effect details and `prewarm` diagnostics, and
+deleted by the next successful discovery.
 
 `MultisiteMapGenerator::refresh()` handles site creation/update/deletion and
 admin initialization. Without the private `SYMPRESS_NGINX_CACHE_MULTISITE_MAP_FILE`
@@ -275,7 +285,18 @@ resetting previous failures. Failed batches keep their reserved backoff and retr
 only unacknowledged URLs. The five-attempt budget still bounds actual failures and
 crashes. New tasks and overflow generations cannot inherit another task's progress.
 Sitemap discovery occurs once before the first batch and retains its existing
-20-map / five-second-per-map limits. Explicit CLI prewarm is synchronous.
+20-map / five-second-per-map limits. Only a complete discovery becomes the
+`prewarm-plan:` snapshot. When discovery reports errors, the targets it already
+knows (fixed prewarm URLs, the home page and entries of maps that did load) are stored
+as a bounded `prewarm-known:` snapshot and warmed in ordinary batches that do not
+spend the retry budget; layer, remote and Cloudflare work runs in the same
+invocations. Once every known target is settled, the task fails without the
+`prewarm` checkpoint, so the missing discovery spends one bounded retry with
+backoff. Each retry discovers again: further failures add only new known targets,
+and a successful discovery stores the complete plan, warms only targets without a
+`prewarm-url:` checkpoint and completes the task. The
+`sympress_nginx_cache_side_effects_processed` payload reports this as
+`prewarm.discovery_complete`. Explicit CLI prewarm is synchronous.
 Keep-warm retention is separate from purge follow-up work. Nginx has no
 `inactive=off`; the generated `inactive` value is always the configured finite
 timeout. In the default `keep_warm` mode, `KeepWarmRefresher` re-requests the
