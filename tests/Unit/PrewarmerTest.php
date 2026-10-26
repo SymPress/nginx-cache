@@ -13,6 +13,7 @@ use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Time\CacheClock;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
@@ -95,6 +96,34 @@ final class PrewarmerTest extends TestCase
         self::assertNotContains('https://foreign.test/', $requested);
         self::assertNotContains('https://example.test/chain-5/', $requested);
         self::assertSame(2, count(array_keys($requested, 'https://example.test/loop-a/', true)) + count(array_keys($requested, 'https://example.test/loop-b/', true)));
+    }
+
+    public function testIncompleteBodyTransfersStayRetryableWhileCompleteSiblingsSucceed(): void
+    {
+        $calls = [];
+        $http = new MockHttpClient(static function (string $method, string $url, array $options) use (&$calls): MockResponse {
+            $calls[] = $options;
+            $body = match ((string) parse_url($url, PHP_URL_PATH)) {
+                // Headers arrived, then the stream broke or went idle before Content-Length was reached.
+                '/broken/' => ['<html>', new TransportException('HTTP/2 stream 1 was not closed cleanly: INTERNAL_ERROR')],
+                '/stalled/' => ['<html>', ''],
+                default => ['<html>', '</html>'],
+            };
+            return new MockResponse($body, ['http_code' => 200]);
+        });
+        $prewarmer = new Prewarmer($http, new WordPressCacheSettings('/fixture'), new UrlPolicy(), new CacheClock(new MockClock()));
+        $urls = ['https://example.test/broken/', 'https://example.test/complete/', 'https://example.test/stalled/'];
+        $result = $prewarmer->warmUrls($urls);
+
+        self::assertSame(['https://example.test/complete/' => 200], $result->responses);
+        self::assertSame([$urls[0] . ': HTTP 200 response transfer was incomplete.', $urls[2] . ': HTTP 200 response transfer was incomplete.'], $result->errors);
+        self::assertSame(['reason' => 'HTTP 200 response transfer was incomplete.', 'stale' => false], $result->issues[$urls[0]]);
+        self::assertSame([], $result->stale());
+        self::assertCount(3, $calls);
+        foreach ($calls as $options) {
+            self::assertFalse($options['buffer']);
+            self::assertSame(5.0, $options['max_duration']);
+        }
     }
 
     public function testCliReturnsFailureForAnUnsuccessfulHttpResponse(): void

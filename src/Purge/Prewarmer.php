@@ -9,7 +9,9 @@ use SymPress\NginxCache\Settings\CompatibilitySettings;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 use SymPress\NginxCache\Time\CacheClock;
 use SymPress\NginxCache\Value\PrewarmResult;
+use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Symfony\Contracts\HttpClient\ResponseInterface;
 
 final readonly class Prewarmer
 {
@@ -118,9 +120,11 @@ final readonly class Prewarmer
                             'max_redirects' => 0,
                             'timeout'       => 5,
                             'max_duration'  => 5,
+                            'buffer'        => false,
                         ]);
                         $status = $response->getStatusCode();
                         $location = $status >= 300 && $status < 400 ? (string) ($response->getHeaders(false)['location'][0] ?? '') : '';
+                        $transferred = $status < 200 || $status >= 300 || $this->transferred($response);
                     } finally {
                         $this->delay();
                     }
@@ -140,7 +144,10 @@ final readonly class Prewarmer
                 $issues[$url] = ['reason' => 'Prewarm request failed.', 'stale' => false];
                 continue;
             }
-            if ($status >= 200 && $status < 300) {
+            if (!$transferred) {
+                $errors[] = sprintf('%s: HTTP %d response transfer was incomplete.', $url, $status);
+                $issues[$url] = ['reason' => sprintf('HTTP %d response transfer was incomplete.', $status), 'stale' => false];
+            } elseif ($status >= 200 && $status < 300) {
                 $responses[$url] = $status;
             } elseif ($status >= 300 && $status < 500 && !in_array($status, [408, 425, 429], true)) {
                 $issues[$url] = ['reason' => sprintf('HTTP %d: target is outdated, removed or rejected.', $status), 'stale' => true];
@@ -151,6 +158,23 @@ final readonly class Prewarmer
         }
 
         return new PrewarmResult($urls, $responses, $errors, issues: $issues);
+    }
+
+    /** Nginx stores an entry only after the complete body arrived; chunks are discarded, never buffered. */
+    private function transferred(ResponseInterface $response): bool
+    {
+        try {
+            foreach ($this->http->stream($response) as $chunk) {
+                if ($chunk->isTimeout()) {
+                    $response->cancel();
+                    return false;
+                }
+                $chunk->getContent();
+            }
+        } catch (TransportExceptionInterface) {
+            return false;
+        }
+        return true;
     }
 
     private function delay(): void

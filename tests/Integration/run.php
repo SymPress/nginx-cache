@@ -565,8 +565,13 @@ try {
     update_option($settings::OPTION_PREWARM_ENABLED, 1);
     $prewarmCalls = [];
     $flakyCalls = 0;
-    $prewarmMock = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url) use (&$prewarmCalls, &$flakyCalls): \Symfony\Component\HttpClient\Response\MockResponse {
+    $truncatedCalls = 0;
+    $prewarmMock = new \Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url) use (&$prewarmCalls, &$flakyCalls, &$truncatedCalls): \Symfony\Component\HttpClient\Response\MockResponse {
         $prewarmCalls[] = $url;
+        if ((string) wp_parse_url($url, PHP_URL_PATH) === '/truncated/' && ++$truncatedCalls === 1) {
+            // Issue #40: HTTP 200 headers, then the body transfer breaks.
+            return new \Symfony\Component\HttpClient\Response\MockResponse(['<html>', new \Symfony\Component\HttpClient\Exception\TransportException('stream was not closed cleanly')], ['http_code' => 200]);
+        }
         [$status, $location] = match ((string) wp_parse_url($url, PHP_URL_PATH)) {
             '/stale-external/' => [301, 'https://foreign.example/stale-external/'],
             '/stale-loop-a/' => [302, '/stale-loop-b/'],
@@ -583,7 +588,7 @@ try {
         new \SymPress\NginxCache\Purge\Prewarmer($prewarmMock, $settings, $policy, $clock), new \SymPress\NginxCache\Layer\CacheLayerCoordinator($settings),
         new \SymPress\NginxCache\Remote\RemotePurgeDispatcher($prewarmMock, $settings, $policy, $clock),
         new \SymPress\NginxCache\Remote\CloudflarePurgeDispatcher($prewarmMock, $settings, new \SymPress\NginxCache\Surrogate\CacheTagResolver(), $policy), $clock);
-    $stalePlan = array_map(static fn (string $path): string => home_url($path), ['/stale-external/', '/stale-loop-a/', '/stale-removed/', '/stale-gone/', '/stale-moved/', '/flaky/', '/valid-a/', '/valid-b/']);
+    $stalePlan = array_map(static fn (string $path): string => home_url($path), ['/stale-external/', '/stale-loop-a/', '/stale-removed/', '/stale-gone/', '/stale-moved/', '/flaky/', '/valid-a/', '/valid-b/', '/truncated/']);
     $side->push($result, $request);
     $side->checkpoint($side->all()[0]['id'], 'prewarm-plan:' . wp_json_encode($stalePlan));
     $prewarmEffects->process();
@@ -597,16 +602,19 @@ try {
     $flakyIssue = array_values(array_filter(\SymPress\NginxCache\Purge\PurgeSideEffectProcessor::prewarmIssues(), static fn (array $issue): bool => $issue['url'] === home_url('/flaky/')));
     check($state['attempts'] === 1 && !$state['exhausted'] && in_array(home_url('/valid-b/'), $prewarmCalls, true), 'valid targets behind stale ones are warmed while a transient failure keeps bounded retry');
     check(count($flakyIssue) === 1 && $flakyIssue[0]['stale'] === false && $flakyIssue[0]['reason'] === 'HTTP 503.' && $flakyIssue[0]['at'] > 0 && $flakyIssue[0]['at'] <= $clock->timestamp(), 'transient prewarm failure records URL, safe reason and time');
+    $truncatedIssue = array_values(array_filter(\SymPress\NginxCache\Purge\PurgeSideEffectProcessor::prewarmIssues(), static fn (array $issue): bool => $issue['url'] === home_url('/truncated/')));
+    check(!in_array('prewarm-url:' . hash('sha256', home_url('/truncated/')), $state['completed'], true) && in_array('prewarm-url:' . hash('sha256', home_url('/valid-b/')), $state['completed'], true), 'an HTTP 200 with a broken body transfer is not checkpointed while complete siblings keep their progress');
+    check(count($truncatedIssue) === 1 && $truncatedIssue[0]['stale'] === false && $truncatedIssue[0]['reason'] === 'HTTP 200 response transfer was incomplete.', 'a broken body transfer is reported as a retryable URL failure');
     $sideCommand = new \Symfony\Component\Console\Tester\CommandTester(new \SymPress\NginxCache\Cli\Command\SideEffectsCommand($prewarmEffects));
     $sideCommand->execute(['action' => 'details']);
     $details = json_decode($sideCommand->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
-    check(count($details[0]['prewarm_issues']) === 5 && !str_contains($sideCommand->getDisplay(), 'foreign.example'), 'side-effect details expose prewarm issues without redirect targets');
+    check(count($details[0]['prewarm_issues']) === 6 && !str_contains($sideCommand->getDisplay(), 'foreign.example'), 'side-effect details expose prewarm issues without redirect targets');
     $warmedValid = count(array_keys($prewarmCalls, home_url('/valid-a/'), true));
     $sideClock->sleep(60);
     $prewarmEffects->process();
     $remainingIssues = array_column(\SymPress\NginxCache\Purge\PurgeSideEffectProcessor::prewarmIssues(), 'url');
-    check($side->count() === 0 && $flakyCalls === 2 && count(array_keys($prewarmCalls, home_url('/valid-a/'), true)) === $warmedValid, 'retry warms only the transient target and completes the task');
-    check(!in_array(home_url('/flaky/'), $remainingIssues, true) && count($remainingIssues) === 4 && $remoteEffects->attentionReason() === '', 'recovered target clears its issue while stale reports remain');
+    check($side->count() === 0 && $flakyCalls === 2 && $truncatedCalls === 2 && count(array_keys($prewarmCalls, home_url('/valid-a/'), true)) === $warmedValid, 'retry warms only the transient targets and completes the task');
+    check(!in_array(home_url('/flaky/'), $remainingIssues, true) && !in_array(home_url('/truncated/'), $remainingIssues, true) && count($remainingIssues) === 4 && $remoteEffects->attentionReason() === '', 'recovered targets clear their issues while stale reports remain');
     update_option($settings::OPTION_PREWARM_ENABLED, 0);
     delete_option(\SymPress\NginxCache\Purge\PurgeSideEffectProcessor::PREWARM_ISSUES_OPTION);
     $calls = 0;

@@ -258,7 +258,12 @@ request with `max_redirects: 0` and follows a same-origin `Location` itself for 
 most three hops, revalidating each hop with `UrlPolicy`; external targets, loops
 and longer chains are skipped. Other 3xx and 4xx responses (except 408, 425 and
 429) and plan entries outside the current site origin are skipped as outdated.
-Timeouts, 408/425/429 and 5xx responses stay failures. Each batch replaces the
+Timeouts, 408/425/429 and 5xx responses stay failures. A 2xx response counts as
+warmed only after its body arrived completely, because Nginx stores no entry for
+an aborted transfer: the body is streamed with `buffer: false` inside the same
+five-second limits and each chunk is discarded. A transport error or idle timeout
+after the headers stays a retryable failure with the fixed reason "HTTP 2xx
+response transfer was incomplete". Each batch replaces the
 attempted URLs' entries in the non-autoloaded `sympress_nginx_cache_prewarm_issues`
 option (at most 20: URL, fixed reason with HTTP status, timestamp, stale flag),
 exposed as `prewarm_issues` in side-effect details and `prewarm.issues` in
