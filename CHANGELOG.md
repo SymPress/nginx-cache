@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## Unreleased
+
+### Fixed
+
+- Count a prewarmed page as warmed only after its response body arrived completely. Previously an HTTP 200 whose transfer broke or stalled after the headers was checkpointed as warmed, although Nginx had not stored the page. The body is now streamed and discarded within the existing five-second limits, without buffering it in memory. An incomplete transfer is reported as a retryable URL failure, while complete sibling URLs keep their progress (#40).
+
 ## 1.0.7 — 2026-10-25
 
 ### Changed
