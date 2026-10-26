@@ -277,8 +277,11 @@ final readonly class PurgeSideEffectProcessor
             $completed = $this->completed($task, 'prewarm-url:');
             $pendingOf = static fn (array $urls): array => array_values(array_filter($urls, static fn (string $url): bool => !in_array(hash('sha256', $url), $completed, true)));
             $pending = $pendingOf($urls);
-            if ($discoveryIncomplete && $pending === []) {
-                // First run, or a retry once every known target settled: discover (again).
+            $discoveries = $this->completed($task, 'prewarm-discovery:');
+            // Successful batches keep the reserved attempt count, so a change means an invocation failed since.
+            $discoveredAt = $discoveries === [] ? null : (int) $discoveries[array_key_last($discoveries)];
+            if ($discoveryIncomplete && ($pending === [] || $discoveredAt !== $task['retry']['attempts'])) {
+                // First run, or a retry: discover again without waiting for failing known targets.
                 $plan = $this->prewarmer->plan($result->requestedUrls, withRelated: true, affectedUrls: $request->affectedUrls);
                 $discoveryIncomplete = $plan->errors !== [];
                 if (!$discoveryIncomplete) {
@@ -287,6 +290,7 @@ final readonly class PurgeSideEffectProcessor
                     $this->queue->checkpoint($task['id'], 'prewarm-plan:' . json_encode($plan->urls, JSON_THROW_ON_ERROR));
                     $urls = $plan->urls;
                 } else {
+                    $this->queue->checkpoint($task['id'], sprintf('prewarm-discovery:%d@%d', $task['retry']['attempts'], $this->clock->timestamp()));
                     $known = array_slice(array_values(array_diff($plan->urls, $urls)), 0, max(0, $this->settings->maxPrewarmUrls() - count($urls)));
                     if ($known !== []) {
                         // Later batches reuse known targets instead of repeating failed discovery.

@@ -292,8 +292,12 @@ as a bounded `prewarm-known:` snapshot and warmed in ordinary batches that do no
 spend the retry budget; layer, remote and Cloudflare work runs in the same
 invocations. Once every known target is settled, the task fails without the
 `prewarm` checkpoint, so the missing discovery spends one bounded retry with
-backoff. Each retry discovers again: further failures add only new known targets,
-and a successful discovery stores the complete plan, warms only targets without a
+backoff. Discovery runs again on every retry, that is after any failed
+invocation (a `prewarm-discovery:<attempts>@<time>` checkpoint records the
+reserved attempt of the last failed discovery), but not in budget-free
+continuation batches; a known target that keeps failing therefore cannot
+postpone it. Further failures add only new known targets, and a successful
+discovery stores the complete plan, warms only targets without a
 `prewarm-url:` checkpoint and completes the task. The
 `sympress_nginx_cache_side_effects_processed` payload reports this as
 `prewarm.discovery_complete`. Explicit CLI prewarm is synchronous.
