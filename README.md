@@ -233,7 +233,8 @@ stay available during idle periods while purges, content updates, bypass rules
 and storage limits still apply. It needs prewarm enabled and the per-minute
 cron runner below; with a timeout under about ten minutes, cron granularity may
 not keep up. Failures and overdue cycles appear in `wp nginx-cache diagnostics`
-(`keep_warm`) and Site Health. Choose `evict_inactive` for large sites with many
+(`keep_warm`) and Site Health; a first cycle that never completes is overdue one
+inactivity window after it started or became due. Choose `evict_inactive` for large sites with many
 rarely visited URLs or limited storage: no refresh runs and prewarmed pages are
 evicted like any other entry. Nginx has no `inactive=off`; neither mode makes
 retention indefinite, and other cached pages always follow `inactive_seconds`.

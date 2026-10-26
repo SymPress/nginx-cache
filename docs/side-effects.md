@@ -310,8 +310,13 @@ through the generated background update, so retention never extends validity.
 A cycle snapshots its target plan once, attempts every target once in batches of
 five, reports failed, skipped (outdated) or undiscoverable targets in `last_failure` without
 retrying them within the cycle, and logs a URL-free signal. A successful cycle
-clears the evidence. `overdue` and Site Health report a missing cycle once a full
-inactivity window has elapsed. Other entries, and all entries in
+clears the evidence. `overdue` and Site Health (critical) report a missing cycle
+once a full inactivity window has elapsed since the last completed cycle; before
+the first completion the window counts from the first cycle's start (also when
+it crashed before planning), and before any start from its due cron event. A
+recent start-up or an event that is not yet due stays unremarkable, a disabled
+keep-warm never alarms, and a worker heartbeat never substitutes for a completed
+cycle. Other entries, and all entries in
 `evict_inactive` mode, remain subject to the inactivity timeout; `max_size`
 eviction under storage pressure applies in both modes. Purges are unaffected and
 remove refreshed entries normally. A due event after opting out makes no request
