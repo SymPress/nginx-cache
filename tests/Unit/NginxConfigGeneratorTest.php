@@ -40,6 +40,36 @@ final class NginxConfigGeneratorTest extends TestCase
         self::assertStringNotContainsString('sympress_consent', $config);
     }
 
+    public function testCacheControlMapSkipsOnlyPrivateDirectives(): void
+    {
+        $generator = new NginxConfigGenerator(
+            new WordPressCacheSettings('/var/cache/nginx/wordpress'),
+            new BypassRuleProvider(),
+            new CacheKeyStrategy(),
+        );
+        $config = $generator->generate(context: 'http');
+
+        self::assertSame(1, preg_match('#map \$upstream_http_cache_control \$sympress_cache_skip_cache_control \{\n    default 0;\n    ~\*(\S+) 1;\n\}#', $config, $match));
+        $pattern = '~' . $match[1] . '~i';
+        $cases = [
+            'private'                                                => true,
+            'Private'                                                => true,
+            'public,no-store'                                        => true,
+            'public , private'                                       => true,
+            'no-cache="Set-Cookie"'                                  => true,
+            'no-cache, must-revalidate, max-age=0, no-store, private' => true,
+            'public, max-age=60'                                     => false,
+            'public, max-age=600, stale-while-revalidate=30'         => false,
+            'max-age=0'                                              => false,
+            'x-private'                                              => false,
+            'no-store-foo'                                           => false,
+        ];
+
+        foreach ($cases as $value => $skip) {
+            self::assertSame($skip, preg_match($pattern, $value) === 1, $value);
+        }
+    }
+
     public function testConsentDoesNotBypassAnyDefaultProfile(): void
     {
         foreach (CacheProfile::cases() as $profile) {
