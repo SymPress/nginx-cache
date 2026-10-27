@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## Unreleased
+
+### Fixed
+
+- Cache anonymous 404 responses for the minute the generated `fastcgi_cache_valid 404 1m` rule promises. WordPress sends `Cache-Control: no-cache, must-revalidate, max-age=0, no-store, private` with every 404, so Nginx never stored one and every miss, including bot scans, reached PHP. Anonymous GET/HEAD 404s now send `Cache-Control: public, max-age=60` instead; logged-in, admin, AJAX, cron and authorized requests keep WordPress' no-store headers. The generated Nginx configuration is unchanged (#47).
+
 ## 1.0.8 — 2026-10-26
 
 ### Fixed

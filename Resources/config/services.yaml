@@ -175,6 +175,10 @@ services:
             - { name: kernel.hook, hook: 'send_headers', method: sendHeaders }
             - { name: kernel.hook, hook: 'shutdown', method: remember, priority: 900000 }
 
+    SymPress\NginxCache\Hook\NotFoundCacheSubscriber:
+        tags:
+            - { name: kernel.hook, hook: 'nocache_headers', method: headers, type: filter, accepted_args: 1 }
+
     SymPress\NginxCache\Hook\RestGraphQlCacheTagSubscriber:
         tags:
             - { name: kernel.hook, hook: 'rest_api_init', method: registerRestFilters }
