@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## 1.0.10 — 2026-10-27
+
+### Changed
+
+- Re-release 1.0.9 under a signed tag. The `v1.0.9` tag was pushed unsigned and release tags are immutable, so 1.0.9 was never published; 1.0.10 contains the same code and the 404 caching fix below.
+
 ## 1.0.9 — 2026-10-27
 
 ### Fixed
