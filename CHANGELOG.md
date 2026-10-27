@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## Unreleased
+
+### Fixed
+
+- Cache responses that send a positive `X-Accel-Expires` for the TTL they request. The generated `fastcgi_no_cache` rule passed the header itself, so any nonzero value prevented storage. A new response map keeps `private`, `no-cache` and `no-store` responses out of the cache, because a positive `X-Accel-Expires` overrides Nginx' own `Cache-Control` checks; `X-Accel-Expires: 0`, `Set-Cookie` and the existing bypass rules still prevent caching. Regenerate the HTTP and FastCGI includes together, since the FastCGI include references the new map, and use Nginx 1.23 or newer (#52).
+
 ## 1.0.10 — 2026-10-27
 
 ### Changed
