@@ -10,7 +10,7 @@ where applicable.
 
 ### Changed
 
-- Re-release 1.0.9 under a signed tag. The `v1.0.9` tag was pushed unsigned and release tags are immutable, so 1.0.9 was never published; 1.0.10 contains the same code and the 404 caching fix below.
+- Re-release 1.0.9 under a signed tag. The `v1.0.9` tag was pushed unsigned and cannot be replaced because release tags are immutable; 1.0.10 is its signed successor with the same code, including the 404 caching fix below.
 
 ## 1.0.9 — 2026-10-27
 
