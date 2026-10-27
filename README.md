@@ -87,6 +87,13 @@ static-asset location and metrics logging directive. `--section=logging`
 exports only the metrics logging directive. These same options work through
 `wp console nginx-cache:config`.
 
+Regenerate the HTTP and FastCGI includes together after updating the plugin:
+the FastCGI include references maps defined in the HTTP include, and `nginx -t`
+rejects a mixed pair. Use Nginx 1.23 or newer. Older versions only expose the
+first of repeated upstream `Cache-Control` headers, so a `private` directive in
+a later header would not keep a response with a positive `X-Accel-Expires` out
+of the cache.
+
 For a project-owned DDEV Nginx configuration:
 
 ```bash
