@@ -24,6 +24,7 @@ final class NginxConfigGeneratorTest extends TestCase
         $config = $generator->generate();
 
         self::assertStringContainsString('map $http_authorization $sympress_cache_skip_authorization', $config);
+        self::assertStringContainsString('map $upstream_http_cache_control $sympress_cache_skip_cache_control', $config);
         self::assertStringContainsString('fastcgi_cache_key "$scheme|$request_method|$host|$sympress_cache_request_uri";', $config);
         self::assertStringContainsString('map $query_string $sympress_cache_tracking_query', $config);
         self::assertStringContainsString("map \$query_string \$sympress_cache_skip_query {\n    default 1;\n    \"\" 0;", $config);
@@ -31,7 +32,7 @@ final class NginxConfigGeneratorTest extends TestCase
         self::assertStringContainsString('    1 $sympress_cache_original_path;', $config);
         self::assertStringContainsString('fastcgi_param QUERY_STRING $sympress_cache_query_string;', $config);
         self::assertStringContainsString('fastcgi_param REQUEST_URI $sympress_cache_request_uri;', $config);
-        self::assertStringContainsString('fastcgi_no_cache $sympress_cache_skip $upstream_http_set_cookie $upstream_http_x_accel_expires;', $config);
+        self::assertStringContainsString('fastcgi_no_cache $sympress_cache_skip $upstream_http_set_cookie $sympress_cache_skip_cache_control;', $config);
         self::assertStringContainsString('fastcgi_cache_valid 200 301 600s;', $config);
         self::assertStringContainsString('add_header Cache-Control "public, max-age=31536000, immutable" always;', $config);
         self::assertStringNotContainsString('$http_x_forwarded_proto|$scheme', $config);
