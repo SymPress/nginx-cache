@@ -368,7 +368,11 @@ and unpublished products do not invalidate public cache. Product transient
 clears with no product ID are no-ops. Term cache events (`clean_term_cache`) for WooCommerce's
 internal `product_visibility`, `product_type` and `product_shipping_class`
 taxonomies, for example when a product sells out, are left to the product hooks
-instead of purging the whole cache; other non-public taxonomies still purge fully. Missing URLs never implicitly become a full
+instead of purging the whole cache; other non-public taxonomies still purge fully.
+`product_variation` is excluded from the post hooks by default for the same reason
+while it is not viewable: it would force a full purge, while the WooCommerce
+product hooks already purge the parent product. When a plugin makes variations
+viewable, their own pages are purged selectively again. Missing URLs never implicitly become a full
 purge. Theme, navigation, permalink and upgrader events retain their explicit
 full-purge policy. Changes to the site title, tagline, site icon, front-page and
 posts-page settings, posts per page, widget placement (`sidebars_widgets`) and

@@ -81,7 +81,7 @@ namespace {
         function get_post_type_object(string $postType): object
         {
             return (object) [
-                'publicly_queryable' => in_array($postType, ['post', 'page', 'product'], true),
+                'publicly_queryable' => in_array($postType, ['post', 'page', 'product', ...($GLOBALS['sympress_nginx_cache_test_viewable_types'] ?? [])], true),
                 'rest_base' => match ($postType) {
                     'page' => 'pages',
                     'product' => 'products',

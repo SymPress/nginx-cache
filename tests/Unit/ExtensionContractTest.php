@@ -178,6 +178,32 @@ final class ExtensionContractTest extends TestCase
         self::assertSame(1, $considered);
     }
 
+    public function testVariationPostHooksLeavePurgingToTheirProductHooks(): void
+    {
+        $GLOBALS['sympress_nginx_cache_test_posts'][77] = (object) ['ID' => 77, 'post_type' => 'product_variation', 'post_status' => 'publish', 'post_author' => 1];
+        $http = new MockHttpClient(static fn () => throw new \RuntimeException('Contract test must perform no HTTP.'));
+        $policy = new UrlPolicy();
+        $fs = new Filesystem();
+        $purger = new CachePurger($fs, new CachePathValidator($fs), new CacheFileResolver($this->settings, new CacheKeyStrategy()), new FullPurgeEndpointDispatcher($http, $this->settings, $policy, $this->clock), $this->clock);
+        $effects = new PurgeSideEffectProcessor($this->settings, new PurgeSideEffectQueueRepository($this->mutex, $this->clock), new Prewarmer($http, $this->settings, $policy, $this->clock), new CacheLayerCoordinator($this->settings), new RemotePurgeDispatcher($http, $this->settings, $policy, $this->clock), new CloudflarePurgeDispatcher($http, $this->settings, $this->tags, $policy), $this->clock);
+        $manager = new CacheManager($this->settings, $purger, new PurgeHistoryRepository($this->clock), new PurgeEventEmitter(), $this->index, $effects);
+        $queue = new PurgeQueueProcessor($this->settings, new PurgeQueueRepository(new PurgeRequestMerger(), $this->mutex, $this->clock), $manager, $this->clock);
+        $subscriber = new AutomaticPurgeSubscriber($this->settings, $manager, $queue, $this->collector, new PurgeRequestMerger());
+        $considered = [];
+        // Record purges that pass the subscriber's own guards, then veto them to avoid side effects.
+        add_filter('sympress_nginx_cache_should_purge', static function (bool $purge, array $args) use (&$considered): bool { $considered[] = $args[0]; return false; }, 10, 2);
+
+        $subscriber->purgeOnce('save_post', 77);
+        $subscriber->purgeOnce('save_post', 42);
+        self::assertSame([42], $considered);
+
+        // A plugin that publishes variations as their own pages gets direct, selective purges again.
+        $GLOBALS['sympress_nginx_cache_test_viewable_types'] = ['product_variation'];
+        $subscriber->purgeOnce('save_post', 77);
+        self::assertSame([42, 77], $considered);
+        self::assertFalse($this->collector->requiresFullPurge('save_post', [77]));
+    }
+
     public function testResultActionsExposeTheOriginalImmutableResult(): void
     {
         $success = PurgeResult::success('/tmp/cache', 1, 0.01);
