@@ -730,6 +730,10 @@ final readonly class WordPressCacheSettings
     public function excludedPostTypes(): array
     {
         $postTypes = ['nav_menu_item', 'revision', 'customize_changeset', 'oembed_cache'];
+        // Hidden variations are purged through their parent product's WooCommerce hooks; as a non-viewable type they would force a full purge.
+        if (!function_exists('is_post_type_viewable') || !is_post_type_viewable('product_variation')) {
+            $postTypes[] = 'product_variation';
+        }
 
         if (function_exists('apply_filters')) {
             $postTypes = (array) apply_filters('nginx_cache_excluded_post_types', $postTypes);
