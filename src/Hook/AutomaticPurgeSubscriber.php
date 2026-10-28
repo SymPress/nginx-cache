@@ -150,6 +150,12 @@ final class AutomaticPurgeSubscriber
     /** @param array<mixed> $arguments */
     private function shouldPurge(string $hook, array $arguments): bool
     {
+        // Pending purges resolve their site at shutdown, so an option written for another blog
+        // (e.g. wp_install_defaults() during wp_insert_site()) would purge the current site instead.
+        if (str_starts_with($hook, 'update_option_') && function_exists('ms_is_switched') && ms_is_switched()) {
+            return false;
+        }
+
         if (!$this->urls->publicMutation($hook, $arguments) || $this->isAutosaveOrRevision($this->urls->postId($hook, $arguments))) {
             return false;
         }

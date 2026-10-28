@@ -155,6 +155,29 @@ final class ExtensionContractTest extends TestCase
         self::assertSame(0, $queue->count());
     }
 
+    public function testOptionChangesInASwitchedBlogDoNotPurgeTheCurrentSite(): void
+    {
+        $http = new MockHttpClient(static fn () => throw new \RuntimeException('Contract test must perform no HTTP.'));
+        $policy = new UrlPolicy();
+        $fs = new Filesystem();
+        $purger = new CachePurger($fs, new CachePathValidator($fs), new CacheFileResolver($this->settings, new CacheKeyStrategy()), new FullPurgeEndpointDispatcher($http, $this->settings, $policy, $this->clock), $this->clock);
+        $effects = new PurgeSideEffectProcessor($this->settings, new PurgeSideEffectQueueRepository($this->mutex, $this->clock), new Prewarmer($http, $this->settings, $policy, $this->clock), new CacheLayerCoordinator($this->settings), new RemotePurgeDispatcher($http, $this->settings, $policy, $this->clock), new CloudflarePurgeDispatcher($http, $this->settings, $this->tags, $policy), $this->clock);
+        $manager = new CacheManager($this->settings, $purger, new PurgeHistoryRepository($this->clock), new PurgeEventEmitter(), $this->index, $effects);
+        $queue = new PurgeQueueProcessor($this->settings, new PurgeQueueRepository(new PurgeRequestMerger(), $this->mutex, $this->clock), $manager, $this->clock);
+        $subscriber = new AutomaticPurgeSubscriber($this->settings, $manager, $queue, $this->collector, new PurgeRequestMerger());
+        $considered = 0;
+        // Count purges that pass the subscriber's own guards, then veto them to avoid side effects.
+        add_filter('sympress_nginx_cache_should_purge', static function () use (&$considered): bool { ++$considered; return false; });
+
+        $GLOBALS['extension_switched_blog'] = true;
+        $subscriber->purgeOnce('update_option_sidebars_widgets', [], ['wp_inactive_widgets' => []], 'sidebars_widgets');
+        self::assertSame(0, $considered);
+
+        $GLOBALS['extension_switched_blog'] = false;
+        $subscriber->purgeOnce('update_option_sidebars_widgets', [], ['wp_inactive_widgets' => []], 'sidebars_widgets');
+        self::assertSame(1, $considered);
+    }
+
     public function testResultActionsExposeTheOriginalImmutableResult(): void
     {
         $success = PurgeResult::success('/tmp/cache', 1, 0.01);
