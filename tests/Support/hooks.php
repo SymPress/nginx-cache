@@ -35,7 +35,21 @@ function do_action(string $hook, mixed ...$args): void
     }
 }
 
-function ms_is_switched(): bool
+function get_current_blog_id(): int
 {
-    return (bool) ($GLOBALS['extension_switched_blog'] ?? false);
+    return (int) ($GLOBALS['extension_blog'] ?? 1);
+}
+
+function switch_to_blog(int $blog): bool
+{
+    $GLOBALS['extension_blog_stack'][] = get_current_blog_id();
+    $GLOBALS['extension_blog_switches'][] = $blog;
+    $GLOBALS['extension_blog'] = $blog;
+    return true;
+}
+
+function restore_current_blog(): bool
+{
+    $GLOBALS['extension_blog'] = array_pop($GLOBALS['extension_blog_stack']) ?? 1;
+    return true;
 }

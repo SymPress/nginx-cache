@@ -155,7 +155,7 @@ final class ExtensionContractTest extends TestCase
         self::assertSame(0, $queue->count());
     }
 
-    public function testOptionChangesInASwitchedBlogDoNotPurgeTheCurrentSite(): void
+    public function testPendingPurgesRunInTheBlogTheirHookFiredIn(): void
     {
         $http = new MockHttpClient(static fn () => throw new \RuntimeException('Contract test must perform no HTTP.'));
         $policy = new UrlPolicy();
@@ -165,17 +165,21 @@ final class ExtensionContractTest extends TestCase
         $manager = new CacheManager($this->settings, $purger, new PurgeHistoryRepository($this->clock), new PurgeEventEmitter(), $this->index, $effects);
         $queue = new PurgeQueueProcessor($this->settings, new PurgeQueueRepository(new PurgeRequestMerger(), $this->mutex, $this->clock), $manager, $this->clock);
         $subscriber = new AutomaticPurgeSubscriber($this->settings, $manager, $queue, $this->collector, new PurgeRequestMerger());
-        $considered = 0;
-        // Count purges that pass the subscriber's own guards, then veto them to avoid side effects.
-        add_filter('sympress_nginx_cache_should_purge', static function () use (&$considered): bool { ++$considered; return false; });
-
-        $GLOBALS['extension_switched_blog'] = true;
+        $subscriber->register();
+        switch_to_blog(5);
+        $subscriber->purgeOnce('update_option_blogname', 'Old', 'New', 'blogname');
+        restore_current_blog();
+        switch_to_blog(7);
+        do_action('wp_initialize_site', (object) ['id' => 7]);
         $subscriber->purgeOnce('update_option_sidebars_widgets', [], ['wp_inactive_widgets' => []], 'sidebars_widgets');
-        self::assertSame(0, $considered);
+        restore_current_blog();
+        $subscriber->purgeOnce('save_post', 42);
+        $GLOBALS['extension_blog_switches'] = [];
+        $subscriber->flushPending();
 
-        $GLOBALS['extension_switched_blog'] = false;
-        $subscriber->purgeOnce('update_option_sidebars_widgets', [], ['wp_inactive_widgets' => []], 'sidebars_widgets');
-        self::assertSame(1, $considered);
+        // Blog 5 is entered for its own purge, blog 1 needs no switch and the new blog 7 has no cache yet.
+        self::assertSame([5], $GLOBALS['extension_blog_switches']);
+        self::assertSame(1, get_current_blog_id());
     }
 
     public function testVariationPostHooksLeavePurgingToTheirProductHooks(): void
