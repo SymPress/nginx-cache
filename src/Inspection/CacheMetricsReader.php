@@ -117,9 +117,6 @@ final readonly class CacheMetricsReader
         try {
             $file = new \SplFileObject($path, 'rb');
             $stat = $file->fstat();
-            if ($stat === false) {
-                return null;
-            }
             $offset ??= max(0, $stat['size'] - $length);
             if ($length <= 0 || $offset >= $stat['size']) {
                 return ['offset' => $offset, 'data' => ''];
