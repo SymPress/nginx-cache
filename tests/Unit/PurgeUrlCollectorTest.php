@@ -161,7 +161,7 @@ namespace {
     if (!function_exists('is_taxonomy_viewable')) {
         function is_taxonomy_viewable(string $taxonomy): bool
         {
-            return $taxonomy !== 'wp_pattern_category';
+            return !in_array($taxonomy, ['wp_pattern_category', 'product_visibility'], true);
         }
     }
 
@@ -331,6 +331,16 @@ namespace SymPress\NginxCache\Tests\Unit {
             self::assertSame([], $collector->affectedUrls('clean_term_cache', [[8]]));
             self::assertFalse($collector->requiresFullPurge('edited_term', [7]));
             self::assertSame(['https://example.test/term/7/'], $collector->affectedUrls('edited_term', [7]));
+        }
+
+        public function testWooCommerceProductSaveTermCountsDoNotRequireAFullPurge(): void
+        {
+            $GLOBALS['sympress_nginx_cache_test_terms'][9] = (object) ['term_id' => 9, 'taxonomy' => 'product_visibility', 'slug' => 'outofstock'];
+            $collector = $this->collector();
+
+            self::assertFalse($collector->requiresFullPurge('clean_term_cache', [[9], 'product_visibility']));
+            self::assertFalse($collector->requiresFullPurge('clean_term_cache', [[9]]));
+            self::assertTrue($collector->requiresFullPurge('edited_term', [9, 9, 'product_visibility']));
         }
 
         public function testItUsesTheHookTaxonomyAfterAnInternalTermIsDeleted(): void
