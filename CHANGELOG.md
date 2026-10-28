@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## 1.1.0 — 2026-10-28
+
+### Fixed
+
+- Purge the whole cache when the site title, tagline, site icon, front page or posts page setting, posts per page, widget placement or the settings of a registered widget type change. These values render on every page, but cached pages kept the old output until they expired. The hooks only fire when a stored value actually changes; the `sympress_nginx_cache_full_purge_hooks` filter still receives and can change the whole list (#55).
+- Keep WooCommerce sell-outs and variation saves selective. Selling out a product assigns the internal `product_visibility` term, and every variation save ran through the non-viewable `product_variation` post type; both forced a full purge, although the WooCommerce product hooks already purge the product, its parent, its archives and the shop. Variations that a plugin publishes as their own pages are still purged directly (#57).
+- Multisite: run automatic purges in the site where the change happened. Changes made through `switch_to_blog()`, such as network admin edits of a subsite, collected the subsite's URLs but ran in the current site, which rejected them as foreign: the subsite stayed stale and the request remained in the current site's retry queue. Sites created in the same request are skipped because they have no cache yet (#58).
+- Pass static analysis with PHPStan 2.3.3, which knows that `SplFileObject::fstat()` always returns an array. Development dependency only; no runtime change (#54, closes #12).
+
 ## 1.0.11 — 2026-10-28
 
 ### Fixed
