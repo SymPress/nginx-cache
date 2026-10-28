@@ -365,7 +365,10 @@ Automatic registration handles future actions with their arguments; it never
 replays `did_action()` without the original event. IDs are interpreted only by
 the specific post, comment, user, term or WooCommerce hook. Draft-only transitions
 and unpublished products do not invalidate public cache. Product transient
-clears with no product ID are no-ops. Missing URLs never implicitly become a full
+clears with no product ID are no-ops. Term cache events (`clean_term_cache`) for WooCommerce's
+internal `product_visibility`, `product_type` and `product_shipping_class`
+taxonomies, for example when a product sells out, are left to the product hooks
+instead of purging the whole cache; other non-public taxonomies still purge fully. Missing URLs never implicitly become a full
 purge. Theme, navigation, permalink and upgrader events retain their explicit
 full-purge policy. Changes to the site title, tagline, site icon, front-page and
 posts-page settings, posts per page, widget placement (`sidebars_widgets`) and

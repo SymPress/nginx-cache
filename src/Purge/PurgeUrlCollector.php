@@ -11,6 +11,9 @@ use SymPress\NginxCache\Surrogate\TagIndexRepository;
 
 final readonly class PurgeUrlCollector
 {
+    // WooCommerce assigns these only while saving a product, whose own hooks purge the product, its archives and the shop.
+    private const array PRODUCT_SAVE_TAXONOMIES = ['product_visibility', 'product_type', 'product_shipping_class'];
+
     public function __construct(
         private CacheTagResolver $tags,
         private TagIndexRepository $tagIndex,
@@ -158,7 +161,7 @@ final readonly class PurgeUrlCollector
             $urls[] = $url;
         }
         foreach ($this->termIds($hook, $arguments) as $id) {
-            if ($this->hasNonPublicTaxonomy($id, $hook, $arguments)) {
+            if ($this->nonPublicTaxonomy($id, $hook, $arguments) !== null) {
                 continue;
             }
             $url = function_exists('get_term_link') ? get_term_link($id) : false;
@@ -183,7 +186,8 @@ final readonly class PurgeUrlCollector
             return true;
         }
         foreach ($this->termIds($hook, $arguments) as $termId) {
-            if ($this->hasNonPublicTaxonomy($termId, $hook, $arguments)) {
+            $taxonomy = $this->nonPublicTaxonomy($termId, $hook, $arguments);
+            if ($taxonomy !== null && !($hook === 'clean_term_cache' && in_array($taxonomy, self::PRODUCT_SAVE_TAXONOMIES, true))) {
                 return true;
             }
         }
@@ -421,7 +425,7 @@ final readonly class PurgeUrlCollector
     }
 
     /** @param array<mixed> $arguments */
-    private function hasNonPublicTaxonomy(int $termId, string $hook, array $arguments): bool
+    private function nonPublicTaxonomy(int $termId, string $hook, array $arguments): ?string
     {
         $taxonomy = $arguments[$hook === 'clean_term_cache' ? 1 : 2] ?? null;
         if (!is_string($taxonomy)) {
@@ -429,7 +433,7 @@ final readonly class PurgeUrlCollector
             $taxonomy = is_object($term) && isset($term->taxonomy) ? $term->taxonomy : null;
         }
 
-        return is_string($taxonomy) && function_exists('is_taxonomy_viewable') && !is_taxonomy_viewable($taxonomy);
+        return is_string($taxonomy) && function_exists('is_taxonomy_viewable') && !is_taxonomy_viewable($taxonomy) ? $taxonomy : null;
     }
 
     /** @return list<string> */
