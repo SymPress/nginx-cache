@@ -188,7 +188,23 @@ final readonly class PurgeUrlCollector
             }
         }
 
-        $fullHooks = [
+        $fullHooks = $this->fullPurgeHooks();
+
+        if (function_exists('apply_filters')) {
+            $fullHooks = (array) apply_filters('sympress_nginx_cache_full_purge_hooks', $fullHooks, $hook, $arguments);
+        }
+
+        return in_array($hook, $fullHooks, true);
+    }
+
+    /**
+     * Site-wide changes whose output appears on every page.
+     *
+     * @return list<string>
+     */
+    public function fullPurgeHooks(): array
+    {
+        $hooks = [
             'switch_theme',
             'customize_save_after',
             'wp_update_nav_menu',
@@ -196,13 +212,27 @@ final readonly class PurgeUrlCollector
             'wp_delete_nav_menu',
             'update_option_permalink_structure',
             'upgrader_process_complete',
+            'update_option_blogname',
+            'update_option_blogdescription',
+            'update_option_site_icon',
+            'update_option_show_on_front',
+            'update_option_page_on_front',
+            'update_option_page_for_posts',
+            'update_option_posts_per_page',
+            'update_option_sidebars_widgets',
         ];
 
-        if (function_exists('apply_filters')) {
-            $fullHooks = (array) apply_filters('sympress_nginx_cache_full_purge_hooks', $fullHooks, $hook, $arguments);
+        // Widget settings live in one option per widget type, e.g. widget_block or widget_text.
+        $factory = $GLOBALS['wp_widget_factory'] ?? null;
+        $widgets = is_object($factory) && isset($factory->widgets) && is_array($factory->widgets) ? $factory->widgets : [];
+        foreach ($widgets as $widget) {
+            if (!is_object($widget) || !isset($widget->option_name) || !is_string($widget->option_name)) {
+                continue;
+            }
+            $hooks[] = 'update_option_' . $widget->option_name;
         }
 
-        return in_array($hook, $fullHooks, true);
+        return array_values(array_unique($hooks));
     }
 
     /** @param array<mixed> $arguments */

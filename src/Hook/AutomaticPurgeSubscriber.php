@@ -122,6 +122,7 @@ final class AutomaticPurgeSubscriber
             'deleted_user',
             'update_option_permalink_structure',
             'upgrader_process_complete',
+            ...$this->urls->fullPurgeHooks(),
         ];
 
         if ($this->rules?->customized()) {
