@@ -34,3 +34,8 @@ function do_action(string $hook, mixed ...$args): void
         foreach ($group as [$callback, $accepted]) { $callback(...array_slice($args, 0, $accepted)); }
     }
 }
+
+function ms_is_switched(): bool
+{
+    return (bool) ($GLOBALS['extension_switched_blog'] ?? false);
+}
