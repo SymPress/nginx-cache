@@ -378,9 +378,11 @@ full-purge policy. Changes to the site title, tagline, site icon, front-page and
 posts-page settings, posts per page, widget placement (`sidebars_widgets`) and
 the per-type widget options of registered widgets (`widget_<id_base>`) also
 trigger a full purge, because their output appears on every page; `update_option_*`
-fires only when the stored value changes. Option changes made while another blog
-is switched in (for example `wp_install_defaults()` during `wp_insert_site()`)
-are ignored, because a pending purge resolves its site at shutdown. A failed immediate purge falls back to the durable queue.
+fires only when the stored value changes. Pending automatic purges are
+grouped by the blog that was current when their hook fired and run in that
+blog at shutdown, so changes made through `switch_to_blog()` purge the site
+they belong to. Sites created in the same request (`wp_initialize_site`) are
+skipped because they have no cache yet. A failed immediate purge falls back to the durable queue.
 
 ## Secrets and uninstall
 

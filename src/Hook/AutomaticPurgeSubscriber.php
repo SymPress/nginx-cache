@@ -14,7 +14,10 @@ use SymPress\NginxCache\Value\PurgeRequest;
 
 final class AutomaticPurgeSubscriber
 {
-    private ?PurgeRequest $pending = null;
+    /** @var array<int, PurgeRequest> Pending purges by the blog that was current when their hook fired. */
+    private array $pending = [];
+    /** @var array<int, true> Sites created in this request; they have no cache to purge yet. */
+    private array $initializing = [];
     private bool $flushed = false;
 
     public function __construct(
@@ -43,6 +46,12 @@ final class AutomaticPurgeSubscriber
                 99,
             );
         }
+        add_action('wp_initialize_site', function (mixed $site): void {
+            if (!is_object($site) || !isset($site->id) || !is_numeric($site->id)) {
+                return;
+            }
+            $this->initializing[(int) $site->id] = true;
+        }, 0);
     }
 
     public function purgeOnce(string $hook = 'unknown', mixed ...$arguments): void
@@ -55,31 +64,56 @@ final class AutomaticPurgeSubscriber
         if ($request === null) {
             return;
         }
-        $merged = $this->merger->merge(array_values(array_filter([$this->pending, $request])));
-        $this->pending = $merged[0] ?? null;
+        // Sites resolve from the current blog when the purge runs, so keep the blog the hook fired in.
+        $blog = $this->blogId();
+        $merged = $this->merger->merge(array_values(array_filter([$this->pending[$blog] ?? null, $request])));
+        if (!isset($merged[0])) {
+            return;
+        }
+        $this->pending[$blog] = $merged[0];
     }
 
     public function flushPending(): void
     {
-        if ($this->flushed || !$this->pending instanceof PurgeRequest) {
+        if ($this->flushed || $this->pending === []) {
             return;
         }
 
-        if ($this->settings->queueEnabled()) {
-            $this->queue->enqueue($this->pending);
-        } else {
+        $current = $this->blogId();
+        foreach (array_diff_key($this->pending, $this->initializing) as $blog => $request) {
+            $switched = $blog !== $current && function_exists('switch_to_blog') && switch_to_blog($blog);
             try {
-                $result = $this->cache->purgeConfiguredPath($this->pending);
-                if (!$result->successful) {
-                    $this->queue->enqueue($this->pending);
+                $this->dispatch($request);
+            } finally {
+                if ($switched && function_exists('restore_current_blog')) {
+                    restore_current_blog();
                 }
-            } catch (\Throwable) {
-                $this->queue->enqueue($this->pending);
             }
         }
 
         $this->flushed = true;
-        $this->pending = null;
+        $this->pending = [];
+    }
+
+    private function dispatch(PurgeRequest $request): void
+    {
+        if ($this->settings->queueEnabled()) {
+            $this->queue->enqueue($request);
+            return;
+        }
+        try {
+            $result = $this->cache->purgeConfiguredPath($request);
+            if (!$result->successful) {
+                $this->queue->enqueue($request);
+            }
+        } catch (\Throwable) {
+            $this->queue->enqueue($request);
+        }
+    }
+
+    private function blogId(): int
+    {
+        return function_exists('get_current_blog_id') ? get_current_blog_id() : 1;
     }
 
     /** @return list<string> */
@@ -150,12 +184,6 @@ final class AutomaticPurgeSubscriber
     /** @param array<mixed> $arguments */
     private function shouldPurge(string $hook, array $arguments): bool
     {
-        // Pending purges resolve their site at shutdown, so an option written for another blog
-        // (e.g. wp_install_defaults() during wp_insert_site()) would purge the current site instead.
-        if (str_starts_with($hook, 'update_option_') && function_exists('ms_is_switched') && ms_is_switched()) {
-            return false;
-        }
-
         if (!$this->urls->publicMutation($hook, $arguments) || $this->isAutosaveOrRevision($this->urls->postId($hook, $arguments))) {
             return false;
         }
