@@ -5,7 +5,7 @@ request to local deletion and follow-up work.
 
 | Trigger | Route | Immediate effect | Deferred effect |
 | --- | --- | --- | --- |
-| Content/user/term hooks | `AutomaticPurgeSubscriber` → merger → queue or `CacheManager` | None when queued; otherwise validated local/endpoint purge | Successful non-dry runs may queue prewarm, layer sync, remote purge, or Cloudflare |
+| Content/user/term/option hooks | `AutomaticPurgeSubscriber` → merger → queue or `CacheManager` | None when queued; otherwise validated local/endpoint purge | Successful non-dry runs may queue prewarm, layer sync, remote purge, or Cloudflare |
 | Admin purge action | `SettingsPage` → `CacheManager` | Capability/nonce-gated local or endpoint purge | Same side-effect queue |
 | REST `/purge` | `CacheRestController` → queue or `CacheManager` | URL/site/network meta capability; REST nonce for cookie authentication; URLs must be same-origin | Same side-effect queue |
 | CLI `nginx-cache:purge` | `PurgeCommand` → queue or `CacheManager` | Explicit local, endpoint, or dry-run purge | Same side-effect queue |
@@ -367,7 +367,11 @@ the specific post, comment, user, term or WooCommerce hook. Draft-only transitio
 and unpublished products do not invalidate public cache. Product transient
 clears with no product ID are no-ops. Missing URLs never implicitly become a full
 purge. Theme, navigation, permalink and upgrader events retain their explicit
-full-purge policy. A failed immediate purge falls back to the durable queue.
+full-purge policy. Changes to the site title, tagline, site icon, front-page and
+posts-page settings, posts per page, widget placement (`sidebars_widgets`) and
+the per-type widget options of registered widgets (`widget_<id_base>`) also
+trigger a full purge, because their output appears on every page; `update_option_*`
+fires only when the stored value changes. A failed immediate purge falls back to the durable queue.
 
 ## Secrets and uninstall
 

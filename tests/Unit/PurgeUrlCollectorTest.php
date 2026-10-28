@@ -239,6 +239,22 @@ namespace SymPress\NginxCache\Tests\Unit {
             $GLOBALS['sympress_nginx_cache_test_terms'] = [];
         }
 
+        protected function tearDown(): void
+        {
+            unset($GLOBALS['wp_widget_factory']);
+        }
+
+        public function testSiteWideOptionAndWidgetChangesRequireAFullPurge(): void
+        {
+            $GLOBALS['wp_widget_factory'] = (object) ['widgets' => [(object) ['option_name' => 'widget_block']]];
+            $collector = $this->collector();
+
+            foreach (['update_option_page_on_front', 'update_option_blogname', 'update_option_sidebars_widgets', 'update_option_widget_block'] as $hook) {
+                self::assertTrue($collector->requiresFullPurge($hook, ['old', 'new', substr($hook, 14)]), $hook);
+            }
+            self::assertFalse($collector->requiresFullPurge('update_option_widget_text', []));
+        }
+
         public function testItCollectsPostsPageDateFeedPagedAndAmpUrls(): void
         {
             $urls = $this->collector()->collect('transition_post_status', [
