@@ -97,11 +97,21 @@ final readonly class FullPurgeEndpointDispatcher
             }
             $headers['X-SymPress-Signature'] = 'sha256=' . hash_hmac('sha256', $signed, $secret);
 
-            $response = $this->http->request($this->settings->fullPurgeHttpMethod(), $endpoint, [
+            $options = [
                 'headers'       => $headers,
                 'max_redirects' => 0,
                 'timeout'       => 15,
-            ]);
+            ];
+            if ($this->urls->normalizeSameOriginHttpUrl($endpoint) === '') {
+                // Pin the validated address so a DNS rebind cannot send the signed request to an internal host.
+                $address = $this->urls->resolvedRemoteAddress($endpoint);
+                if ($address === null) {
+                    throw new \RuntimeException('Remote endpoint did not pass network safety validation.');
+                }
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Host of an already normalized URL; must work without WordPress.
+                $options['resolve'] = [strtolower((string) parse_url($endpoint, PHP_URL_HOST)) => $address];
+            }
+            $response = $this->http->request($this->settings->fullPurgeHttpMethod(), $endpoint, $options);
             $statusCode = $response->getStatusCode();
         } catch (\Throwable) {
             return PurgeResult::failure(
