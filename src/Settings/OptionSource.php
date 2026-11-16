@@ -50,7 +50,7 @@ final readonly class OptionSource
         return $this->network->managed($option);
     }
 
-    private function networkOnly(string $option): bool
+    public function networkOnly(string $option): bool
     {
         // Site administrators must not change network-mandatory settings, even before the network adopts them.
         // Requests without a user (WP-CLI, cron) stay trusted.

@@ -8,6 +8,7 @@ use SymPress\NginxCache\Settings\CompatibilitySettings;
 use SymPress\NginxCache\Settings\ConfigurationCatalog;
 use SymPress\NginxCache\Settings\NetworkConfiguration;
 use SymPress\NginxCache\Settings\NetworkSettings;
+use SymPress\NginxCache\Settings\OptionSource;
 use SymPress\NginxCache\Settings\WordPressCacheSettings;
 
 final readonly class NginxHelperImporter
@@ -101,7 +102,7 @@ final readonly class NginxHelperImporter
         }
         $report = [];
         foreach ($values as $option => $value) {
-            $managed = !$network && $this->network->managed($option);
+            $managed = !$network && ($this->network->managed($option) || (new OptionSource($this->network))->networkOnly($option));
             if (!$dryRun && !$managed) {
                 if ($network) {
                     $this->network->save($option, $value);
