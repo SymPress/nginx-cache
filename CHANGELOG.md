@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## 1.1.2 — 2026-11-16
+
+### Security
+
+- Multisite: site administrators can no longer change network-mandatory settings (cache path, purge backend, Redis connection, remote endpoints and secrets) before the network adopts them. The fields are locked and writes require `manage_network_options`; existing site values keep working until adoption. WP-CLI and cron runs are unaffected.
+- Collapse the purge queue into one full purge once it would hold more than 10,000 URLs. URL purges from delegated roles could otherwise grow the stored queue without limit.
+- Keep cache paths with whitespace, quotes, `;`, `#`, `{` or `}` out of the generated Nginx config. Saving such a path keeps the previous value, and the generator omits the `fastcgi_cache_path` directive for unsafe paths from constants or filters.
+- Check every top-level entry before a full purge of a cache root without the sentinel file and remove nothing if one does not match the Nginx cache layout.
+- Pin the full-purge endpoint request to the address that passed the remote network policy, so a DNS rebind cannot redirect the signed request.
+
+### Fixed
+
+- Show an absolute same-origin URL in the README's `wp nginx-cache purge` example; the CLI rejects relative paths such as `/` (#59).
+- Pin the shared CI workflows to `sympress/workflows` v1.3.2.
+
 ## 1.1.1 — 2026-11-06
 
 - Use the Symfony 8.1.11 security patches released on November 4.
