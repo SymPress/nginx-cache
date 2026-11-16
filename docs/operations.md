@@ -59,8 +59,10 @@ closed. Single-site endpoints retain their `timestamp.full-purge` protocol.
 
 Capabilities are mapped at runtime; no roles are permanently modified.
 Delegated editors get public object/current-page/bulk URL actions only. Bulk
-actions over 100 objects enqueue their complete target set. Nonces are required
-for browser mutations; application-password REST authentication is supported.
+actions over 100 objects enqueue their complete target set. A queue that would
+hold more than 10,000 URLs collapses into one full purge of the same scope.
+Nonces are required for browser mutations; application-password REST
+authentication is supported.
 
 Constants override adopted network policy, which overrides site options when
 the policy is `network`; otherwise site values override adopted defaults.
