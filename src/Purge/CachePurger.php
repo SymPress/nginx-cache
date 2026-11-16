@@ -139,6 +139,10 @@ final readonly class CachePurger
 
         $entries = $this->purgeableEntries($path);
 
+        if ($entries === null) {
+            return PurgeResult::failure($path, 'Cache directory contains entries outside the Nginx cache layout; nothing was removed.', $this->clock->elapsedSince($startedAt), $request->mode, $request->reason, $request->source, $request->dryRun, createdAt: $createdAt);
+        }
+
         try {
             if (!$request->dryRun) {
                 $this->filesystem->remove($entries);
@@ -230,10 +234,12 @@ final readonly class CachePurger
         );
     }
 
-    /** @return list<string> */
-    private function purgeableEntries(string $path): array
+    /** @return list<string>|null Null when an unmarked root holds an entry that is not cache-shaped. */
+    private function purgeableEntries(string $path): ?array
     {
         $entries = [];
+        // Without the sentinel, the root was trusted from a sample of its tree; verify every entry before deleting any.
+        $marked = is_file($path . '/' . CachePathValidator::SENTINEL_FILE);
         $iterator = new \FilesystemIterator(
             $path,
             \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::CURRENT_AS_PATHNAME,
@@ -245,6 +251,9 @@ final readonly class CachePurger
                 || in_array(basename($entry), [self::LOCK_FILE, CachePathValidator::SENTINEL_FILE], true)
             ) {
                 continue;
+            }
+            if (!$marked && (is_link($entry) || preg_match(is_dir($entry) ? '/^[a-f0-9]{1,3}$/iD' : '/^[a-f0-9]{32}$/iD', basename($entry)) !== 1)) {
+                return null;
             }
 
             $entries[] = $entry;

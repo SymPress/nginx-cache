@@ -39,7 +39,7 @@ final class CacheManagerTest extends TestCase
     {
         $filesystem = new Filesystem();
         $path = sys_get_temp_dir() . '/sympress-nginx-cache-manager-' . bin2hex(random_bytes(8));
-        $cachedFile = $path . '/cache/' . str_repeat('a', 32);
+        $cachedFile = $path . '/c/' . str_repeat('a', 32);
         $filesystem->mkdir(dirname($cachedFile));
         file_put_contents($cachedFile, 'cached');
         $httpRequests = 0;

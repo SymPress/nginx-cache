@@ -42,6 +42,29 @@ final class CachePurgerTest extends TestCase
         }
     }
 
+    public function testFullPurgeRemovesNothingWhenAnyEntryIsNotCacheShaped(): void
+    {
+        $filesystem = new Filesystem();
+        $path = sys_get_temp_dir() . '/sympress-nginx-cache-mixed-' . bin2hex(random_bytes(8));
+        // The trust check samples the tree and accepts directories of any name next to cache files.
+        $filesystem->mkdir([$path . '/a', $path . '/backup/2026']);
+        file_put_contents($path . '/a/' . str_repeat('a', 32), 'cached');
+
+        try {
+            $result = $this->purger($filesystem, $path)->purge($path);
+
+            self::assertFalse($result->successful);
+            self::assertDirectoryExists($path . '/backup/2026');
+            self::assertFileExists($path . '/a/' . str_repeat('a', 32));
+
+            touch($path . '/' . CachePathValidator::SENTINEL_FILE);
+            self::assertTrue($this->purger($filesystem, $path)->purge($path)->successful);
+            self::assertDirectoryDoesNotExist($path . '/backup');
+        } finally {
+            $filesystem->remove($path);
+        }
+    }
+
     public function testItCanDryRunWithoutRemovingEntries(): void
     {
         $filesystem = new Filesystem();
