@@ -66,6 +66,8 @@ Constants override adopted network policy, which overrides site options when
 the policy is `network`; otherwise site values override adopted defaults.
 Credentials, cache paths, backends, key templates, Redis settings and delegated
 roles are network-managed after adoption. Existing site values are retained.
+Before adoption, site administrators without `manage_network_options` cannot
+change these settings either; WP-CLI and cron runs without a user still can.
 Locked fields are disabled and tampered writes are ignored. Network settings
 are serialized under a database mutex; secrets are encrypted and never rendered.
 

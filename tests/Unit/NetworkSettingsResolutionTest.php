@@ -18,6 +18,12 @@ namespace {
     if (!function_exists('update_site_option')) {
         function update_site_option(string $name, mixed $value): bool { $GLOBALS['sympress_test_network_options'][$name] = $value; return true; }
     }
+    if (!function_exists('get_current_user_id')) {
+        function get_current_user_id(): int { return (int) ($GLOBALS['sympress_test_current_user'] ?? 0); }
+    }
+    if (!function_exists('current_user_can')) {
+        function current_user_can(string $capability): bool { return in_array($capability, $GLOBALS['sympress_test_current_caps'] ?? [], true); }
+    }
     if (!function_exists('get_userdata')) {
         function get_userdata(int $id): object|false { return $GLOBALS['sympress_test_users'][$id] ?? false; }
     }
@@ -34,7 +40,7 @@ namespace SymPress\NginxCache\Tests\Unit {
     {
         protected function tearDown(): void
         {
-            unset($GLOBALS['sympress_test_multisite'], $GLOBALS['sympress_test_network_options'], $GLOBALS['sympress_test_users'], $GLOBALS['sympress_nginx_cache_test_options']);
+            unset($GLOBALS['sympress_test_multisite'], $GLOBALS['sympress_test_network_options'], $GLOBALS['sympress_test_users'], $GLOBALS['sympress_nginx_cache_test_options'], $GLOBALS['sympress_test_current_user'], $GLOBALS['sympress_test_current_caps']);
         }
 
         public function testLockedValuesDefaultsAndExistingSitesResolveWithoutOverwritingSiteData(): void
@@ -56,6 +62,30 @@ namespace SymPress\NginxCache\Tests\Unit {
             self::assertSame('public', $source->value(WordPressCacheSettings::OPTION_PROFILE, 'safe'));
             $GLOBALS['sympress_test_multisite'] = false;
             self::assertSame('/site/cache', $source->value($option, '/code/cache'));
+        }
+
+        public function testSiteAdministratorsCannotWriteMandatorySettingsBeforeNetworkAdoption(): void
+        {
+            $GLOBALS['sympress_test_multisite'] = true;
+            $GLOBALS['sympress_test_current_user'] = 5;
+            $GLOBALS['sympress_test_current_caps'] = ['manage_options'];
+            $source = new OptionSource(new NetworkSettings());
+            $GLOBALS['sympress_nginx_cache_test_options'][WordPressCacheSettings::OPTION_PATH] = '/site/cache';
+            foreach ([WordPressCacheSettings::OPTION_PATH, 'sympress_nginx_cache_redis_host'] as $option) {
+                self::assertTrue($source->locked($option));
+                self::assertSame('old', $source->protectUpdate('tampered', $option, 'old'));
+            }
+            self::assertSame('/site/cache', $source->value(WordPressCacheSettings::OPTION_PATH, '/code/cache'));
+            self::assertFalse($source->locked(WordPressCacheSettings::OPTION_PROFILE));
+            self::assertSame('commerce', $source->protectUpdate('commerce', WordPressCacheSettings::OPTION_PROFILE, 'safe'));
+
+            $GLOBALS['sympress_test_current_caps'][] = 'manage_network_options';
+            self::assertFalse($source->locked(WordPressCacheSettings::OPTION_PATH));
+            self::assertSame('/new/cache', $source->protectUpdate('/new/cache', WordPressCacheSettings::OPTION_PATH, '/site/cache'));
+
+            $GLOBALS['sympress_test_current_user'] = 0;
+            $GLOBALS['sympress_test_current_caps'] = [];
+            self::assertSame('/cli/cache', $source->protectUpdate('/cli/cache', WordPressCacheSettings::OPTION_PATH, '/site/cache'));
         }
 
         public function testRolesOnlyGrantUrlPurgeAndNetworkCapabilityUsesNetworkAdministration(): void

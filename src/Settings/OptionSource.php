@@ -35,18 +35,25 @@ final readonly class OptionSource
         if (isset($_POST['option_page']) && $_POST['option_page'] === 'sympress_nginx_cache' && array_key_exists($option, ConfigurationCatalog::defaults()) && !array_key_exists($option, $_POST)) {
             return $oldValue;
         }
-        return $this->network->managed($option) ? $oldValue : $value;
+        return $this->network->managed($option) || $this->networkOnly($option) ? $oldValue : $value;
     }
 
     public function locked(string $option): bool
     {
         $names = ['nginx_cache_path' => 'PATH', 'nginx_auto_purge' => 'AUTO_PURGE', 'sympress_nginx_cache_queue_enabled' => 'QUEUE', 'sympress_nginx_cache_prewarm_enabled' => 'PREWARM'];
         $suffix = $names[$option] ?? strtoupper(str_replace('sympress_nginx_cache_', '', $option));
-        return $this->managed($option) || LegacyConstants::value('SYMPRESS_NGINX_CACHE_' . $suffix) !== null;
+        return $this->managed($option) || $this->networkOnly($option) || LegacyConstants::value('SYMPRESS_NGINX_CACHE_' . $suffix) !== null;
     }
 
     public function managed(string $option): bool
     {
         return $this->network->managed($option);
+    }
+
+    private function networkOnly(string $option): bool
+    {
+        // Site administrators must not change network-mandatory settings, even before the network adopts them.
+        // Requests without a user (WP-CLI, cron) stay trusted.
+        return $this->network->active() && $this->network->mandatory($option) && get_current_user_id() !== 0 && !current_user_can('manage_network_options');
     }
 }
