@@ -11,7 +11,7 @@ where applicable.
 ### Security
 
 - Multisite: site administrators can no longer change network-mandatory settings (cache path, purge backend, Redis connection, remote endpoints and secrets) before the network adopts them. The fields are locked and writes require `manage_network_options`; existing site values keep working until adoption. WP-CLI and cron runs are unaffected.
-- Collapse the purge queue into one full purge once it would hold more than 10,000 URLs. URL purges from delegated roles could otherwise grow the stored queue without limit.
+- Bound the purge queue at 10,000 URLs. URL purges from delegated roles could grow the stored queue without limit; beyond the cap they are now rejected (REST: HTTP 429) and nothing is queued. Requests from callers allowed to purge the whole site, including automatic purges and WP-CLI, collapse such a queue into one full purge.
 - Keep cache paths with whitespace, quotes, `;`, `#`, `{` or `}` out of the generated Nginx config. Saving such a path keeps the previous value, and the generator omits the `fastcgi_cache_path` directive for unsafe paths from constants or filters.
 - Check every top-level entry before a full purge of a cache root without the sentinel file and remove nothing if one does not match the Nginx cache layout.
 - Pin the full-purge endpoint request to the address that passed the remote network policy, so a DNS rebind cannot redirect the signed request.
