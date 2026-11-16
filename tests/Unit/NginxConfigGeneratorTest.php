@@ -40,6 +40,19 @@ final class NginxConfigGeneratorTest extends TestCase
         self::assertStringNotContainsString('sympress_consent', $config);
     }
 
+    public function testUnsafeCachePathCannotInjectDirectives(): void
+    {
+        $generator = new NginxConfigGenerator(
+            new WordPressCacheSettings('/var/cache/x keys_zone=A:1m; include /srv/evil.conf; #'),
+            new BypassRuleProvider(),
+            new CacheKeyStrategy(),
+        );
+        $config = $generator->generate(context: 'http');
+
+        self::assertStringNotContainsString('/srv/evil.conf', $config);
+        self::assertStringContainsString('# fastcgi_cache_path omitted', $config);
+    }
+
     public function testCacheControlMapSkipsOnlyPrivateDirectives(): void
     {
         $generator = new NginxConfigGenerator(

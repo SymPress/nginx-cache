@@ -36,6 +36,16 @@ final class SettingsSanitizationTest extends TestCase
         }
     }
 
+    public function testCachePathsThatWouldBreakTheNginxDirectiveAreRejected(): void
+    {
+        $settings = new WordPressCacheSettings('/fixture');
+
+        foreach (['/var/cache/x; include /srv/evil.conf', '/var/cache/x#', '/var/cache/{x}', '/var/cache/"x"', 'relative/cache', '/var/cache/a b'] as $path) {
+            self::assertSame('', $settings->sanitizePath($path), $path);
+        }
+        self::assertSame('/var/cache/nginx/site-1', $settings->sanitizePath('/var/cache/nginx/site-1'));
+    }
+
     public function testAdditionalPurgeUrlsRetainSeparateLines(): void
     {
         $settings = new CompatibilitySettings(new WordPressCacheSettings('/fixture'));
