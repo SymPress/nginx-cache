@@ -29,6 +29,7 @@ final readonly class PurgeQueueRepository
         if (!function_exists('update_option')) {
             return;
         }
+        $this->assertDelegatedCapacity($request);
 
         if (($GLOBALS['wpdb'] ?? null) instanceof \wpdb) {
             $this->pushInbox($request);
@@ -46,6 +47,30 @@ final readonly class PurgeQueueRepository
             },
         );
         (new NetworkPendingRepository($this->mutex))->mark();
+    }
+
+    /**
+     * Callers without the full-purge capability must not escalate a long URL queue into a full purge.
+     * shortcut: concurrent delegated pushes can overshoot the cap slightly; a per-scope lock would close that.
+     */
+    private function assertDelegatedCapacity(PurgeRequest $request): void
+    {
+        if ($request->allowFullPurge || $request->requiresFullPurge()) {
+            return;
+        }
+        $urls = $request->urls;
+        foreach ($this->all() as $queued) {
+            if ($queued->scope !== $request->scope) {
+                continue;
+            }
+            if ($queued->requiresFullPurge()) {
+                return;
+            }
+            $urls = [...$urls, ...$queued->urls];
+        }
+        if (count(array_unique($urls)) > PurgeRequestMerger::MAX_QUEUED_URLS) {
+            throw new \OverflowException('The purge queue is full. Retry later or ask an administrator to purge the whole cache.');
+        }
     }
 
     /** @return list<PurgeRequest> */

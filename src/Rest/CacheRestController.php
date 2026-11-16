@@ -128,6 +128,8 @@ final readonly class CacheRestController
         if ($queued && !$purgeRequest->dryRun) {
             try {
                 $this->queue->enqueue($purgeRequest);
+            } catch (\OverflowException $exception) {
+                return new WP_REST_Response(['error' => $exception->getMessage()], 429);
             } catch (\Throwable) {
                 return new WP_REST_Response(['error' => 'The purge queue is unavailable. Retry later.'], 503);
             }
