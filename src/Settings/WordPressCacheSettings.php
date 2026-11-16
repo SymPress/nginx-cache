@@ -12,6 +12,8 @@ use Symfony\Component\OptionsResolver\OptionsResolver;
 final readonly class WordPressCacheSettings
 {
     public const string OPTION_PATH = 'nginx_cache_path';
+    // The path is written unquoted into fastcgi_cache_path; these characters would end or extend the directive.
+    public const string NGINX_SAFE_PATH = '~^/[^\s;{}"\'#]*$~';
     public const string OPTION_AUTO_PURGE = 'nginx_auto_purge';
     public const string OPTION_PROFILE = 'sympress_nginx_cache_profile';
     public const string OPTION_SELECTIVE_PURGE = 'sympress_nginx_cache_selective_purge';
@@ -756,12 +758,11 @@ final readonly class WordPressCacheSettings
     public function sanitizePath(mixed $value): string
     {
         $path = is_string($value) ? $value : '';
+        $path = function_exists('sanitize_text_field')
+            ? (string) sanitize_text_field($path)
+            : trim(strip_tags($path)); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- WordPress-free fallback after native sanitizer check.
 
-        if (function_exists('sanitize_text_field')) {
-            return (string) sanitize_text_field($path);
-        }
-
-        return trim(strip_tags($path)); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- WordPress-free fallback after native sanitizer check.
+        return $path === '' || preg_match(self::NGINX_SAFE_PATH, $path) === 1 ? $path : ($this->rawOptionString(self::OPTION_PATH) ?? '');
     }
 
     public function sanitizeTextarea(mixed $value): string
