@@ -22,6 +22,22 @@ final class PurgeRequestMergerTest extends TestCase
         self::assertCount(1001, $merged[0]->urls);
     }
 
+    public function testDelegatedUrlRequestsCollapseToFullPurgeBeyondTheQueueCap(): void
+    {
+        $merger = new PurgeRequestMerger();
+        $batch = static fn (int $offset): PurgeRequest => PurgeRequest::urls(
+            array_map(static fn (int $id): string => 'https://example.test/?x=' . $id, range($offset, $offset + 499)),
+            allowFullPurge: false,
+        );
+        $queue = [];
+        for ($offset = 0; $offset <= 10_000; $offset += 500) {
+            $queue = $merger->merge([...$queue, $batch($offset)]);
+        }
+        self::assertCount(1, $queue);
+        self::assertTrue($queue[0]->requiresFullPurge());
+        self::assertSame([], $queue[0]->urls);
+    }
+
     public function testItMergesUrlRequestsWithoutDroppingDryRun(): void
     {
         $merged = (new PurgeRequestMerger())->merge([

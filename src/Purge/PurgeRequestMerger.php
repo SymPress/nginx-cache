@@ -11,6 +11,8 @@ use SymPress\NginxCache\Value\PurgeScope;
 final readonly class PurgeRequestMerger
 {
     public const int MAX_URLS = 500;
+    // Delegated URL purges may exceed MAX_URLS, but the stored queue must stay bounded.
+    public const int MAX_QUEUED_URLS = 10_000;
 
     /**
      * @param list<PurgeRequest> $items
@@ -62,7 +64,7 @@ final readonly class PurgeRequestMerger
         $urls = array_values(array_unique($urls));
         $tags = array_values(array_unique($tags));
 
-        if ($requiresFull || (count($urls) > self::MAX_URLS && $allowFull)) {
+        if ($requiresFull || (count($urls) > self::MAX_URLS && $allowFull) || count($urls) > self::MAX_QUEUED_URLS) {
             return [PurgeRequest::full($reasons, $sources, $dryRun, $prewarm, $scope, array_values(array_unique($affected)))];
         }
 
