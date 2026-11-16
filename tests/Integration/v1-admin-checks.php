@@ -33,6 +33,11 @@ $beforeMigration = hash('sha256', serialize($original));
 $preview = $importer->import('nginx-helper', true);
 check($beforeMigration === hash('sha256', serialize($wpdb->get_results("SELECT option_name,option_value FROM {$wpdb->options} ORDER BY option_name", ARRAY_A))), 'migration preview performs zero option writes');
 check(!str_contains(serialize($preview), 'fixture-redis-password'), 'migration report never exposes Redis credentials');
+$refused = $importer->import('nginx-helper', false);
+check(get_option(CompatibilitySettings::REDIS_PASSWORD, '') === '' && array_column($refused, 'status', 'option')[CompatibilitySettings::REDIS_PASSWORD] === 'network-managed', 'site administrators cannot import network-mandatory Redis settings');
+// Imports and fixture restores below run like WP-CLI, without a user.
+$siteAdmin = get_current_user_id();
+wp_set_current_user(0);
 $importer->import('nginx-helper', false);
 $ciphertext = get_option(CompatibilitySettings::REDIS_PASSWORD);
 check(str_starts_with($ciphertext, SecretCipher::PREFIX) && (new SecretCipher())->decrypt($ciphertext, CompatibilitySettings::REDIS_PASSWORD) === 'fixture-redis-password', 'imported Redis password is authenticated ciphertext');
@@ -45,6 +50,7 @@ foreach (ConfigurationCatalog::defaults() as $option => $_) {
     else { delete_option($option); }
 }
 delete_option('rt_wp_nginx_helper_options');
+wp_set_current_user($siteAdmin);
 
 $rules = new BypassRuleProvider($settings);
 $keys = new CacheKeyStrategy();
@@ -101,9 +107,9 @@ try {
 } finally { $GLOBALS['wp_query'] = $originalQuery; }
 wp_set_current_user(0);
 check($editorActions->postActions([], get_post($publicId)) === [] && $editorActions->bulkActions([]) === [], 'guests receive no editor purge actions');
-wp_set_current_user($admin);
 update_option(CompatibilitySettings::REDIS_PASSWORD, (new SecretCipher())->encrypt('fixture-debug-redis', CompatibilitySettings::REDIS_PASSWORD));
 update_option($settings::OPTION_CLOUDFLARE_API_TOKEN, (new SecretCipher())->encrypt('fixture-debug-cloudflare', $settings::OPTION_CLOUDFLARE_API_TOKEN));
+wp_set_current_user($admin);
 $health = new SiteHealth($settings, new CompatibilitySettings($settings), new \SymPress\NginxCache\Filesystem\CachePathValidator($fs), $queue, $effects, $scope, $clock, $index);
 check($health->debug([])[$settings::TEXT_DOMAIN]['fields']['version']['value'] === get_file_data(dirname(__DIR__, 2) . '/ns-nginx-cache.php', ['version' => 'Version'])['version'], 'Site Health reads the version from the renamed plugin entry');
 $debug = serialize($health->debug([]));
