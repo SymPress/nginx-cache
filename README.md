@@ -48,14 +48,16 @@ before switching from the old `nginx-cache` folder.
 
 ```bash
 wp nginx-cache status
-wp nginx-cache purge /
-wp nginx-cache purge --queue --prewarm
+wp nginx-cache purge https://example.com/   # one URL; replace example.com with your site
+wp nginx-cache purge --queue --prewarm      # no URL: full purge of the site
 wp nginx-cache diagnostics
 wp nginx-cache config
 wp nginx-cache queue details
 wp nginx-cache side-effects details
 ```
 
+URL arguments must be absolute URLs on the site's own origin; relative paths
+such as `/` and foreign hosts are rejected.
 The legacy `edge-cache` namespace is also registered for compatibility.
 Queues retain failed work, retry at most five times with capped exponential
 backoff, and expose exhausted work through `status` and `details`. After fixing
