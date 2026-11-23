@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SymPress\NginxCache\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use SymPress\NginxCache\Hook\NotFoundCacheSubscriber;
 
@@ -21,6 +23,20 @@ final class NotFoundCacheSubscriberTest extends TestCase
         self::assertSame(['Cache-Control' => 'public, max-age=60', 'X-Other' => 'kept'], $headers);
         self::assertStringNotContainsString('private', $headers['Cache-Control']);
         self::assertStringNotContainsString('no-store', $headers['Cache-Control']);
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testNotFoundWithCookiesKeepsTheWordPressNoCacheHeaders(): void
+    {
+        require __DIR__ . '/Fixtures/anonymous-404-functions.php';
+        $_SERVER['REQUEST_METHOD'] = 'GET';
+        $subscriber = new NotFoundCacheSubscriber();
+
+        self::assertSame('public, max-age=60', $subscriber->headers(self::WORDPRESS_NOCACHE)['Cache-Control']);
+
+        $_SERVER['HTTP_COOKIE'] = 'woocommerce_items_in_cart=1';
+        self::assertSame(self::WORDPRESS_NOCACHE, $subscriber->headers(self::WORDPRESS_NOCACHE));
     }
 
     public function testHeadersStayUntouchedOutsideAWordPress404(): void
