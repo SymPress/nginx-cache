@@ -53,6 +53,27 @@ final class NginxConfigGeneratorTest extends TestCase
         self::assertStringContainsString('# fastcgi_cache_path omitted', $config);
     }
 
+    #[RunInSeparateProcess]
+    public function testUnsafePatternsAndKeyTemplatesStayOutOfTheConfig(): void
+    {
+        require __DIR__ . '/Fixtures/unsafe-pattern-filters.php';
+        $config = (new NginxConfigGenerator(new WordPressCacheSettings('/var/cache/nginx/wordpress'), new BypassRuleProvider(), new CacheKeyStrategy()))->generate();
+
+        self::assertStringContainsString('    ~*SafeBot 1;', $config);
+        self::assertStringNotContainsString('Page Speed', $config);
+        self::assertStringNotContainsString('Bot"x', $config);
+        self::assertStringNotContainsString('Bot#x', $config);
+        self::assertStringContainsString('# 3 bypass or query patterns skipped', $config);
+        self::assertStringNotContainsString('/srv/evil.conf', $config);
+        self::assertStringContainsString('# fastcgi_cache_key omitted', $config);
+    }
+
+    public function testCachePathWithATrailingLineBreakIsUnsafe(): void
+    {
+        self::assertSame(0, preg_match(WordPressCacheSettings::NGINX_SAFE_PATH, "/var/cache/nginx\n"));
+        self::assertSame(1, preg_match(WordPressCacheSettings::NGINX_SAFE_PATH, '/var/cache/nginx'));
+    }
+
     public function testCacheControlMapSkipsOnlyPrivateDirectives(): void
     {
         $generator = new NginxConfigGenerator(

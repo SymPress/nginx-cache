@@ -13,7 +13,7 @@ final readonly class WordPressCacheSettings
 {
     public const string OPTION_PATH = 'nginx_cache_path';
     // The path is written unquoted into fastcgi_cache_path; these characters would end or extend the directive.
-    public const string NGINX_SAFE_PATH = '~^/[^\s;{}"\'#]*$~';
+    public const string NGINX_SAFE_PATH = '~^/[^\s;{}"\'#]*$~D';
     public const string OPTION_AUTO_PURGE = 'nginx_auto_purge';
     public const string OPTION_PROFILE = 'sympress_nginx_cache_profile';
     public const string OPTION_SELECTIVE_PURGE = 'sympress_nginx_cache_selective_purge';
