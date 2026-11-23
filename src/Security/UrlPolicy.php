@@ -351,7 +351,23 @@ final readonly class UrlPolicy
 
     private function isUnsafeIp(string $ip): bool
     {
-        return !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
+        // The global-range flag also covers CGNAT (incl. cloud metadata), benchmarking, 6to4 and Teredo.
+        $packed = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_GLOBAL_RANGE) ? inet_pton($ip) : false;
+        if ($packed === false) {
+            return true;
+        }
+        if (strlen($packed) === 4) {
+            return (ord($packed[0]) & 0xF0) === 0xE0; // Multicast 224.0.0.0/4.
+        }
+        if ($packed[0] === "\xFF" || ($packed[0] === "\xFE" && (ord($packed[1]) & 0xC0) === 0xC0)) {
+            return true; // Multicast ff00::/8 and site-local fec0::/10.
+        }
+        if (str_starts_with($packed, "\x00\x64\xFF\x9B")) {
+            // NAT64 64:ff9b::/96 reaches the embedded IPv4 address; other 64:ff9b: prefixes are local-use.
+            return substr($packed, 4, 8) !== str_repeat("\0", 8) || $this->isUnsafeIp((string) inet_ntop(substr($packed, 12)));
+        }
+
+        return false;
     }
 
     private function hostFromUrl(string $url): string
