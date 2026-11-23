@@ -6,7 +6,7 @@ namespace SymPress\NginxCache\Hook;
 
 /**
  * WordPress sends no-store headers with every 404, so Nginx never stores it and the
- * generated `fastcgi_cache_valid 404 1m` rule stays inert; anonymous 404s get that minute.
+ * generated `fastcgi_cache_valid 404 1m` rule stays inert; anonymous 404s without cookies get that minute.
  */
 final class NotFoundCacheSubscriber
 {
@@ -50,7 +50,14 @@ final class NotFoundCacheSubscriber
             return false;
         }
 
-        // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Any nonempty authorization header prevents caching; sanitizing could turn an authenticated request into a cacheable one.
-        return !(isset($_SERVER['HTTP_AUTHORIZATION']) && is_string($_SERVER['HTTP_AUTHORIZATION']) && trim($_SERVER['HTTP_AUTHORIZATION']) !== '');
+        // A cookie may personalise the 404 (cart, membership, post password); a CDN must not share it.
+        foreach (['HTTP_AUTHORIZATION', 'HTTP_COOKIE'] as $header) {
+            // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Any nonempty header prevents caching; sanitizing could turn a private request into a cacheable one.
+            if (isset($_SERVER[$header]) && is_string($_SERVER[$header]) && trim($_SERVER[$header]) !== '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
