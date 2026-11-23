@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where applicable.
 
+## 1.1.3 — 2026-11-23
+
+### Security
+
+- Keep delegated URL purges from escalating into a full purge. A role with only the URL purge capability could fill the queue to its 10,000-URL cap and let the next automatic purge collapse it into a full purge. Delegated URLs are now queued apart from automatic and administrator purges and never count towards the full-purge collapse; delegated requests beyond the cap are still rejected (REST: HTTP 429).
+- Do not record search results (`/search/<term>/`) in the tag index. Every spelling of a search term added index entries that could push real entries out of the per-tag purge limit.
+- Send `Cache-Control: public, max-age=60` for anonymous 404s only when the request carries no cookies, so a CDN in front cannot share a 404 page personalised by a cart, membership or post-password cookie.
+- Reject non-global addresses as remote and full-purge endpoints: CGNAT (incl. `100.100.100.200`), `198.18.0.0/15`, `192.0.0.0/24`, multicast, 6to4, site-local IPv6 and NAT64 mappings of internal IPv4 addresses.
+
+### Fixed
+
+- Skip bypass and query patterns containing whitespace, quotes or `#` in the generated Nginx snippet (the header reports how many) and omit `fastcgi_cache_key` for key templates with quotes, backslashes, `;`, `{`, `}` or line breaks, instead of emitting a config that fails `nginx -t`. Use `\s` for spaces in patterns.
+- Reject a cache path with a trailing line break.
+- Let Dependabot update the GitHub Actions pins.
+
 ## 1.1.2 — 2026-11-16
 
 ### Security
