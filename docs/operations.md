@@ -59,10 +59,10 @@ closed. Single-site endpoints retain their `timestamp.full-purge` protocol.
 
 Capabilities are mapped at runtime; no roles are permanently modified.
 Delegated editors get public object/current-page/bulk URL actions only. Bulk
-actions over 100 objects enqueue their complete target set. A delegated request
-that would grow the queue beyond 10,000 URLs is rejected (REST: HTTP 429) and
-nothing is queued; requests from callers allowed to purge the whole site
-collapse such a queue into one full purge of the same scope instead.
+actions over 100 objects enqueue their complete target set. Delegated URLs are
+queued apart from automatic and administrator purges and never turn into a full
+purge. A delegated request that would grow them beyond 10,000 URLs is rejected
+(REST: HTTP 429) and nothing is queued.
 Nonces are required for browser mutations; application-password REST
 authentication is supported.
 
