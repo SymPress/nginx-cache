@@ -349,7 +349,8 @@ The existing purge URL overflow policy remains an explicit full purge above 500 
 Only entirely tracking queries share a query-free tag-index identity. Functional
 queries such as `?s=foo`, `?p=123` and mixed tracking/search queries bypass the
 default Nginx cache and never enter the index, displace the home page's tags, or
-issue tag-index database calls.
+issue tag-index database calls. Search results reached through the path-based
+search permalink (`/search/<term>/`) are not indexed either.
 
 `WordPressOptionLockStore` uses atomic INSERT IGNORE and conditional UPDATE/DELETE
 against the observed serialized token. It reads ownership directly from the

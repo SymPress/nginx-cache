@@ -116,6 +116,11 @@ final class SurrogateTagSubscriber
             return false;
         }
 
+        // Search permalinks (/search/<term>/) are unbounded URL variants that would displace real index entries.
+        if (function_exists('is_search') && is_search()) {
+            return false;
+        }
+
         $status = (int) http_response_code();
 
         if (!in_array($status, [200, 301], true)) {
