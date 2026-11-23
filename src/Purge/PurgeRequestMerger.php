@@ -26,55 +26,88 @@ final readonly class PurgeRequestMerger
     }
 
     /**
+     * Delegated URL requests stay a separate item so their URLs never count towards collapsing
+     * privileged work into a full purge; their size is bounded when they are queued.
+     *
      * @param list<PurgeRequest> $items
      * @return list<PurgeRequest>
      */
     private function mergeScope(array $items, PurgeScope $scope): array
     {
-        $urls = [];
-        $tags = [];
-        $reasons = [];
-        $sources = [];
-        $prewarm = false;
-        $dryRun = true;
-        $requiresFull = false;
-        $allowFull = true;
-        $anyAllowFull = false;
-        $affected = [];
-
+        $privileged = [];
+        $delegated = [];
         foreach ($items as $item) {
-            $reasons[] = $item->reason;
-            $sources[] = $item->source;
-            $prewarm = $prewarm || $item->prewarm;
-            $dryRun = $dryRun && $item->dryRun;
-            $tags = [...$tags, ...$item->tags];
-            $allowFull = $allowFull && $item->allowFullPurge;
-            $anyAllowFull = $anyAllowFull || $item->allowFullPurge;
-            $affected = [...$affected, ...$item->affectedUrls];
-
-            if ($item->mode === PurgeMode::Full) {
-                $requiresFull = true;
-
-                continue;
+            if ($item->allowFullPurge || $item->mode === PurgeMode::Full) {
+                $privileged[] = $item;
+            } else {
+                $delegated[] = $item;
             }
-
-            $urls = [...$urls, ...$item->urls];
         }
 
-        $reasons = $this->joined($reasons);
-        $sources = $this->joined($sources);
-        $urls = array_values(array_unique($urls));
-        $tags = array_values(array_unique($tags));
+        $privilegedUrls = $this->urls($privileged);
+        $requiresFull = array_any($privileged, static fn (PurgeRequest $item): bool => $item->mode === PurgeMode::Full);
+        if ($requiresFull || count($privilegedUrls) > self::MAX_URLS) {
+            // A full purge covers the delegated URLs as well.
+            $full = PurgeRequest::full(
+                $this->joined(array_map(static fn (PurgeRequest $item): string => $item->reason, $items)),
+                $this->joined(array_map(static fn (PurgeRequest $item): string => $item->source, $items)),
+                array_all($items, static fn (PurgeRequest $item): bool => $item->dryRun),
+                array_any($items, static fn (PurgeRequest $item): bool => $item->prewarm),
+                $scope,
+                $this->affected($items),
+            );
 
-        if ($requiresFull || (count($urls) > self::MAX_URLS && $allowFull) || (count($urls) > self::MAX_QUEUED_URLS && $anyAllowFull)) {
-            return [PurgeRequest::full($reasons, $sources, $dryRun, $prewarm, $scope, array_values(array_unique($affected)))];
+            return [$full];
         }
 
+        return [
+            ...$this->urlRequest($privileged, $privilegedUrls, $scope, true),
+            ...$this->urlRequest($delegated, array_values(array_diff($this->urls($delegated), $privilegedUrls)), $scope, false),
+        ];
+    }
+
+    /**
+     * @param list<PurgeRequest> $items
+     * @param list<string> $urls
+     * @return list<PurgeRequest>
+     */
+    private function urlRequest(array $items, array $urls, PurgeScope $scope, bool $allowFull): array
+    {
         if ($urls === []) {
             return [];
         }
 
-        return [PurgeRequest::urls($urls, $reasons, $sources, $dryRun, $prewarm, $tags, $scope, $allowFull, array_values(array_unique($affected)))];
+        $request = PurgeRequest::urls(
+            $urls,
+            $this->joined(array_map(static fn (PurgeRequest $item): string => $item->reason, $items)),
+            $this->joined(array_map(static fn (PurgeRequest $item): string => $item->source, $items)),
+            array_all($items, static fn (PurgeRequest $item): bool => $item->dryRun),
+            array_any($items, static fn (PurgeRequest $item): bool => $item->prewarm),
+            array_values(array_unique(array_merge(...array_map(static fn (PurgeRequest $item): array => $item->tags, $items)))),
+            $scope,
+            $allowFull,
+            $this->affected($items),
+        );
+
+        return [$request];
+    }
+
+    /**
+     * @param list<PurgeRequest> $items
+     * @return list<string>
+     */
+    private function urls(array $items): array
+    {
+        return array_values(array_unique(array_merge(...array_map(static fn (PurgeRequest $item): array => $item->urls, $items))));
+    }
+
+    /**
+     * @param list<PurgeRequest> $items
+     * @return list<string>
+     */
+    private function affected(array $items): array
+    {
+        return array_values(array_unique(array_merge(...array_map(static fn (PurgeRequest $item): array => $item->affectedUrls, $items))));
     }
 
     /** @param list<string> $values */

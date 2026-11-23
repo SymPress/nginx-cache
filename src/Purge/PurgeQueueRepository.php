@@ -50,7 +50,8 @@ final readonly class PurgeQueueRepository
     }
 
     /**
-     * Callers without the full-purge capability must not escalate a long URL queue into a full purge.
+     * Delegated URLs are queued apart from privileged work and never collapse into a full purge, so their
+     * own list is bounded here; excess pushes are rejected instead of escalated.
      * shortcut: concurrent delegated pushes can overshoot the cap slightly; a per-scope lock would close that.
      */
     private function assertDelegatedCapacity(PurgeRequest $request): void
@@ -65,6 +66,9 @@ final readonly class PurgeQueueRepository
             }
             if ($queued->requiresFullPurge()) {
                 return;
+            }
+            if ($queued->allowFullPurge) {
+                continue;
             }
             $urls = [...$urls, ...$queued->urls];
         }
@@ -342,7 +346,8 @@ final readonly class PurgeQueueRepository
     {
         $db = $GLOBALS['wpdb'];
         $slot = hexdec(substr(hash('sha256', maybe_serialize($request->toArray())), 0, 4)) % self::INBOX_SLOTS;
-        $name = self::OPTION_QUEUE . '_inbox_slot_' . $request->scope->value . '_' . $slot;
+        // Separate slots per kind: merging a delegated with a privileged request yields two items.
+        $name = self::OPTION_QUEUE . '_inbox_slot_' . $request->scope->value . '_' . ($request->allowFullPurge ? 'p' : 'd') . $slot;
         for ($attempt = 0; $attempt < 3; ++$attempt) {
             $previous = $db->get_var($db->prepare('SELECT option_value FROM %i WHERE option_name = %s', $db->options, $name));
             $oldRequest = is_string($previous) ? $this->decodeInbox($previous) : null;
