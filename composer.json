@@ -19,11 +19,11 @@
         "symfony/console": "^8.0",
         "symfony/filesystem": "^8.1.11",
         "symfony/finder": "^8.0",
-        "symfony/http-client": "^8.1.11",
+        "symfony/http-client": "^8.1.12",
         "symfony/lock": "^8.0",
         "symfony/options-resolver": "^8.0",
         "sympress/event-dispatcher": "^1.0.2",
-        "sympress/kernel": "^1.1.1",
+        "sympress/kernel": "^1.1.19",
         "sympress/wp-cli-console": "^1.0.2"
     },
     "require-dev": {
